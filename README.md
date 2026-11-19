@@ -15,7 +15,7 @@ Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 �
 |                                                            | 상태 |
 | ---------------------------------------------------------- | ---- |
 | Claude Code 로그에서 오늘/5시간 토큰 사용량, 429 리밋 감지 | ✅   |
-| 메뉴바 칩 아이콘 + 도트 그래픽 팝오버                      | ✅   |
+| 메뉴바 칩 아이콘 + 라스베가스 네온 도트 그래픽 팝오버      | ✅   |
 | 칩 경제: 토큰 환전, 출근 도장, 파산 구제, 황금 칩          | ✅   |
 | **구슬 홀짝** (실시간 멀티 테이블, 15초 라운드)            | ✅   |
 | 슬롯머신 (솔로)                                            | ⏳   |
@@ -60,7 +60,7 @@ swift run lounge-bot --name 철수
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|live]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|crowd|crowd-reveal|live]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
@@ -99,7 +99,7 @@ CLAUDE.md         Claude Code 작업 가이드
 
 ## 로드맵
 
-1. 디자인 무드 확정 (라스베가스 / 재즈 라운지 / 레트로 칩) → 팔레트, 스프라이트 시트
+1. 스프라이트 시트 정식 제작, 승리·황금 칩 연출 (무드는 라스베가스로 확정)
 2. 슬롯머신 (황금 칩 무료 스핀)
 3. 닉네임, 방 코드로 테이블 나누기
 4. 원격 Supabase로 옮겨서 초대 회원에게 배포 (서명, 공증)

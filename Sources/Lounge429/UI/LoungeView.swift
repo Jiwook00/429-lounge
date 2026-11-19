@@ -19,7 +19,7 @@ struct LoungeView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let lock = snapshot.activeLock(at: context.date)
             VStack(spacing: 12) {
-                header(locked: lock != nil)
+                header(locked: lock != nil, now: context.date)
                 wallet
                 if let lock { vipBanner(lock, now: context.date) }
                 if let toast { toastView(toast) }
@@ -35,23 +35,45 @@ struct LoungeView: View {
 
     // MARK: - Sections
 
-    private func header(locked: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("429")
-                .font(Fonts.bold(2))
-                .foregroundStyle(Theme.neon)
-                .shadow(color: Theme.neon.opacity(0.6), radius: 4)
-            Text("LOUNGE")
-                .font(Fonts.bold())
-                .foregroundStyle(Theme.gold)
-            Spacer()
-            HStack(spacing: 4) {
-                Rectangle().fill(locked ? Theme.gold : Theme.green).frame(width: 6, height: 6)
-                Text(locked ? "VIP HOUR" : "OPEN")
-                    .font(Fonts.small())
-                    .foregroundStyle(locked ? Theme.gold : Theme.green)
+    /// 네온 간판 + 위아래 전구 띠. VIP HOUR에는 전구가 1초마다 한 칸씩 흐른다.
+    private func header(locked: Bool, now: Date) -> some View {
+        let chase = locked ? Int(now.timeIntervalSince1970) % 3 : 0
+        return VStack(spacing: 6) {
+            bulbs(offset: chase)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("429")
+                    .font(Fonts.bold(2))
+                    .foregroundStyle(Theme.neon)
+                    .glow(Theme.neon, radius: 5, strong: true)
+                Text("LOUNGE")
+                    .font(Fonts.bold())
+                    .foregroundStyle(Theme.cyan)
+                    .glow(Theme.cyan)
+                Spacer()
+                HStack(spacing: 4) {
+                    let color = locked ? Theme.gold : Theme.green
+                    Rectangle().fill(color).frame(width: 6, height: 6)
+                    Text(locked ? "VIP HOUR" : "OPEN")
+                        .font(Fonts.small())
+                        .foregroundStyle(color)
+                }
+                .glow(locked ? Theme.gold : .clear)
+            }
+            bulbs(offset: chase + 1)
+        }
+    }
+
+    private func bulbs(offset: Int) -> some View {
+        // 5pt 전구 + 4pt 간격 × 35개 = 311pt (안쪽 폭 312pt), 왼쪽 정렬로 정수 좌표 유지
+        HStack(spacing: 4) {
+            ForEach(0..<35, id: \.self) { i in
+                let phase = (i + offset) % 3
+                Rectangle()
+                    .fill(phase == 0 ? Theme.gold : phase == 1 ? Theme.bulbOff : Theme.neon)
+                    .frame(width: 5, height: 5)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var wallet: some View {
@@ -88,12 +110,13 @@ struct LoungeView: View {
                     .font(Fonts.small())
                 Text(golden > 0 ? "황금 칩 \(golden)개 = 공짜 100칩 베팅 \(golden)번" : "황금 칩을 다 썼어요")
                     .font(Fonts.small())
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.gold.opacity(0.8))
             }
             Spacer(minLength: 0)
         }
         .padding(10)
-        .pixelBox(fill: Color(hex: 0x2E2412), border: Theme.gold)
+        .pixelBox(fill: Theme.goldBg, border: Theme.gold)
+        .glow(Theme.gold, radius: 6)
     }
 
     private func toastView(_ t: LoungeStore.Toast) -> some View {
@@ -101,7 +124,7 @@ struct LoungeView: View {
             .font(Fonts.body())
             .foregroundStyle(t.golden ? Theme.bg : Theme.gold)
             .frame(maxWidth: .infinity, minHeight: 26)
-            .pixelBox(fill: t.golden ? Theme.gold : Color(hex: 0x2E2412), border: Theme.gold)
+            .pixelBox(fill: t.golden ? Theme.gold : Theme.goldBg, border: Theme.gold)
     }
 
     private var games: some View {
@@ -109,7 +132,7 @@ struct LoungeView: View {
             GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO")
             GameTile(sprite: Sprites.spade, title: "블랙잭", mode: "SOLO · TABLE")
             Button(action: onOddEven) {
-                GameTile(sprite: Sprites.dice, title: "구슬 홀짝", mode: "TABLE", soon: !online)
+                GameTile(sprite: Sprites.dice, title: "구슬 홀짝", mode: "TABLE", soon: !online, live: online)
             }
             .buttonStyle(.plain)
             .disabled(!online)
@@ -118,10 +141,11 @@ struct LoungeView: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 4) {
+            Rectangle().fill(online ? Theme.green : Theme.dim).frame(width: 6, height: 6)
             Text(online ? "라운지 연결됨" : "오프라인")
             Spacer()
-            Button("새로고침", action: onRefresh)
+            Button("새로고침", action: onRefresh).padding(.trailing, 6)
             Button("종료", action: onQuit)
         }
         .font(Fonts.small())
@@ -140,18 +164,21 @@ private struct GameTile: View {
     let title: String
     let mode: String
     var soon = true
+    /// 지금 들어갈 수 있는 테이블: 네온 테두리 + 발광
+    var live = false
 
     var body: some View {
         HStack(spacing: 10) {
             PixelView(sprite: sprite, scale: 2)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Fonts.body())
-                Text(mode).font(Fonts.small()).foregroundStyle(Theme.muted)
+                Text(mode).font(Fonts.small()).foregroundStyle(live ? Theme.neon : Theme.muted)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
-        .pixelBox()
+        .pixelBox(border: live ? Theme.neon : Theme.line)
+        .glow(live ? Theme.neon : .clear)
         .contentShape(Rectangle())
         .overlay(alignment: .topTrailing) {
             if soon { Text("SOON")

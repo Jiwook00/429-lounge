@@ -94,31 +94,38 @@ enum Snapshot {
         }
     }
 
+    /// mode: betting | reveal | crowd | crowd-reveal
     private static func fakeTable(store: LoungeStore, me: Player, mode: String) -> OddEvenTable {
         let now = Date()
-        let friends = [Seat(id: UUID(), name: "철수"), Seat(id: UUID(), name: "영희")]
-        let seats = [Seat(id: me.id, name: me.name)] + friends
-        let t = OddEvenTable(store: store)
+        let crowd = mode.hasPrefix("crowd")
+        let revealing = mode.hasSuffix("reveal")
+        // (이름, 쪽, 금액). 첫 줄은 나.
+        let plan: [(String, Side, Int64)] = crowd
+            ? [("나", .odd, 100), ("민수", .odd, 500), ("예린", .even, 500), ("지호", .odd, 380),
+               ("서연", .even, 200), ("철수", .odd, 50), ("영희", .even, 100), ("하준", .odd, 100),
+               ("도윤", .odd, 10), ("수아", .even, 10), ("우진", .odd, 100), ("지은", .even, 50)]
+            : [("철수", .odd, 50), ("영희", .even, 100)]
+        let seats = [Seat(id: me.id, name: me.name)] + plan.dropFirst(crowd ? 1 : 0).map { Seat(id: UUID(), name: $0.0) }
+        let ids = crowd ? seats.map(\.id) : seats.dropFirst().map(\.id)
 
+        func bets(round: Int64, settled: Side?) -> [Bet] {
+            zip(plan, ids).map { p, id in
+                Bet(roundId: round, roomCode: "LOUNGE", playerId: id, side: p.1, amount: p.2,
+                    payout: settled.map { $0 == p.1 ? p.2 * 2 : 0 })
+            }
+        }
+
+        let t = OddEvenTable(store: store)
         let last = Round(id: 41, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-18),
                          closesAt: now.addingTimeInterval(-3), marbles: 7, settledAt: now.addingTimeInterval(-3))
-        let lastBets = [
-            Bet(roundId: 41, roomCode: "LOUNGE", playerId: me.id, side: .odd, amount: 100, payout: 200),
-            Bet(roundId: 41, roomCode: "LOUNGE", playerId: friends[0].id, side: .even, amount: 50, payout: 0),
-            Bet(roundId: 41, roomCode: "LOUNGE", playerId: friends[1].id, side: .even, amount: 100, payout: 0, golden: true),
-        ]
-        if mode == "reveal" {
+        if revealing {
             let next = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(2),
                              closesAt: now.addingTimeInterval(17), marbles: nil, settledAt: nil)
-            t.preview(round: next, bets: [], last: last, lastBets: lastBets, seats: seats)
+            t.preview(round: next, bets: [], last: last, lastBets: bets(round: 41, settled: .odd), seats: seats)
         } else {
-            let current = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-4),
-                                closesAt: now.addingTimeInterval(11), marbles: nil, settledAt: nil)
-            let bets = [
-                Bet(roundId: 42, roomCode: "LOUNGE", playerId: friends[0].id, side: .odd, amount: 50, payout: nil),
-                Bet(roundId: 42, roomCode: "LOUNGE", playerId: friends[1].id, side: .even, amount: 100, payout: nil),
-            ]
-            t.preview(round: current, bets: bets, last: last, lastBets: lastBets, seats: seats)
+            let current = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-9),
+                                closesAt: now.addingTimeInterval(crowd ? 6 : 11), marbles: nil, settledAt: nil)
+            t.preview(round: current, bets: bets(round: 42, settled: nil), last: last, lastBets: [], seats: seats)
         }
         return t
     }

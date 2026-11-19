@@ -5,7 +5,7 @@ import SwiftUI
 enum Sprites {
     private static let base: [Character: Color] = [
         "k": Theme.outline, "R": Theme.neon, "W": Theme.cream, "Y": Theme.gold,
-        "G": Theme.felt, "d": Color(hex: 0x2A2233),
+        "G": Theme.felt, "d": Theme.line,
     ]
 
     static let chip = PixelSprite(rows: [
@@ -24,7 +24,7 @@ enum Sprites {
     ], palette: base)
 
     static let goldChip = PixelSprite(rows: chip.rows, palette: base.merging(
-        ["R": Theme.gold, "Y": Color(hex: 0xFFF1B8), "W": Color(hex: 0xB8862B)]) { $1 })
+        ["R": Theme.gold, "Y": Theme.goldLight, "W": Theme.goldDark]) { $1 })
 
     static let lock = PixelSprite(rows: [
         "...kkkk...",
@@ -121,7 +121,7 @@ enum Sprites {
         "kYYYbk",
         "kYYbbk",
         ".kkkk.",
-    ], palette: base.merging(["b": Color(hex: 0xB8862B)]) { $1 })
+    ], palette: base.merging(["b": Theme.goldDark]) { $1 })
 
     /// 메뉴바 아이콘: 16×16 칩 실루엣. 평소엔 템플릿(시스템 색), 리밋 중엔 골드.
     static func menuBarIcon(gold: Bool) -> NSImage {

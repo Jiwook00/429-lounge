@@ -36,7 +36,7 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 
 - **결과와 칩 증감은 서버에서만.** 클라이언트는 테이블을 읽기만 하고, 쓰기는 `security definer` RPC로만 한다. 새 게임도 같은 패턴. ([ADR-0003](docs/madr/0003-server-authoritative-rpc.md))
 - **마이그레이션은 추가만.** 이미 적용된 파일은 고치지 말고 새 파일을 만든다. 함수 시그니처가 바뀌면 `drop function` 후 재생성하고 권한(`revoke`/`grant`)도 다시 건다.
-- **픽셀 규칙.** 스프라이트 정수 배율, Galmuri는 12/24pt(Galmuri9는 10pt)만, `pixelBox` 테두리. 색은 `Theme` 토큰만 쓰고 hex를 뷰에 직접 넣지 않는다. 자세한 건 DESIGN.md.
+- **픽셀 규칙.** 스프라이트 정수 배율, Galmuri는 12/24pt(Galmuri9는 10pt)만, `pixelBox` 테두리. 색은 `Theme` 토큰만 쓰고 hex를 뷰에 직접 넣지 않는다. 발광은 `.glow()`로, DESIGN.md §7에 적힌 곳에만. 자세한 건 DESIGN.md.
 - **칩 규칙을 바꾸면** `docs/chip-economy.md`도 같이 고친다.
 - **Swift 6 strict concurrency.** `LoungeCore`, `LoungeNet` 타입은 `Sendable`로 유지한다.
 - 코드 주석과 UI 카피는 한국어. 카피 톤은 DESIGN.md §11.
@@ -47,7 +47,7 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table betting|reveal|live]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table betting|reveal|crowd|crowd-reveal|live]
 ```
 
 - `--table live`: 실서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅
