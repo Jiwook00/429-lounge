@@ -22,6 +22,8 @@ struct RootView: View {
                     golden: store.golden(),
                     toast: store.toast,
                     online: store.me != nil,
+                    name: store.me.flatMap { $0.named ? $0.name : nil },
+                    onRename: { await store.rename($0) },
                     onOddEven: { screen = .oddEven(OddEvenTable(store: store)) },
                     onSlot: { screen = .slot(SlotMachine(store: store)) },
                     onRefresh: { Task { await store.refresh() } },

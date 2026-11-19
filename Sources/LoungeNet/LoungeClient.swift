@@ -39,6 +39,8 @@ public enum LoungeError: LocalizedError {
         case .server("insufficient_chips"): "칩이 부족해요"
         case .server("invalid_amount"): "베팅 금액이 이상해요"
         case .server("no_golden"): "쓸 수 있는 황금 칩이 없어요"
+        case .server("invalid_nickname"): "1~12자로 정해 주세요"
+        case .server("nickname_taken"): "누가 벌써 쓰는 이름이에요"
         case .server(let m): m
         }
     }
@@ -66,23 +68,34 @@ public final class LoungeClient: Sendable {
 
     public var userID: UUID? { supabase.auth.currentUser?.id }
 
-    /// 익명 로그인(세션이 없거나 만료됐으면) + 플레이어 행 보장
-    public func signIn(name: String) async throws -> Player {
+    /// 익명 로그인(세션이 없거나 만료됐으면) + 플레이어 행 보장.
+    /// 처음이면 서버가 "손님 XXXXXX"를 붙인다. name을 주면(봇) 그 이름으로 바꿔 본다.
+    public func signIn(name: String? = nil) async throws -> Player {
         if (try? await supabase.auth.session) == nil {
             _ = try await supabase.auth.signInAnonymously()
         }
+        var me: Player
         do {
-            return try await ensurePlayer(name)
+            me = try await ensurePlayer()
         } catch {
             // 로컬 DB를 리셋하면 저장된 세션의 유저가 사라진다 → 새로 가입
             try? await supabase.auth.signOut()
             _ = try await supabase.auth.signInAnonymously()
-            return try await ensurePlayer(name)
+            me = try await ensurePlayer()
         }
+        if let name, me.name != name { me = try await setNickname(name) }
+        return me
     }
 
-    private func ensurePlayer(_ name: String) async throws -> Player {
-        try await supabase.rpc("ensure_player", params: ["p_name": name]).execute().value
+    private func ensurePlayer() async throws -> Player {
+        try await supabase.rpc("ensure_player").execute().value
+    }
+
+    /// 닉네임 정하기 / 바꾸기 (1~12자, 라운지 전체에서 하나뿐)
+    public func setNickname(_ name: String) async throws -> Player {
+        do {
+            return try await supabase.rpc("set_nickname", params: ["p_name": name]).execute().value
+        } catch { throw LoungeError.wrap(error) }
     }
 
     public func me() async throws -> Player? {

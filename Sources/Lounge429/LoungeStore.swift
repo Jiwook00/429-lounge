@@ -53,7 +53,7 @@ final class LoungeStore {
 
     func connect() async {
         do {
-            me = try await net.signIn(name: String(NSUserName().prefix(16)))
+            me = try await net.signIn()
             netError = nil
         } catch {
             netError = "라운지 서버에 연결할 수 없어요"
@@ -85,6 +85,16 @@ final class LoungeStore {
         Task {
             try? await Task.sleep(for: .seconds(5))
             if toast == t { toast = nil }
+        }
+    }
+
+    /// 닉네임 저장. 실패하면 보여줄 문구
+    func rename(_ name: String) async -> String? {
+        do {
+            me = try await net.setNickname(name)
+            return nil
+        } catch {
+            return error.localizedDescription
         }
     }
 

@@ -18,7 +18,13 @@ enum Snapshot {
         store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
 
         let content: AnyView
-        if let table, table.hasPrefix("slot") {
+        if let table, table.hasPrefix("nickname") {
+            // nickname: 처음 온 회원 / nickname-taken: 이름 바꾸다 중복
+            let taken = table == "nickname-taken"
+            content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, online: true,
+                                         name: taken ? "새벽코더" : nil,
+                                         nicknameDraft: taken ? ("danny", "누가 벌써 쓰는 이름이에요") : nil))
+        } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
         } else if let table {
@@ -33,11 +39,11 @@ enum Snapshot {
                 .padding(6)
                 .background(Color(white: 0.75))
                 LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
-                           toast: store.toast, online: true)
+                           toast: store.toast, online: true, name: "새벽코더")
             })
         }
 
-        let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)))
+        let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)).environment(\.snapshotting, true))
         renderer.scale = 2
         guard let image = renderer.nsImage,
               let tiff = image.tiffRepresentation,
@@ -110,7 +116,7 @@ enum Snapshot {
     }
 
     private static func write(_ content: AnyView, to path: String) {
-        let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)))
+        let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)).environment(\.snapshotting, true))
         renderer.scale = 2
         if let tiff = renderer.nsImage?.tiffRepresentation,
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {

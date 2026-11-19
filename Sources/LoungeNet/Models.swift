@@ -13,18 +13,21 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     public let goldenChips: Int
     /// 황금 칩 소멸 시각 (= 429 리셋 시각)
     public let goldenUntil: Date?
+    /// 직접 정한 닉네임이면 true. false면 서버가 붙인 "손님 XXXXXX"
+    public let named: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, name, chips
+        case id, name, chips, named
         case goldenChips = "golden_chips", goldenUntil = "golden_until"
     }
 
-    public init(id: UUID, name: String, chips: Int64, goldenChips: Int = 0, goldenUntil: Date? = nil) {
+    public init(id: UUID, name: String, chips: Int64, goldenChips: Int = 0, goldenUntil: Date? = nil, named: Bool = true) {
         self.id = id
         self.name = name
         self.chips = chips
         self.goldenChips = goldenChips
         self.goldenUntil = goldenUntil
+        self.named = named
     }
 
     public init(from decoder: any Decoder) throws {
@@ -34,6 +37,7 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
         chips = try c.decode(Int64.self, forKey: .chips)
         goldenChips = try c.decodeIfPresent(Int.self, forKey: .goldenChips) ?? 0
         goldenUntil = try c.decodeIfPresent(Date.self, forKey: .goldenUntil)
+        named = try c.decodeIfPresent(Bool.self, forKey: .named) ?? true
     }
 
     /// 지금 쓸 수 있는 황금 칩 개수 (만료됐으면 0)

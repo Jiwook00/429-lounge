@@ -9,6 +9,11 @@ struct LoungeView: View {
     var golden: Int = 0
     var toast: LoungeStore.Toast?
     var online: Bool = false
+    /// 직접 정한 닉네임. 아직 안 정했으면 nil → 게임 대신 닉네임 카드
+    var name: String?
+    var onRename: (String) async -> String? = { _ in nil }
+    /// 스냅샷용: 이름 바꾸기 카드를 펼친 상태로
+    var nicknameDraft: (text: String, error: String?)?
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
     var onRefresh: () -> Void = {}
@@ -17,6 +22,7 @@ struct LoungeView: View {
     static let width: CGFloat = 340
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var renaming = false
 
     var body: some View {
         // 0.1초 틱: 네온 깜빡임과 전구 띠용. 팝오버가 열려 있을 때만 그려진다.
@@ -27,7 +33,21 @@ struct LoungeView: View {
                 wallet
                 if let lock { vipBanner(lock, now: context.date) }
                 if let toast { toastView(toast) }
-                games
+                if online && (name == nil || renaming || nicknameDraft != nil) {
+                    NicknameCard(
+                        current: name,
+                        onSave: { new in
+                            let error = await onRename(new)
+                            if error == nil { renaming = false }
+                            return error
+                        },
+                        onCancel: name == nil ? nil : { renaming = false },
+                        initialText: nicknameDraft?.text ?? "",
+                        initialError: nicknameDraft?.error
+                    )
+                } else {
+                    games
+                }
                 footer
             }
             .padding(14)
@@ -154,8 +174,12 @@ struct LoungeView: View {
     private var footer: some View {
         HStack(spacing: 4) {
             Rectangle().fill(online ? Theme.green : Theme.dim).frame(width: 6, height: 6)
-            Text(online ? "라운지 연결됨" : "오프라인")
+            Text(online ? (name ?? "라운지 연결됨") : "오프라인")
+                .foregroundStyle(online && name != nil ? Theme.cream : Theme.muted)
             Spacer()
+            if online, name != nil, !renaming {
+                Button("이름 바꾸기") { renaming = true }.padding(.trailing, 6)
+            }
             Button("새로고침", action: onRefresh).padding(.trailing, 6)
             Button("종료", action: onQuit)
         }
