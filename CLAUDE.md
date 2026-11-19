@@ -13,7 +13,9 @@ supabase db reset                    # 처음부터 다시 적용 (테스트 데
 
 swift build                          # 전체 빌드
 swift test                           # LoungeCore 테스트
-scripts/build-app.sh --open          # build/429 Lounge.app 생성 후 재실행
+scripts/build-app.sh --open          # build/429 Lounge.app 생성 후 재실행 (로컬 서버)
+scripts/build-app.sh --dist          # 운영 서버용 유니버설 앱 + build/429-Lounge-<버전>.zip
+supabase db push --dry-run           # 운영 DB(서울, 링크됨)에 올라갈 마이그레이션 확인. 확인 후 --dry-run 빼고
 
 swift run lounge-bot --name 철수      # 상대 봇
 swift run lounge-scan                # 토큰 로그 파싱 결과
@@ -47,7 +49,7 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
 ```
 
 - `--table live`: 실서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅
@@ -55,6 +57,7 @@ swift build --product Lounge429
 - 멀티플레이는 `lounge-bot` 두 개 + `--table live` 조합으로 확인
 - 서버 함수를 바꾸면 RPC를 직접 호출해 거절 케이스까지 확인한다. 로컬 공개 키는 `LoungeConfig.local` 참고
 - E2E는 앱과 같은 `default` 프로필 세션을 쓴다. 테스트 후 지갑이 지저분하면 `supabase db reset`
+- 운영 서버로 확인할 땐 `LOUNGE_SERVER=remote`. 운영 DB엔 실제 회원 데이터가 있으니 테스트 계정은 끝나고 지운다
 
 ## 알아둘 것
 
@@ -63,6 +66,10 @@ swift build --product Lounge429
 - 세션은 키체인이 아니라 `~/Library/Application Support/429Lounge/sessions/<host>/<profile>/`에 파일로 저장
 - `ImageRenderer`는 메인 런루프가 필요하다. `dispatchMain()`으로 돌리면 멈춘다 (`NSApplication.run()` 사용)
 - 메뉴바 관리 앱(Bartender, Ice 등)이 새 아이콘을 숨김 영역에 넣을 수 있다
+- 서버 선택: `LOUNGE_SUPABASE_URL/KEY` → `LOUNGE_SERVER` → Info.plist `LoungeServer` → 로컬. Finder로 띄운 앱엔 환경변수가 없어서 배포 빌드는 Info.plist로 정한다 ([ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md))
+- 원격 Auth 설정은 대시보드에서. `supabase config push`는 로컬 개발용 `config.toml`까지 덮어쓴다
+- `ImageRenderer`는 `TextField`를 못 그린다. 스냅샷에선 `\.snapshotting` 환경값으로 Text로 바꿔 그린다
+- 닉네임은 `set_nickname` RPC로만, 라운지 전체에서 하나뿐(`lower(name)` 유니크). 처음엔 서버가 "손님 XXXXXX"
 
 ## 문서 업데이트
 
