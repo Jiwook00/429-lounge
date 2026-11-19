@@ -170,21 +170,33 @@ enum Sprites {
         "............",
     ], palette: base)
 
+    /// HTTP 상태 코드 배지: 위아래 테두리 + 3×5 숫자 세 개 (12×12)
+    static func badge(_ code: String, border: Color, digit: Color) -> PixelSprite {
+        let glyphs: [Character: [String]] = [
+            "0": ["XXX", "X.X", "X.X", "X.X", "XXX"],
+            "2": ["XXX", "..X", "XXX", "X..", "XXX"],
+            "4": ["X.X", "X.X", "XXX", "..X", "..X"],
+            "5": ["XXX", "X..", "XXX", "..X", "XXX"],
+            "9": ["XXX", "X.X", "XXX", "..X", "XXX"],
+        ]
+        let chars = Array(code)
+        let digits = (0..<5).map { y in
+            "k" + chars.map { (glyphs[$0]?[y] ?? "...").replacingOccurrences(of: "X", with: "D")
+                .replacingOccurrences(of: ".", with: "k") }.joined(separator: "k")
+        }
+        let rows = ["............", "............", "BBBBBBBBBBBB", "kkkkkkkkkkkk"]
+            + digits + ["kkkkkkkkkkkk", "BBBBBBBBBBBB", "............"]
+        return PixelSprite(rows: rows, palette: base.merging(["B": border, "D": digit]) { $1 })
+    }
+
     /// 잭팟 심볼 "429"
-    static let s429 = PixelSprite(rows: [
-        "............",
-        "............",
-        "RRRRRRRRRRRR",
-        "kkkkkkkkkkkk",
-        "kYkYkYYYkYYY",
-        "kYkYkkkYkYkY",
-        "kYYYkYYYkYYY",
-        "kkkYkYkkkkkY",
-        "kkkYkYYYkYYY",
-        "kkkkkkkkkkkk",
-        "RRRRRRRRRRRR",
-        "............",
-    ], palette: base)
+    static let s429 = badge("429", border: Theme.neon, digit: Theme.gold)
+    /// 와일드 "200 OK"
+    static let ok200 = badge("200", border: Theme.green, digit: Theme.green)
+    /// 빈칸 "404" (흐릿한 유령)
+    static let nf404 = badge("404", border: Theme.line, digit: Theme.dim)
+    /// 글리치 "500"
+    static let err500 = badge("500", border: Theme.neon, digit: Theme.cream)
 
     static let blank = PixelSprite(rows: Array(repeating: "............", count: 12), palette: base)
 

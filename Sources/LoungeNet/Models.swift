@@ -43,18 +43,46 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
-/// 슬롯 한 판 결과. 릴 심볼: cherry, bell, bar, seven, 429, blank
+/// 슬롯 한 판 결과. 릴 심볼: cherry, bell, bar, seven, 429, 404, 200, 500
 public struct SlotResult: Codable, Sendable, Equatable {
+    /// 최종 릴 (500 리스핀 후)
     public let reels: [String]
+    /// 처음 멈춘 릴 (500이 있으면 그 자리가 리스핀됨)
+    public let initialReels: [String]
+    /// 500으로 리스핀된 릴 번호 (0부터)
+    public let glitched: [Int]
+    /// VIP HOUR 판 (429가 더 자주 나오는 릴)
+    public let vip: Bool
     public let multiplier: Int
     public let payout: Int64
     public let player: Player
 
-    public init(reels: [String], multiplier: Int, payout: Int64, player: Player) {
+    enum CodingKeys: String, CodingKey {
+        case reels, glitched, vip, multiplier, payout, player
+        case initialReels = "initial_reels"
+    }
+
+    public init(reels: [String], initialReels: [String]? = nil, glitched: [Int] = [], vip: Bool = false,
+                multiplier: Int, payout: Int64, player: Player) {
         self.reels = reels
+        self.initialReels = initialReels ?? reels
+        self.glitched = glitched
+        self.vip = vip
         self.multiplier = multiplier
         self.payout = payout
         self.player = player
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reels = try c.decode([String].self, forKey: .reels)
+        initialReels = try c.decodeIfPresent([String].self, forKey: .initialReels) ?? reels
+        // 서버는 1부터 센다
+        glitched = (try c.decodeIfPresent([Int].self, forKey: .glitched) ?? []).map { $0 - 1 }
+        vip = try c.decodeIfPresent(Bool.self, forKey: .vip) ?? false
+        multiplier = try c.decode(Int.self, forKey: .multiplier)
+        payout = try c.decode(Int64.self, forKey: .payout)
+        player = try c.decode(Player.self, forKey: .player)
     }
 }
 

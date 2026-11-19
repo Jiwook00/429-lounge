@@ -2,9 +2,12 @@ import Foundation
 import LoungeNet
 import Observation
 
-/// 슬롯 심볼. rawValue는 서버 값.
+/// 슬롯 심볼. rawValue는 서버 값. 과일은 돈, 상태 코드는 이벤트.
 enum SlotSymbol: String, CaseIterable {
-    case cherry, bell, bar, seven, s429 = "429", blank
+    case cherry, bell, bar, seven
+    case s429 = "429", ok200 = "200", nf404 = "404", err500 = "500"
+    /// 예전 결과 호환용
+    case blank
 
     var sprite: PixelSprite {
         switch self {
@@ -13,6 +16,9 @@ enum SlotSymbol: String, CaseIterable {
         case .bar: Sprites.bar
         case .seven: Sprites.seven
         case .s429: Sprites.s429
+        case .ok200: Sprites.ok200
+        case .nf404: Sprites.nf404
+        case .err500: Sprites.err500
         case .blank: Sprites.blank
         }
     }
@@ -23,15 +29,15 @@ enum SlotSymbol: String, CaseIterable {
         case .bell: "벨"
         case .bar: "BAR"
         case .seven: "7"
-        case .s429: "429"
         case .blank: "빈칸"
+        default: rawValue
         }
     }
 
     /// 화면에 보이는 릴 띠 순서 (위아래 이웃 심볼 연출용, 확률과는 무관 — 확률은 서버가 정한다)
     static let reelStrip: [SlotSymbol] = [
-        .cherry, .bell, .bar, .seven, .cherry, .blank, .bell, .s429,
-        .cherry, .bar, .bell, .blank, .seven, .cherry, .bell, .bar,
+        .cherry, .nf404, .bell, .bar, .seven, .nf404, .cherry, .err500, .bell, .s429,
+        .nf404, .cherry, .bar, .ok200, .bell, .nf404, .seven, .cherry, .bell, .nf404,
     ]
 
     static func neighbors(of s: SlotSymbol) -> (above: SlotSymbol, below: SlotSymbol) {
@@ -42,11 +48,26 @@ enum SlotSymbol: String, CaseIterable {
 }
 
 /// 슬롯머신 상태. 결과는 서버에서 바로 오지만, 화면에서는 릴이 차례로 멈추며 공개한다.
+///
+/// 타임라인 (revealAt 기준):
+///   0.7 / 1.15 / 1.6초에 릴이 처음 결과로 멈춤
+///   500이 있으면: +0.25초 뒤 글리치 0.55초 → 그 릴만 0.6초 다시 돌고 최종 심볼로 멈춤
 @MainActor @Observable
 final class SlotMachine {
+    enum ReelState {
+        case spinning
+        /// 멈춤. settled: 멈춘 지 지난 시간 (튕김 연출용)
+        case stopped(SlotSymbol, settled: TimeInterval)
+        /// 500 글리치 중
+        case glitching(SlotSymbol)
+    }
+
     var stake: Int64 = 50
     var useGolden = false
+    /// 최종 릴
     private(set) var reels: [SlotSymbol] = [.seven, .s429, .seven]
+    /// 처음 멈춘 릴 (500 포함)
+    private(set) var initialReels: [SlotSymbol] = [.seven, .s429, .seven]
     private(set) var result: SlotResult?
     private(set) var startedAt: Date?
     /// 결과를 받은 뒤 릴이 멈추기 시작하는 기준 시각
@@ -55,8 +76,10 @@ final class SlotMachine {
     /// 스핀 중 보여줄 잔액 (결과가 미리 드러나지 않게)
     private(set) var pendingChips: Int?
 
-    /// 각 릴이 멈추는 시각 (revealAt 기준)
     static let stopDelays: [TimeInterval] = [0.7, 1.15, 1.6]
+    static let glitchLead: TimeInterval = 0.25
+    static let glitchNoise: TimeInterval = 0.55
+    static let glitchRespin: TimeInterval = 0.6
 
     private let store: LoungeStore
 
@@ -64,8 +87,19 @@ final class SlotMachine {
         self.store = store
     }
 
+    var glitched: [Int] { result?.glitched ?? [] }
+
     func stopTime(_ reel: Int) -> Date? { revealAt?.addingTimeInterval(Self.stopDelays[reel]) }
-    var finishAt: Date? { stopTime(2) }
+
+    var glitchStart: Date? {
+        guard !glitched.isEmpty else { return nil }
+        return stopTime(2)?.addingTimeInterval(Self.glitchLead)
+    }
+
+    var finishAt: Date? {
+        if let g = glitchStart { return g.addingTimeInterval(Self.glitchNoise + Self.glitchRespin) }
+        return stopTime(2)
+    }
 
     func isSpinning(at now: Date) -> Bool {
         guard startedAt != nil else { return false }
@@ -73,7 +107,26 @@ final class SlotMachine {
         return now < end
     }
 
-    /// 릴이 멈춘 뒤의 승리 연출 단계
+    /// 500 글리치 ~ 리스핀 구간인지
+    func isGlitching(at t: Date) -> Bool {
+        guard let g = glitchStart, let end = finishAt else { return false }
+        return t >= g && t < end
+    }
+
+    func reelState(_ i: Int, at t: Date) -> ReelState {
+        guard startedAt != nil else { return .stopped(reels[i], settled: 1) }
+        guard let stop = stopTime(i), t >= stop else { return .spinning }
+        if glitched.contains(i), let g = glitchStart {
+            if t < g { return .stopped(initialReels[i], settled: t.timeIntervalSince(stop)) }
+            if t < g.addingTimeInterval(Self.glitchNoise) { return .glitching(initialReels[i]) }
+            let respunAt = g.addingTimeInterval(Self.glitchNoise + Self.glitchRespin)
+            if t < respunAt { return .spinning }
+            return .stopped(reels[i], settled: t.timeIntervalSince(respunAt))
+        }
+        return .stopped(reels[i], settled: t.timeIntervalSince(stop))
+    }
+
+    /// 릴이 다 멈춘 뒤의 승리 연출 단계
     var tier: WinTier? { result.flatMap { WinTier(multiplier: $0.multiplier) } }
 
     func spin() async {
@@ -89,10 +142,9 @@ final class SlotMachine {
 
         do {
             let r = try await store.net.spin(amount: amount, golden: golden)
-            result = r
+            apply(r)
             // 최소 0.25초는 돌게 해서 "당겼다"는 손맛을 남긴다
             revealAt = max(Date(), now.addingTimeInterval(0.25))
-            reels = r.reels.compactMap(SlotSymbol.init(rawValue:))
             if golden, store.golden() <= 1 { useGolden = false }
             let wait = finishAt?.timeIntervalSinceNow ?? 0
             try? await Task.sleep(for: .seconds(max(0, wait)))
@@ -105,23 +157,26 @@ final class SlotMachine {
         }
     }
 
-    // MARK: - Preview
-
-    func preview(result: SlotResult, finishedAgo: TimeInterval) {
-        self.result = result
-        reels = result.reels.compactMap(SlotSymbol.init(rawValue:))
-        let reveal = Date().addingTimeInterval(-finishedAgo - Self.stopDelays[2])
-        startedAt = reveal.addingTimeInterval(-0.25)
-        revealAt = reveal
+    private func apply(_ r: SlotResult) {
+        result = r
+        reels = r.reels.compactMap(SlotSymbol.init(rawValue:))
+        initialReels = r.initialReels.compactMap(SlotSymbol.init(rawValue:))
     }
 
-    func previewSpinning(stoppedReels: Int, result: SlotResult) {
-        self.result = result
-        reels = result.reels.compactMap(SlotSymbol.init(rawValue:))
-        // stoppedReels개가 막 멈춘 순간
-        let elapsed = stoppedReels == 0 ? 0.3 : Self.stopDelays[stoppedReels - 1] + 0.05
+    // MARK: - Preview
+
+    /// revealAt으로부터 `elapsed`초 지난 순간으로 맞춘다
+    func preview(result r: SlotResult, elapsed: TimeInterval, pending: Bool = false) {
+        apply(r)
         revealAt = Date().addingTimeInterval(-elapsed)
         startedAt = revealAt?.addingTimeInterval(-0.25)
-        pendingChips = store.chips - 50
+        if pending { pendingChips = store.chips - 50 }
+    }
+
+    /// 다 멈추고 `ago`초 지난 순간
+    func preview(result r: SlotResult, finishedAgo ago: TimeInterval) {
+        apply(r)
+        let total = Self.stopDelays[2] + (r.glitched.isEmpty ? 0 : Self.glitchLead + Self.glitchNoise + Self.glitchRespin)
+        preview(result: r, elapsed: total + ago)
     }
 }

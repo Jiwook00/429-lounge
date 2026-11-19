@@ -19,7 +19,8 @@ enum Snapshot {
 
         let content: AnyView
         if let table, table.hasPrefix("slot") {
-            content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips, golden: store.golden()))
+            content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
+                                       golden: store.golden(), vip: locked))
         } else if let table {
             content = AnyView(OddEvenView(table: fakeTable(store: store, me: me, mode: table), chips: store.chips, golden: store.golden()))
         } else {
@@ -98,7 +99,7 @@ enum Snapshot {
                 let before = store.chips
                 await machine.spin()
                 let r = machine.result
-                print("spin \(i): \(r?.reels.joined(separator: " ") ?? "-") ×\(r?.multiplier ?? -1) payout \(r?.payout ?? -1) · chips \(before) → \(store.chips) \(machine.message ?? "")")
+                print("spin \(i): \(r?.initialReels.joined(separator: " ") ?? "-") → \(r?.reels.joined(separator: " ") ?? "-") glitched \(r?.glitched ?? []) vip \(r?.vip ?? false) ×\(r?.multiplier ?? -1) payout \(r?.payout ?? -1) · chips \(before) → \(store.chips) \(machine.message ?? "")")
             }
             try? await Task.sleep(for: .seconds(0.4))
             write(AnyView(SlotView(machine: machine, chips: store.chips, golden: store.golden())), to: path)
@@ -156,18 +157,25 @@ enum Snapshot {
         return t
     }
 
-    /// mode: slot-idle | slot-spinning | slot-win | slot-big | slot-jackpot | slot-lose
+    /// mode: slot-idle | slot-spinning | slot-glitch | slot-win | slot-wild | slot-found | slot-big | slot-jackpot | slot-lose
     private static func fakeSlot(store: LoungeStore, me: Player, mode: String) -> SlotMachine {
         let m = SlotMachine(store: store)
-        func result(_ reels: [String], _ mult: Int) -> SlotResult {
-            SlotResult(reels: reels, multiplier: mult, payout: 50 * Int64(mult), player: me)
+        func result(_ reels: [String], _ mult: Int, initial: [String]? = nil, glitched: [Int] = []) -> SlotResult {
+            SlotResult(reels: reels, initialReels: initial, glitched: glitched, vip: true,
+                       multiplier: mult, payout: 50 * Int64(mult), player: me)
         }
         switch mode {
-        case "slot-spinning": m.previewSpinning(stoppedReels: 1, result: result(["bar", "bar", "bar"], 20))
+        case "slot-spinning": m.preview(result: result(["bar", "bar", "bar"], 20), elapsed: 0.75, pending: true)
+        case "slot-glitch":
+            // 세 릴이 멈추고 500 글리치가 한창인 순간
+            m.preview(result: result(["cherry", "bell", "cherry"], 3, initial: ["cherry", "bell", "500"], glitched: [2]),
+                      elapsed: 1.6 + 0.25 + 0.25, pending: true)
         case "slot-win": m.preview(result: result(["cherry", "bell", "cherry"], 3), finishedAgo: 0.35)
-        case "slot-big": m.preview(result: result(["bar", "bar", "bar"], 20), finishedAgo: 0.9)
+        case "slot-wild": m.preview(result: result(["bar", "200", "bar"], 20), finishedAgo: 0.35)
+        case "slot-found": m.preview(result: result(["404", "404", "404"], 4), finishedAgo: 0.35)
+        case "slot-big": m.preview(result: result(["seven", "seven", "seven"], 50), finishedAgo: 0.9)
         case "slot-jackpot": m.preview(result: result(["429", "429", "429"], 429), finishedAgo: 1.2)
-        case "slot-lose": m.preview(result: result(["seven", "bell", "blank"], 0), finishedAgo: 1)
+        case "slot-lose": m.preview(result: result(["seven", "404", "bell"], 0), finishedAgo: 1)
         default: break
         }
         return m

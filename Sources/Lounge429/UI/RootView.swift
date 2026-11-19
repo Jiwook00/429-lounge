@@ -35,7 +35,8 @@ struct RootView: View {
                 .onAppear { table.enter() }
                 .onDisappear { table.leave() } // 팝오버 닫으면 자리에서 일어남
             case .slot(let machine):
-                SlotView(machine: machine, chips: store.chips, golden: store.golden()) {
+                SlotView(machine: machine, chips: store.chips, golden: store.golden(),
+                         vip: (store.me?.goldenUntil ?? .distantPast) > .now) {
                     screen = .lounge
                 }
             }

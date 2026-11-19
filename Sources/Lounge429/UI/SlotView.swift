@@ -5,6 +5,8 @@ struct SlotView: View {
     @Bindable var machine: SlotMachine
     let chips: Int
     var golden: Int = 0
+    /// VIP HOUR (429 리셋 전): 릴에 429가 더 많다
+    var vip: Bool = false
     var onBack: () -> Void = {}
 
     /// 기계 안쪽 폭 292 = 릴 92 × 3 + 간격 8 × 2
@@ -63,7 +65,11 @@ struct SlotView: View {
             Spacer()
             Text("429 슬롯").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
             Spacer()
-            Text("SOLO").font(Fonts.small()).foregroundStyle(Theme.muted)
+            if vip {
+                Text("VIP · 429↑").font(Fonts.small()).foregroundStyle(Theme.gold).glow(Theme.gold)
+            } else {
+                Text("SOLO").font(Fonts.small()).foregroundStyle(Theme.muted)
+            }
         }
     }
 
@@ -119,21 +125,28 @@ struct SlotView: View {
         let rowH = Self.rowHeight
         var symbols: [SlotSymbol]
         var offset: CGFloat = -rowH
+        var jitter: CGFloat = 0
         var dimmed = false
+        var glitch = false
 
-        if let started = machine.startedAt, machine.stopTime(i).map({ t < $0 }) ?? true {
+        switch machine.reelState(i, at: t) {
+        case .spinning:
             // 굴러가는 중: 아래로 흐른다. 정수 pt 단위로만 움직인다.
+            let started = machine.startedAt ?? t
             let p = t.timeIntervalSince(started) * Self.rowsPerSecond + Double(i) * 0.37
             let base = Int(p)
             offset = -rowH + ((p - Double(base)) * rowH).rounded()
             symbols = (0..<4).map { strip[(base + 3 - $0 + i * 5) % n] }
             dimmed = true
-        } else {
-            let center = machine.reels[i]
+        case .stopped(let center, let settled):
             let (above, below) = SlotSymbol.neighbors(of: center)
             symbols = [below, above, center, below]
-            // 멈춘 직후 4pt 튕김
-            if let stop = machine.stopTime(i), t.timeIntervalSince(stop) < 0.08 { offset += 4 }
+            if settled < 0.08 { offset += 4 } // 멈춘 직후 4pt 튕김
+        case .glitching(let center):
+            let (above, below) = SlotSymbol.neighbors(of: center)
+            symbols = [below, above, center, below]
+            jitter = CGFloat((Int(t.timeIntervalSinceReferenceDate * 30) % 3) - 1) * 2
+            glitch = true
         }
 
         return VStack(spacing: 0) {
@@ -143,54 +156,58 @@ struct SlotView: View {
                     .opacity(row == 2 && !dimmed ? 1 : 0.4)
             }
         }
-        .offset(y: offset)
+        .offset(x: jitter, y: offset)
         .frame(width: Self.reelWidth, height: rowH * 3, alignment: .top)
+        .overlay { if glitch { GlitchNoise(seed: i, time: t) } }
         .clipped()
         .background(Theme.bg)
-        .overlay(Rectangle().strokeBorder(Theme.line, lineWidth: 2))
+        .overlay(Rectangle().strokeBorder(glitch ? Theme.neon : Theme.line, lineWidth: 2))
     }
 
     // MARK: - 결과 / 배당표 / 버튼
 
+    /// 결과를 HTTP 응답처럼: [상태 코드] [설명]
     private func resultLine(_ t: Date) -> some View {
-        let text: String
-        let color: Color
-        var shine = false
-        if machine.startedAt == nil {
-            text = "레버를 당겨요 · 체리 2개부터 당첨"; color = Theme.muted
-        } else if machine.isSpinning(at: t) {
-            text = "돌아가는 중…"; color = Theme.muted
-        } else if let r = machine.result {
-            switch r.multiplier {
-            case 2...:
-                text = "+\(r.payout.formatted(.number)) · \(combo(r)) ×\(r.multiplier)"; color = Theme.gold; shine = true
-            case 1:
-                text = "본전 · 429가 지켜줬어요"; color = Theme.cream
-            default:
-                text = "꽝 · 한 판 더?"; color = Theme.muted
-            }
-        } else {
-            text = " "; color = Theme.muted
+        let (code, codeColor, detail, detailColor) = response(t)
+        return HStack(spacing: 8) {
+            Text(code).font(Fonts.bold()).foregroundStyle(codeColor).glow(codeColor == Theme.muted ? .clear : codeColor)
+            Text(detail).font(Fonts.body()).foregroundStyle(detailColor)
         }
-        return Text(text)
-            .font(Fonts.body())
-            .foregroundStyle(color)
-            .glow(shine ? Theme.gold : .clear)
-            .frame(maxWidth: .infinity, minHeight: 18)
+        .frame(maxWidth: .infinity, minHeight: 18)
+    }
+
+    private func response(_ t: Date) -> (String, Color, String, Color) {
+        if machine.startedAt == nil { return ("GET /slot", Theme.muted, "체리 2개부터 200 OK", Theme.muted) }
+        if machine.isGlitching(at: t) { return ("500", Theme.neon, "Internal Server Error · 재시도…", Theme.neon) }
+        if machine.isSpinning(at: t) { return ("102", Theme.cyan, "Processing…", Theme.muted) }
+        guard let r = machine.result else { return (" ", Theme.muted, " ", Theme.muted) }
+        let won = "+\(r.payout.formatted(.number))"
+        let found = r.reels.allSatisfy { $0 == SlotSymbol.nf404.rawValue }
+        switch r.multiplier {
+        case 429...: return ("429", Theme.neon, "JACKPOT · \(won)", Theme.gold)
+        case _ where found: return ("404 → 200", Theme.green, "찾았다! · \(won)", Theme.gold)
+        case 10...: return ("201 Created", Theme.gold, "\(won) · \(combo(r)) ×\(r.multiplier)", Theme.gold)
+        case 2...: return ("200 OK", Theme.green, "\(won) · \(combo(r)) ×\(r.multiplier)", Theme.gold)
+        case 1: return ("304", Theme.cyan, "Not Modified · 본전", Theme.cream)
+        default: return ("404", Theme.dim, "Not Found · 꽝", Theme.muted)
+        }
     }
 
     private func combo(_ r: SlotResult) -> String {
         let s = r.reels.compactMap(SlotSymbol.init(rawValue:))
         if Set(s).count == 1, let first = s.first { return Array(repeating: first.label, count: 3).joined(separator: " ") }
         if s.filter({ $0 == .cherry }).count == 2 { return "체리 2개" }
+        if s.contains(.ok200) { return s.map(\.label).joined(separator: " ") }
         if s.filter({ $0 == .s429 }).count == 2 { return "429 두 개" }
         return s.map(\.label).joined(separator: " ")
     }
 
+    /// 배당표 3×4. count 0 = 개수 표시 없이 설명만 (기믹 심볼)
     private var paytable: some View {
         let rows: [[(SlotSymbol, Int, String)]] = [
             [(.s429, 3, "×429"), (.seven, 3, "×50"), (.bar, 3, "×20"), (.bell, 3, "×10")],
-            [(.cherry, 3, "×5"), (.cherry, 2, "×3"), (.s429, 2, "×3"), (.s429, 1, "×1")],
+            [(.ok200, 3, "×25"), (.cherry, 3, "×5"), (.cherry, 2, "×3"), (.nf404, 3, "×4")],
+            [(.s429, 2, "×3"), (.s429, 1, "×1"), (.ok200, 0, "와일드"), (.err500, 0, "리스핀")],
         ]
         return Grid(horizontalSpacing: 4, verticalSpacing: 6) {
             ForEach(0..<rows.count, id: \.self) { r in
@@ -200,9 +217,11 @@ struct SlotView: View {
                         let jackpot = symbol == .s429 && count == 3
                         HStack(spacing: 3) {
                             PixelView(sprite: symbol.sprite, scale: 1)
-                            Text("\(count)").font(Fonts.small()).foregroundStyle(Theme.dim)
+                            if count > 0 {
+                                Text("\(count)").font(Fonts.small()).foregroundStyle(Theme.dim)
+                            }
                             Text(pay).font(Fonts.small())
-                                .foregroundStyle(jackpot ? Theme.gold : Theme.cream)
+                                .foregroundStyle(jackpot ? Theme.gold : count == 0 ? Theme.muted : Theme.cream)
                                 .glow(jackpot ? Theme.gold : .clear)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -235,5 +254,28 @@ struct SlotView: View {
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.4)
         .keyboardShortcut(.space, modifiers: [])
+    }
+}
+
+/// 500 글리치: 릴 위로 번쩍이는 도트 노이즈 (프레임마다 바뀜)
+private struct GlitchNoise: View {
+    let seed: Int
+    let time: Date
+
+    var body: some View {
+        Canvas { ctx, size in
+            let frame = Int(time.timeIntervalSinceReferenceDate * 20)
+            let colors = [Theme.neon, Theme.cyan, Theme.cream, Theme.green]
+            for k in 0..<16 {
+                var x = UInt64(truncatingIfNeeded: frame &* 2654435761 &+ k &* 40503 &+ seed &* 9973)
+                x ^= x << 13; x ^= x >> 7; x ^= x << 17
+                let px = Double(x % UInt64(max(1, size.width - 8))).rounded()
+                let py = Double((x >> 16) % UInt64(max(1, size.height - 2))).rounded()
+                let w = Double(2 + (x >> 32) % 10)
+                let color = colors[Int((x >> 40) % UInt64(colors.count))]
+                ctx.fill(Path(CGRect(x: px, y: py, width: w, height: 2)), with: .color(color.opacity(0.85)))
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
