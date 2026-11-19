@@ -11,12 +11,21 @@ public struct LoungeConfig: Sendable {
         key: "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
     )
 
-    /// 환경변수 LOUNGE_SUPABASE_URL / LOUNGE_SUPABASE_KEY가 있으면 그걸, 없으면 로컬.
+    /// 운영 서버 (hi@dwook.co 조직, 서울). publishable 키라 공개돼도 된다. 쓰기는 RPC + RLS로만 열려 있다.
+    public static let remote = LoungeConfig(
+        url: URL(string: "https://sanozthsmcyxddnqrzkc.supabase.co")!,
+        key: "sb_publishable_99CDl77tNy1QLAKJOzfi7A_1tQVjvpC"
+    )
+
+    /// 우선순위: LOUNGE_SUPABASE_URL/KEY → LOUNGE_SERVER=remote 환경변수 → Info.plist의 LoungeServer → 로컬.
+    /// Finder로 띄운 .app엔 셸 환경변수가 안 넘어가서 배포 빌드는 Info.plist로 정한다.
     public static func load() -> LoungeConfig {
         let env = ProcessInfo.processInfo.environment
-        guard let url = env["LOUNGE_SUPABASE_URL"].flatMap(URL.init(string:)),
-              let key = env["LOUNGE_SUPABASE_KEY"] else { return .local }
-        return LoungeConfig(url: url, key: key)
+        if let url = env["LOUNGE_SUPABASE_URL"].flatMap(URL.init(string:)), let key = env["LOUNGE_SUPABASE_KEY"] {
+            return LoungeConfig(url: url, key: key)
+        }
+        let server = env["LOUNGE_SERVER"] ?? Bundle.main.object(forInfoDictionaryKey: "LoungeServer") as? String
+        return server == "remote" ? .remote : .local
     }
 }
 
