@@ -15,8 +15,11 @@ struct LoungeView: View {
 
     static let width: CGFloat = 340
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        // 0.1초 틱: 네온 깜빡임과 전구 띠용. 팝오버가 열려 있을 때만 그려진다.
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let lock = snapshot.activeLock(at: context.date)
             VStack(spacing: 12) {
                 header(locked: lock != nil, now: context.date)
@@ -35,16 +38,21 @@ struct LoungeView: View {
 
     // MARK: - Sections
 
-    /// 네온 간판 + 위아래 전구 띠. VIP HOUR에는 전구가 1초마다 한 칸씩 흐른다.
+    /// 네온 간판 + 위아래 전구 띠 (DESIGN.md §10)
     private func header(locked: Bool, now: Date) -> some View {
-        let chase = locked ? Int(now.timeIntervalSince1970) % 3 : 0
+        let t = now.timeIntervalSinceReferenceDate
+        // 전구: 평소 0.5초, VIP HOUR 0.25초마다 한 칸씩 흐른다
+        let chase = reduceMotion ? 0 : Int(t / (locked ? 0.25 : 0.5)) % 3
+        let sign = reduceMotion ? Neon.on : Neon.sign(at: t)
         return VStack(spacing: 6) {
             bulbs(offset: chase)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("429")
-                    .font(Fonts.bold(2))
-                    .foregroundStyle(Theme.neon)
-                    .glow(Theme.neon, radius: 5, strong: true)
+                HStack(spacing: 0) {
+                    neonDigit("4", sign)
+                    neonDigit("2", sign)
+                    // 접촉 불량인 마지막 관: 간판 전체 깜빡임 + 혼자 한 번 더
+                    neonDigit("9", reduceMotion ? sign : min(sign, Neon.brokenTube(at: t)))
+                }
                 Text("LOUNGE")
                     .font(Fonts.bold())
                     .foregroundStyle(Theme.cyan)
@@ -63,6 +71,13 @@ struct LoungeView: View {
         }
     }
 
+    private func neonDigit(_ digit: String, _ level: Neon) -> some View {
+        Text(digit)
+            .font(Fonts.bold(2))
+            .foregroundStyle(Theme.neon.opacity(level.opacity))
+            .glow(level == .on ? Theme.neon : .clear, radius: 5, strong: true)
+    }
+
     private func bulbs(offset: Int) -> some View {
         // 5pt 전구 + 4pt 간격 × 35개 = 311pt (안쪽 폭 312pt), 왼쪽 정렬로 정수 좌표 유지
         HStack(spacing: 4) {
@@ -71,6 +86,7 @@ struct LoungeView: View {
                 Rectangle()
                     .fill(phase == 0 ? Theme.gold : phase == 1 ? Theme.bulbOff : Theme.neon)
                     .frame(width: 5, height: 5)
+                    .glow(phase == 0 ? Theme.gold : .clear, radius: 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -187,6 +203,37 @@ private struct GameTile: View {
                 .padding(.horizontal, 3)
                 .background(Theme.muted)
                 .padding(6) }
+        }
+    }
+}
+
+/// 네온관 밝기. 0.1초 단위 패턴으로 "치지직" 깜빡임을 만든다.
+enum Neon: Int, Comparable {
+    case off, dim, on
+
+    static func < (a: Neon, b: Neon) -> Bool { a.rawValue < b.rawValue }
+
+    var opacity: Double {
+        switch self {
+        case .off: 0.18
+        case .dim: 0.5
+        case .on: 1
+        }
+    }
+
+    /// 간판 전체: 4.7초 주기, 앞쪽에 짧게 두 번 꺼졌다 켜지고 한 번 흐려짐
+    private static let signPattern = Array("._.-..oooooooooooooooooooooooooooooooooooooooo")
+    /// "9" 혼자: 3.1초 주기 (간판 주기와 어긋나서 반복이 덜 티 난다)
+    private static let tubePattern = Array("ooooooooooooooooooooooo-.o-oooo")
+
+    static func sign(at t: TimeInterval) -> Neon { level(signPattern, t) }
+    static func brokenTube(at t: TimeInterval) -> Neon { level(tubePattern, t) }
+
+    private static func level(_ pattern: [Character], _ t: TimeInterval) -> Neon {
+        switch pattern[Int(t * 10) % pattern.count] {
+        case ".": .off
+        case "-", "_": .dim
+        default: .on
         }
     }
 }
