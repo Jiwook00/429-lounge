@@ -1,10 +1,9 @@
 # 429 Lounge
 
 Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
-대상: Claude Code 사용자 (1차).
+대상: Claude Code 사용자 (1차). 개요는 [README.md](README.md), 디자인은 [DESIGN.md](DESIGN.md), 결정 기록은 [docs/madr/](docs/madr/).
 
-> **앱을 "설치"해 달라는 요청이면** 개발 환경(Supabase, swift build)을 세우지 말고 README의 설치 명령(`scripts/install.sh`)만 실행한다. 아래 내용은 개발용이다.
- 개요는 [README.md](README.md), 디자인은 [DESIGN.md](DESIGN.md), 결정 기록은 [docs/madr/](docs/madr/).
+> **앱을 "설치"해 달라는 요청이면** 개발 환경(Supabase, swift build)을 세우지 말고 [docs/install.md](docs/install.md)를 따른다. 아래 내용은 개발용이다.
 
 ## 명령어
 

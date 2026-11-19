@@ -8,24 +8,34 @@ Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 �
 
 - 빌드나 Claude 답변을 기다리는 **10~30초짜리 틈**에 한 판
 - 코딩하는 만큼 메뉴바의 칩이 오른다
-- 리밋(429)에 걸리면 짜증 대신 **VIP HOUR**. 리셋 전까지 쓸 수 있는 황금 칩을 준다
+- 리밋(429)에 걸리면 **VIP HOUR**. 리셋 전까지 쓸 수 있는 황금 칩을 준다
 
-> 프로토타입 단계. 초대된 회원과 먼저 운영해 보고 공개 여부를 정한다. 백엔드는 Supabase(서울), 개발은 로컬 Docker.
+> 프로토타입 단계.
+
+## 설치
+
+**Claude Code에 붙여 넣기(추천):**
+
+```
+https://raw.githubusercontent.com/Jiwook00/429-lounge/main/docs/install.md 읽고 그대로 429 Lounge 설치해줘
+```
+
+또는 직접 설치 - macOS 14 이상. 터미널에 한 줄:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/install.sh | bash
+```
+
+최신 [릴리스](https://github.com/Jiwook00/429-lounge/releases/latest)를 받아 `/Applications`에 넣고 실행한다. 업데이트도 같은 명령.
+
+- 메뉴바에 칩 아이콘과 숫자가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다
+- 처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기"
+- 칩은 `~/.claude/projects`의 Claude Code 로그에서 토큰 사용량만 읽어서 계산한다. 대화 내용은 서버로 보내지 않는다
+- 지우기: `rm -rf "/Applications/429 Lounge.app" ~/Library/Application\ Support/429Lounge`
+
+릴리스 zip을 직접 받았다면 ad-hoc 서명이라 Gatekeeper가 막는다. `xattr -dr com.apple.quarantine "/Applications/429 Lounge.app"` 후 실행.
 
 ## 기능
-
-|                                                             | 상태 |
-| ----------------------------------------------------------- | ---- |
-| Claude Code 로그에서 오늘/5시간 토큰 사용량, 429 리밋 감지  | ✅   |
-| 메뉴바 칩 아이콘 + 라스베가스 네온 도트 그래픽 팝오버       | ✅   |
-| 칩 경제: 토큰 환전, 출근 도장, 파산 구제, 황금 칩           | ✅   |
-| **구슬 홀짝** (실시간 멀티 테이블, 15초 라운드)             | ✅   |
-| **429 슬롯** (500 글리치, 응답 코드, 잭팟 ×429) + 승리 연출 | ✅   |
-| 블랙잭 (솔로 / 테이블)                                      | ⏳   |
-| 룰렛 (테이블)                                               | ⏳   |
-| 닉네임 (처음엔 손님, 라운지 전체에서 하나뿐)                | ✅   |
-| 원격 서버 배포 (초대 회원용 zip)                            | ✅   |
-| 방 코드, 회원 목록                                          | ⏳   |
 
 ### 칩
 
@@ -48,23 +58,6 @@ SPIN은 요청, 결과는 HTTP 응답.
 - **500** 이 뜨면 그 릴이 치지직 깨지고 다시 돈다
 - **429 세 개 = ×429 잭팟**. 실제로 리밋에 걸린 VIP HOUR엔 429가 더 자주 나온다
 - 결과는 `200 OK`, `304 Not Modified`, `404 Not Found`처럼 응답 코드로 표시
-
-## 설치
-
-macOS 14 이상. 터미널에 한 줄:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/install.sh | bash
-```
-
-최신 [릴리스](https://github.com/Jiwook00/429-lounge/releases/latest)를 받아 `/Applications`에 넣고 실행한다. 업데이트도 같은 명령. Claude Code에게 "이 레포 설치해줘"라고 해도 이 명령을 쓴다.
-
-- 메뉴바에 칩 아이콘과 숫자가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다
-- 처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기"
-- 칩은 `~/.claude/projects`의 Claude Code 로그에서 토큰 사용량만 읽어서 계산한다. 대화 내용은 서버로 보내지 않는다
-- 지우기: `rm -rf "/Applications/429 Lounge.app" ~/Library/Application\ Support/429Lounge`
-
-릴리스 zip을 직접 받았다면 ad-hoc 서명이라 Gatekeeper가 막는다. `xattr -dr com.apple.quarantine "/Applications/429 Lounge.app"` 후 실행.
 
 ## 개발 환경
 
@@ -102,10 +95,10 @@ supabase db reset                                      # 마이그레이션 전�
 ```
 
 | 환경변수                                     |                                          |
-| -------------------------------------------- | ---------------------------------------- |
+| -------------------------------------------- | ---------------------------------------- | ----------------------------------- |
 | `LOUNGE_FAKE_429=1`                          | 가짜 429 상태로 실행 (VIP HOUR, 황금 칩) |
 | `LOUNGE_DEBUG=1`                             | Realtime 이벤트 로그                     |
-| `LOUNGE_E2E_BET=golden\|chips`               | `--table live` 스냅샷에서 자동 베팅      |
+| `LOUNGE_E2E_BET=golden                       | chips`                                   | `--table live` 스냅샷에서 자동 베팅 |
 | `LOUNGE_SERVER=remote`                       | 운영 서버(`LoungeConfig.remote`) 사용    |
 | `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` | 임의의 Supabase 사용 (가장 우선)         |
 
