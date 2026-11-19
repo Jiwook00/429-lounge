@@ -37,6 +37,14 @@ swift test
 .build/debug/Lounge429 --snapshot out.png --table live     # 홀짝 (실서버 접속 8초 후)
 ```
 
+개발용 환경변수:
+
+- `LOUNGE_FAKE_429=1`: 가짜 429 상태로 실행 (VIP HOUR, 황금 칩 지급 확인용)
+- `LOUNGE_DEBUG=1`: Realtime 이벤트 로그
+- `LOUNGE_E2E_BET=golden|chips`: `--table live` 스냅샷에서 베팅 자동 실행
+
+칩 규칙은 [docs/chip-economy.md](docs/chip-economy.md).
+
 원격 Supabase를 쓰려면 `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` 환경변수.
 
 ## 크레딧

@@ -8,7 +8,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if let table {
-                OddEvenView(table: table, chips: store.chips) {
+                OddEvenView(table: table, chips: store.chips, golden: store.golden()) {
                     table.leave()
                     self.table = nil
                 }
@@ -19,6 +19,8 @@ struct RootView: View {
                     snapshot: store.snapshot,
                     lastScan: store.lastScan,
                     chips: store.chips,
+                    golden: store.golden(),
+                    toast: store.toast,
                     online: store.me != nil,
                     onOddEven: { table = OddEvenTable(store: store) },
                     onRefresh: { Task { await store.refresh() } },

@@ -24,6 +24,8 @@ final class OddEvenTable {
     private(set) var message: String?
     private(set) var placing = false
     var stake: Int64 = 50
+    /// 황금 칩(공짜 100칩)으로 걸기
+    var useGolden = false
 
     static let stakes: [Int64] = [10, 50, 100, 500]
 
@@ -74,7 +76,9 @@ final class OddEvenTable {
         placing = true
         defer { placing = false }
         do {
-            let bet = try await store.net.bet(room: room, side: side, amount: stake)
+            let golden = useGolden && store.golden() > 0
+            let bet = try await store.net.bet(room: room, side: side, amount: golden ? 100 : stake, golden: golden)
+            if store.golden() <= 1 { useGolden = false }
             upsert(bet)
             message = nil
             await store.refreshMe()

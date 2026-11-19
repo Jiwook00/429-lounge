@@ -10,12 +10,43 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     public let id: UUID
     public let name: String
     public let chips: Int64
+    public let goldenChips: Int
+    /// 황금 칩 소멸 시각 (= 429 리셋 시각)
+    public let goldenUntil: Date?
 
-    public init(id: UUID, name: String, chips: Int64) {
+    enum CodingKeys: String, CodingKey {
+        case id, name, chips
+        case goldenChips = "golden_chips", goldenUntil = "golden_until"
+    }
+
+    public init(id: UUID, name: String, chips: Int64, goldenChips: Int = 0, goldenUntil: Date? = nil) {
         self.id = id
         self.name = name
         self.chips = chips
+        self.goldenChips = goldenChips
+        self.goldenUntil = goldenUntil
     }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        chips = try c.decode(Int64.self, forKey: .chips)
+        goldenChips = try c.decodeIfPresent(Int.self, forKey: .goldenChips) ?? 0
+        goldenUntil = try c.decodeIfPresent(Date.self, forKey: .goldenUntil)
+    }
+
+    /// 지금 쓸 수 있는 황금 칩 개수 (만료됐으면 0)
+    public func golden(at now: Date = .now) -> Int {
+        guard let until = goldenUntil, until > now else { return 0 }
+        return goldenChips
+    }
+}
+
+/// 칩 지급 RPC 결과
+public struct Grant: Codable, Sendable {
+    public let granted: Int64
+    public let player: Player
 }
 
 public struct Round: Codable, Sendable, Identifiable, Equatable {
@@ -52,20 +83,37 @@ public struct Bet: Codable, Sendable, Equatable {
     public let amount: Int64
     /// 정산 후 채워짐. 0이면 짐.
     public let payout: Int64?
+    /// 황금 칩(공짜 100칩) 베팅
+    public let golden: Bool
 
     enum CodingKeys: String, CodingKey {
-        case side, amount, payout
+        case side, amount, payout, golden
         case roundId = "round_id", roomCode = "room_code", playerId = "player_id"
     }
 
-    public init(roundId: Int64, roomCode: String, playerId: UUID, side: Side, amount: Int64, payout: Int64?) {
+    public init(roundId: Int64, roomCode: String, playerId: UUID, side: Side, amount: Int64, payout: Int64?, golden: Bool = false) {
         self.roundId = roundId
         self.roomCode = roomCode
         self.playerId = playerId
         self.side = side
         self.amount = amount
         self.payout = payout
+        self.golden = golden
     }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        roundId = try c.decode(Int64.self, forKey: .roundId)
+        roomCode = try c.decode(String.self, forKey: .roomCode)
+        playerId = try c.decode(UUID.self, forKey: .playerId)
+        side = try c.decode(Side.self, forKey: .side)
+        amount = try c.decode(Int64.self, forKey: .amount)
+        payout = try c.decodeIfPresent(Int64.self, forKey: .payout)
+        golden = try c.decodeIfPresent(Bool.self, forKey: .golden) ?? false
+    }
+
+    /// 실제로 잃은 칩 (황금 칩 베팅은 0)
+    public var cost: Int64 { golden ? 0 : amount }
 }
 
 /// 테이블에 앉아 있는 사람 (Realtime Presence)

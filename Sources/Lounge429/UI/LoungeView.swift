@@ -6,6 +6,8 @@ struct LoungeView: View {
     let snapshot: UsageSnapshot
     let lastScan: Date?
     var chips: Int
+    var golden: Int = 0
+    var toast: LoungeStore.Toast?
     var online: Bool = false
     var onOddEven: () -> Void = {}
     var onRefresh: () -> Void = {}
@@ -20,6 +22,7 @@ struct LoungeView: View {
                 header(locked: lock != nil)
                 wallet
                 if let lock { vipBanner(lock, now: context.date) }
+                if let toast { toastView(toast) }
                 games
                 footer
             }
@@ -58,11 +61,17 @@ struct LoungeView: View {
                 Text(chips.formatted(.number))
                     .font(Fonts.mono(2))
                     .foregroundStyle(Theme.gold)
-                Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok · 5h \(snapshot.last5h.fresh.formatted(.number))")
+                Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok → +\((snapshot.today.fresh / 1_000).formatted(.number))칩")
                     .font(Fonts.small())
                     .foregroundStyle(Theme.muted)
             }
             Spacer(minLength: 0)
+            if golden > 0 {
+                VStack(spacing: 2) {
+                    PixelView(sprite: Sprites.goldChip, scale: 2)
+                    Text("×\(golden)").font(Fonts.mono()).foregroundStyle(Theme.gold)
+                }
+            }
         }
         .padding(12)
         .pixelBox()
@@ -77,11 +86,22 @@ struct LoungeView: View {
                     .foregroundStyle(Theme.gold)
                 Text("리셋까지 \(Self.countdown(lock.resetsAt.timeIntervalSince(now))) · 황금 칩 타임")
                     .font(Fonts.small())
+                Text(golden > 0 ? "황금 칩 \(golden)개 = 공짜 100칩 베팅 \(golden)번" : "황금 칩을 다 썼어요")
+                    .font(Fonts.small())
+                    .foregroundStyle(Theme.muted)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
         .pixelBox(fill: Color(hex: 0x2E2412), border: Theme.gold)
+    }
+
+    private func toastView(_ t: LoungeStore.Toast) -> some View {
+        Text(t.text)
+            .font(Fonts.body())
+            .foregroundStyle(t.golden ? Theme.bg : Theme.gold)
+            .frame(maxWidth: .infinity, minHeight: 26)
+            .pixelBox(fill: t.golden ? Theme.gold : Color(hex: 0x2E2412), border: Theme.gold)
     }
 
     private var games: some View {

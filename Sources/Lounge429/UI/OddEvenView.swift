@@ -4,6 +4,7 @@ import SwiftUI
 struct OddEvenView: View {
     @Bindable var table: OddEvenTable
     let chips: Int
+    var golden: Int = 0
     var onBack: () -> Void = {}
 
     var body: some View {
@@ -46,6 +47,10 @@ struct OddEvenView: View {
         HStack(spacing: 6) {
             PixelView(sprite: Sprites.chip, scale: 1)
             Text(chips.formatted(.number)).font(Fonts.mono()).foregroundStyle(Theme.gold)
+            if golden > 0 {
+                PixelView(sprite: Sprites.goldChip, scale: 1)
+                Text("×\(golden)").font(Fonts.mono()).foregroundStyle(Theme.gold)
+            }
             Spacer()
             if let m = table.message {
                 Text(m).font(Fonts.small()).foregroundStyle(Theme.neon)
@@ -133,10 +138,11 @@ struct OddEvenView: View {
                         .foregroundStyle(bet.playerId == table.myID ? Theme.gold : Theme.cream)
                         .lineLimit(1)
                     Spacer()
+                    if bet.golden { PixelView(sprite: Sprites.goldChip, scale: 1) }
                     sideTag(bet.side)
                     Text(bet.amount.formatted(.number)).font(Fonts.mono()).frame(width: 44, alignment: .trailing)
                     if showingResult, let payout = bet.payout {
-                        Text(payout > 0 ? "+\(payout)" : "-\(bet.amount)")
+                        Text(payout > 0 ? "+\(payout)" : bet.cost == 0 ? "±0" : "-\(bet.cost)")
                             .font(Fonts.mono())
                             .foregroundStyle(payout > 0 ? Theme.green : Theme.muted)
                             .frame(width: 52, alignment: .trailing)
@@ -166,21 +172,35 @@ struct OddEvenView: View {
         return VStack(spacing: 8) {
             HStack(spacing: 6) {
                 ForEach(OddEvenTable.stakes, id: \.self) { s in
-                    Button { table.stake = s } label: {
+                    let selected = !goldenSelected && table.stake == s
+                    Button { table.stake = s; table.useGolden = false } label: {
                         Text(s.formatted(.number))
                             .font(Fonts.mono())
-                            .foregroundStyle(table.stake == s ? Theme.bg : Theme.cream)
+                            .foregroundStyle(selected ? Theme.bg : Theme.cream)
                             .frame(maxWidth: .infinity, minHeight: 22)
-                            .pixelBox(fill: table.stake == s ? Theme.gold : Theme.panel,
-                                      border: table.stake == s ? Theme.gold : Theme.line)
+                            .pixelBox(fill: selected ? Theme.gold : Theme.panel,
+                                      border: selected ? Theme.gold : Theme.line)
                     }
                     .buttonStyle(.plain)
                     .disabled(Int64(chips) < s)
                     .opacity(Int64(chips) < s ? 0.4 : 1)
                 }
+                if golden > 0 {
+                    Button { table.useGolden.toggle() } label: {
+                        HStack(spacing: 3) {
+                            PixelView(sprite: Sprites.goldChip, scale: 1)
+                            Text("×\(golden)").font(Fonts.mono())
+                        }
+                        .foregroundStyle(goldenSelected ? Theme.bg : Theme.gold)
+                        .frame(maxWidth: .infinity, minHeight: 22)
+                        .pixelBox(fill: goldenSelected ? Theme.gold : Color(hex: 0x2E2412), border: Theme.gold)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             if let mine = table.myBet {
-                Text("\(mine.side.label)에 \(mine.amount) 걸었어요 · 결과를 기다리는 중")
+                Text(mine.golden ? "황금 칩으로 \(mine.side.label)에 100 · 결과를 기다리는 중"
+                                 : "\(mine.side.label)에 \(mine.amount) 걸었어요 · 결과를 기다리는 중")
                     .font(Fonts.small()).foregroundStyle(Theme.gold)
                     .frame(maxWidth: .infinity, minHeight: 36)
                     .pixelBox(fill: Color(hex: 0x2E2412), border: Theme.gold)
@@ -192,6 +212,8 @@ struct OddEvenView: View {
             }
         }
     }
+
+    private var goldenSelected: Bool { table.useGolden && golden > 0 }
 
     private func betButton(_ side: Side, enabled: Bool) -> some View {
         Button {

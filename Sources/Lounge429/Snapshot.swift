@@ -12,13 +12,14 @@ enum Snapshot {
             usage.lastLimitHit = RateLimitHit(
                 hitAt: .now, resetsAt: .now.addingTimeInterval(2 * 3600 + 13 * 60), type: "five_hour")
         }
-        let me = Player(id: UUID(), name: "danny", chips: 1_250)
+        let me = Player(id: UUID(), name: "danny", chips: 1_250,
+                        goldenChips: locked ? 3 : 0, goldenUntil: usage.lastLimitHit?.resetsAt)
         let store = LoungeStore(live: false)
-        store.preview(me: me, snapshot: usage)
+        store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
 
         let content: AnyView
         if let table {
-            content = AnyView(OddEvenView(table: fakeTable(store: store, me: me, mode: table), chips: store.chips))
+            content = AnyView(OddEvenView(table: fakeTable(store: store, me: me, mode: table), chips: store.chips, golden: store.golden()))
         } else {
             content = AnyView(VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
@@ -28,7 +29,8 @@ enum Snapshot {
                 }
                 .padding(6)
                 .background(Color(white: 0.75))
-                LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, online: true)
+                LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
+                           toast: store.toast, online: true)
             })
         }
 
@@ -54,12 +56,26 @@ enum Snapshot {
                 print("connect failed: \(store.netError ?? "?")")
                 exit(1)
             }
-            print("signed in as \(me.name) · chips \(me.chips)")
+            print("signed in as \(me.name) · chips \(me.chips) · toast \(store.toast?.text ?? "-")")
+            await store.refresh() // 토큰 환전 + (LOUNGE_FAKE_429면) 황금 칩
+            print("after claim · chips \(store.chips) · golden \(store.golden()) · toast \(store.toast?.text ?? "-")")
             let table = OddEvenTable(store: store)
             table.enter()
+            // LOUNGE_E2E_BET=golden|chips → 베팅이 열리면 홀에 건다
+            if let mode = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"] {
+                while table.myBet == nil {
+                    if case .betting(let left) = table.phase(at: .now), left > 1 {
+                        table.useGolden = mode == "golden"
+                        await table.place(.odd)
+                        print("bet → \(table.myBet.map { "\($0.side) \($0.amount) golden=\($0.golden)" } ?? table.message ?? "?") · chips \(store.chips) · golden \(store.golden())")
+                        if table.myBet == nil { break }
+                    }
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
+            }
             try? await Task.sleep(for: .seconds(seconds))
             print("round \(table.round?.id ?? -1) · bets \(table.bets.count) · seats \(table.seats.map(\.name)) · last \(table.last?.marbles ?? -1)")
-            write(AnyView(OddEvenView(table: table, chips: store.chips)), to: path)
+            write(AnyView(OddEvenView(table: table, chips: store.chips, golden: store.golden())), to: path)
             table.leave()
             exit(0)
         }
@@ -89,7 +105,7 @@ enum Snapshot {
         let lastBets = [
             Bet(roundId: 41, roomCode: "LOUNGE", playerId: me.id, side: .odd, amount: 100, payout: 200),
             Bet(roundId: 41, roomCode: "LOUNGE", playerId: friends[0].id, side: .even, amount: 50, payout: 0),
-            Bet(roundId: 41, roomCode: "LOUNGE", playerId: friends[1].id, side: .odd, amount: 10, payout: 20),
+            Bet(roundId: 41, roomCode: "LOUNGE", playerId: friends[1].id, side: .even, amount: 100, payout: 0, golden: true),
         ]
         if mode == "reveal" {
             let next = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(2),

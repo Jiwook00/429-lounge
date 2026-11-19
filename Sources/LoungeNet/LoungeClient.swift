@@ -29,6 +29,7 @@ public enum LoungeError: LocalizedError {
         case .server("already_bet"): "이번 판엔 이미 걸었어요"
         case .server("insufficient_chips"): "칩이 부족해요"
         case .server("invalid_amount"): "베팅 금액이 이상해요"
+        case .server("no_golden"): "쓸 수 있는 황금 칩이 없어요"
         case .server(let m): m
         }
     }
@@ -85,6 +86,28 @@ public final class LoungeClient: Sendable {
         return try await supabase.from("players").select().in("id", values: ids).execute().value
     }
 
+    // MARK: - 칩 경제 (docs/chip-economy.md)
+
+    /// 하루 한 번 출근 도장 (+100, 잔액 100 미만이면 +300)
+    public func dailyBonus() async throws -> Grant {
+        try await supabase.rpc("daily_bonus").execute().value
+    }
+
+    /// 오늘(로컬 날짜) 누적 fresh 토큰을 보내면 아직 안 받은 만큼만 칩으로 받는다
+    public func claimTokens(day: Date, fresh: Int) async throws -> Grant {
+        struct Params: Encodable { let p_day: String; let p_fresh: Int }
+        let d = Calendar.current.dateComponents([.year, .month, .day], from: day)
+        let iso = String(format: "%04d-%02d-%02d", d.year!, d.month!, d.day!)
+        return try await supabase.rpc("claim_tokens", params: Params(p_day: iso, p_fresh: fresh)).execute().value
+    }
+
+    /// 429 한 건당 한 번 황금 칩
+    public func claimGolden(resetsAt: Date, type: String) async throws -> Grant {
+        struct Params: Encodable { let p_resets_at: String; let p_type: String }
+        let params = Params(p_resets_at: resetsAt.formatted(.iso8601), p_type: type)
+        return try await supabase.rpc("claim_golden", params: params).execute().value
+    }
+
     // MARK: - 홀짝
 
     public func tick(room: String) async throws -> Round {
@@ -93,11 +116,11 @@ public final class LoungeClient: Sendable {
         } catch { throw LoungeError.wrap(error) }
     }
 
-    public func bet(room: String, side: Side, amount: Int64) async throws -> Bet {
-        struct Params: Encodable { let p_room: String; let p_side: String; let p_amount: Int64 }
+    public func bet(room: String, side: Side, amount: Int64, golden: Bool = false) async throws -> Bet {
+        struct Params: Encodable { let p_room: String; let p_side: String; let p_amount: Int64; let p_golden: Bool }
         do {
             return try await supabase
-                .rpc("oddeven_bet", params: Params(p_room: room, p_side: side.rawValue, p_amount: amount))
+                .rpc("oddeven_bet", params: Params(p_room: room, p_side: side.rawValue, p_amount: amount, p_golden: golden))
                 .execute().value
         } catch { throw LoungeError.wrap(error) }
     }
