@@ -18,7 +18,9 @@ enum Snapshot {
         store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
 
         let content: AnyView
-        if let table {
+        if let table, table.hasPrefix("slot") {
+            content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips, golden: store.golden()))
+        } else if let table {
             content = AnyView(OddEvenView(table: fakeTable(store: store, me: me, mode: table), chips: store.chips, golden: store.golden()))
         } else {
             content = AnyView(VStack(alignment: .leading, spacing: 8) {
@@ -84,6 +86,28 @@ enum Snapshot {
         NSApplication.shared.run()
     }
 
+    /// 실서버에서 슬롯을 `spins`번 돌리고 마지막 화면을 찍는다
+    static func renderSlotLive(to path: String, spins: Int) {
+        Task { @MainActor in
+            let store = LoungeStore(live: false)
+            await store.connect()
+            guard store.me != nil else { print("connect failed"); exit(1) }
+            let machine = SlotMachine(store: store)
+            machine.stake = 10
+            for i in 1...spins {
+                let before = store.chips
+                await machine.spin()
+                let r = machine.result
+                print("spin \(i): \(r?.reels.joined(separator: " ") ?? "-") ×\(r?.multiplier ?? -1) payout \(r?.payout ?? -1) · chips \(before) → \(store.chips) \(machine.message ?? "")")
+            }
+            try? await Task.sleep(for: .seconds(0.4))
+            write(AnyView(SlotView(machine: machine, chips: store.chips, golden: store.golden())), to: path)
+            exit(0)
+        }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+    }
+
     private static func write(_ content: AnyView, to path: String) {
         let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)))
         renderer.scale = 2
@@ -98,7 +122,7 @@ enum Snapshot {
     private static func fakeTable(store: LoungeStore, me: Player, mode: String) -> OddEvenTable {
         let now = Date()
         let crowd = mode.hasPrefix("crowd")
-        let revealing = mode.hasSuffix("reveal")
+        let revealing = mode.hasSuffix("reveal") || mode.hasSuffix("won")
         // (이름, 쪽, 금액). 첫 줄은 나.
         let plan: [(String, Side, Int64)] = crowd
             ? [("나", .odd, 100), ("민수", .odd, 500), ("예린", .even, 500), ("지호", .odd, 380),
@@ -116,8 +140,10 @@ enum Snapshot {
         }
 
         let t = OddEvenTable(store: store)
-        let last = Round(id: 41, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-18),
-                         closesAt: now.addingTimeInterval(-3), marbles: 7, settledAt: now.addingTimeInterval(-3))
+        // "won": 구슬 7개가 다 나오고 0.5초 뒤 (승리 연출 중)
+        let closedAgo = mode.hasSuffix("won") ? 7 * 0.18 + 0.6 : 3
+        let last = Round(id: 41, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-15 - closedAgo),
+                         closesAt: now.addingTimeInterval(-closedAgo), marbles: 7, settledAt: now.addingTimeInterval(-closedAgo))
         if revealing {
             let next = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(2),
                              closesAt: now.addingTimeInterval(17), marbles: nil, settledAt: nil)
@@ -128,5 +154,22 @@ enum Snapshot {
             t.preview(round: current, bets: bets(round: 42, settled: nil), last: last, lastBets: [], seats: seats)
         }
         return t
+    }
+
+    /// mode: slot-idle | slot-spinning | slot-win | slot-big | slot-jackpot | slot-lose
+    private static func fakeSlot(store: LoungeStore, me: Player, mode: String) -> SlotMachine {
+        let m = SlotMachine(store: store)
+        func result(_ reels: [String], _ mult: Int) -> SlotResult {
+            SlotResult(reels: reels, multiplier: mult, payout: 50 * Int64(mult), player: me)
+        }
+        switch mode {
+        case "slot-spinning": m.previewSpinning(stoppedReels: 1, result: result(["bar", "bar", "bar"], 20))
+        case "slot-win": m.preview(result: result(["cherry", "bell", "cherry"], 3), finishedAgo: 0.35)
+        case "slot-big": m.preview(result: result(["bar", "bar", "bar"], 20), finishedAgo: 0.9)
+        case "slot-jackpot": m.preview(result: result(["429", "429", "429"], 429), finishedAgo: 1.2)
+        case "slot-lose": m.preview(result: result(["seven", "bell", "blank"], 0), finishedAgo: 1)
+        default: break
+        }
+        return m
     }
 }

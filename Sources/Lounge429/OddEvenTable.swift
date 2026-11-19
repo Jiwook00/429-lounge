@@ -27,7 +27,6 @@ final class OddEvenTable {
     /// 황금 칩(공짜 100칩)으로 걸기
     var useGolden = false
 
-    static let stakes: [Int64] = [10, 50, 100, 500]
 
     private let store: LoungeStore
     private var tasks: [Task<Void, Never>] = []

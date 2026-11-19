@@ -24,8 +24,21 @@ struct OddEvenView: View {
             .padding(14)
             .frame(width: LoungeView.width)
             .background(Theme.bg)
+            .overlay { winOverlay(phase) }
         }
         .foregroundStyle(Theme.cream)
+    }
+
+    /// 내가 이긴 판: 구슬이 다 나온 순간부터 승리 연출
+    @ViewBuilder
+    private func winOverlay(_ phase: OddEvenTable.Phase) -> some View {
+        if case .reveal(let r, _, _) = phase,
+           let mine = table.lastBets.first(where: { $0.playerId == table.myID }),
+           let payout = mine.payout, let tier = WinTier(payout: payout) {
+            let shownAt = r.closesAt.addingTimeInterval(Double(r.marbles ?? 0) * 0.18 + 0.1)
+            // 펠트 오른쪽 빈자리에서 터진다 (구슬과 홀/짝 글자를 가리지 않게)
+            WinBurst(tier: tier, amount: payout, start: shownAt, origin: UnitPoint(x: 0.8, y: 0.2))
+        }
     }
 
     private func board(for phase: OddEvenTable.Phase) -> BetBoard {
@@ -277,33 +290,7 @@ struct OddEvenView: View {
     }
 
     private var stakeRow: some View {
-        HStack(spacing: 6) {
-            ForEach(OddEvenTable.stakes, id: \.self) { s in
-                let selected = !goldenSelected && table.stake == s
-                Button { table.stake = s; table.useGolden = false } label: {
-                    Text(s.formatted(.number))
-                        .font(Fonts.mono())
-                        .foregroundStyle(selected ? Theme.bg : Theme.cream)
-                        .frame(maxWidth: .infinity, minHeight: 24)
-                        .pixelBox(fill: selected ? Theme.gold : Theme.panel, border: selected ? Theme.gold : Theme.line)
-                }
-                .buttonStyle(.plain)
-                .disabled(Int64(chips) < s)
-                .opacity(Int64(chips) < s ? 0.4 : 1)
-            }
-            if golden > 0 {
-                Button { table.useGolden.toggle() } label: {
-                    HStack(spacing: 3) {
-                        PixelView(sprite: Sprites.goldChip, scale: 1)
-                        Text("×\(golden)").font(Fonts.mono())
-                    }
-                    .foregroundStyle(goldenSelected ? Theme.bg : Theme.gold)
-                    .frame(maxWidth: .infinity, minHeight: 24)
-                    .pixelBox(fill: goldenSelected ? Theme.gold : Theme.goldBg, border: Theme.gold)
-                }
-                .buttonStyle(.plain)
-            }
-        }
+        StakePicker(stake: $table.stake, useGolden: $table.useGolden, chips: chips, golden: golden)
     }
 
     /// 결과 공개 중: 내 결과 + 이번 판 큰손
@@ -326,8 +313,6 @@ struct OddEvenView: View {
         .pixelBox(fill: Theme.goldBg, border: Theme.gold)
         .glow(won ? Theme.gold : .clear)
     }
-
-    private var goldenSelected: Bool { table.useGolden && golden > 0 }
 
     private func betButton(_ side: Side, enabled: Bool) -> some View {
         Button {

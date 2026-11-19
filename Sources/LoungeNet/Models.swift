@@ -43,6 +43,21 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+/// 슬롯 한 판 결과. 릴 심볼: cherry, bell, bar, seven, 429, blank
+public struct SlotResult: Codable, Sendable, Equatable {
+    public let reels: [String]
+    public let multiplier: Int
+    public let payout: Int64
+    public let player: Player
+
+    public init(reels: [String], multiplier: Int, payout: Int64, player: Player) {
+        self.reels = reels
+        self.multiplier = multiplier
+        self.payout = payout
+        self.player = player
+    }
+}
+
 /// 칩 지급 RPC 결과
 public struct Grant: Codable, Sendable {
     public let granted: Int64

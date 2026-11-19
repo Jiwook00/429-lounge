@@ -123,6 +123,71 @@ enum Sprites {
         ".kkkk.",
     ], palette: base.merging(["b": Theme.goldDark]) { $1 })
 
+    // MARK: - 슬롯 심볼 (12×12)
+
+    static let cherry = PixelSprite(rows: [
+        "............",
+        ".....ggg....",
+        "....g...g...",
+        "...g.....g..",
+        "..g......g..",
+        ".kkk....kkk.",
+        "kRRRk..kRRRk",
+        "kRWRk..kRWRk",
+        "kRRRk..kRRRk",
+        ".kkk....kkk.",
+        "............",
+        "............",
+    ], palette: base.merging(["g": Theme.green]) { $1 })
+
+    static let bell = PixelSprite(rows: [
+        ".....kk.....",
+        "....kYYk....",
+        "...kYYYYk...",
+        "...kYWYYk...",
+        "..kYWYYYYk..",
+        "..kYYYYYYk..",
+        "..kYYYYYYk..",
+        ".kYYYYYYYYk.",
+        "kkkkkkkkkkkk",
+        ".....kk.....",
+        "....kYYk....",
+        ".....kk.....",
+    ], palette: base)
+
+    static let bar = PixelSprite(rows: [
+        "............",
+        "............",
+        "RRRRRRRRRRRR",
+        "WWWWWWWWWWWW",
+        "WkkWWWkWWkkW",
+        "WkWkWkWkWkWk",
+        "WkkWWkkkWkkW",
+        "WkWkWkWkWkWk",
+        "WkkWWkWkWkWk",
+        "WWWWWWWWWWWW",
+        "RRRRRRRRRRRR",
+        "............",
+    ], palette: base)
+
+    /// 잭팟 심볼 "429"
+    static let s429 = PixelSprite(rows: [
+        "............",
+        "............",
+        "RRRRRRRRRRRR",
+        "kkkkkkkkkkkk",
+        "kYkYkYYYkYYY",
+        "kYkYkkkYkYkY",
+        "kYYYkYYYkYYY",
+        "kkkYkYkkkkkY",
+        "kkkYkYYYkYYY",
+        "kkkkkkkkkkkk",
+        "RRRRRRRRRRRR",
+        "............",
+    ], palette: base)
+
+    static let blank = PixelSprite(rows: Array(repeating: "............", count: 12), palette: base)
+
     /// 메뉴바 아이콘: 16×16 칩 실루엣. 평소엔 템플릿(시스템 색), 리밋 중엔 골드.
     static func menuBarIcon(gold: Bool) -> NSImage {
         let n = 16

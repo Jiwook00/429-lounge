@@ -108,6 +108,15 @@ public final class LoungeClient: Sendable {
         return try await supabase.rpc("claim_golden", params: params).execute().value
     }
 
+    // MARK: - 슬롯
+
+    public func spin(amount: Int64, golden: Bool = false) async throws -> SlotResult {
+        struct Params: Encodable { let p_amount: Int64; let p_golden: Bool }
+        do {
+            return try await supabase.rpc("slot_spin", params: Params(p_amount: amount, p_golden: golden)).execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
     // MARK: - 홀짝
 
     public func tick(room: String) async throws -> Round {

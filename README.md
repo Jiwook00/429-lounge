@@ -18,7 +18,7 @@ Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 �
 | 메뉴바 칩 아이콘 + 라스베가스 네온 도트 그래픽 팝오버      | ✅   |
 | 칩 경제: 토큰 환전, 출근 도장, 파산 구제, 황금 칩          | ✅   |
 | **구슬 홀짝** (실시간 멀티 테이블, 15초 라운드)            | ✅   |
-| 슬롯머신 (솔로)                                            | ⏳   |
+| **429 슬롯** (솔로, 잭팟 ×429) + 승리 연출                | ✅   |
 | 블랙잭 (솔로 / 테이블)                                     | ⏳   |
 | 룰렛 (테이블)                                              | ⏳   |
 | 닉네임, 방 코드, 회원 목록                                 | ⏳   |
@@ -37,6 +37,10 @@ Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 �
 ### 구슬 홀짝
 
 엎어 둔 그릇 아래 구슬이 홀인지 짝인지 맞힌다. 같은 방 사람들이 15초 동안 동시에 베팅하고, 구슬이 하나씩 굴러 나온 뒤 5초 후 다음 판. 맞히면 2배. 결과와 정산은 전부 서버에서.
+
+### 429 슬롯
+
+릴 3개, 가운데 한 줄. 체리 2개부터 당첨이고, **429 세 개가 나오면 ×429 잭팟**. 승리는 금화가 튀어 오르고, 빅 윈과 잭팟은 금화가 쏟아지며 간판이 번쩍인다. 황금 칩으로 공짜 스핀 가능.
 
 ## 시작하기
 
@@ -60,7 +64,7 @@ swift run lounge-bot --name 철수
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|crowd|crowd-reveal|live]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-win|slot-big|slot-jackpot|slot-live]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
@@ -99,8 +103,8 @@ CLAUDE.md         Claude Code 작업 가이드
 
 ## 로드맵
 
-1. 스프라이트 시트 정식 제작, 승리·황금 칩 연출 (무드는 라스베가스로 확정)
-2. 슬롯머신 (황금 칩 무료 스핀)
+1. 스프라이트 시트 정식 제작, 황금 칩 획득 연출
+2. 회원 잭팟 알림 (누가 터뜨리면 라운지에 방송)
 3. 닉네임, 방 코드로 테이블 나누기
 4. 원격 Supabase로 옮겨서 초대 회원에게 배포 (서명, 공증)
 5. 블랙잭, 룰렛

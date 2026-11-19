@@ -12,6 +12,7 @@ enum Entry {
             let table = args.firstIndex(of: "--table").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
             MainActor.assumeIsolated {
                 if table == "live" { Snapshot.renderLive(to: args[i + 1], seconds: 8) }
+                if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 5) }
                 Snapshot.render(to: args[i + 1], locked: args.contains("--locked"), table: table)
             }
             return
