@@ -18,7 +18,7 @@ Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 �
 | 메뉴바 칩 아이콘 + 라스베가스 네온 도트 그래픽 팝오버      | ✅   |
 | 칩 경제: 토큰 환전, 출근 도장, 파산 구제, 황금 칩          | ✅   |
 | **구슬 홀짝** (실시간 멀티 테이블, 15초 라운드)            | ✅   |
-| **429 슬롯** (HTTP 상태 코드 기믹, 잭팟 ×429) + 승리 연출 | ✅   |
+| **429 슬롯** (500 글리치, 응답 코드, 잭팟 ×429) + 승리 연출  | ✅   |
 | 블랙잭 (솔로 / 테이블)                                     | ⏳   |
 | 룰렛 (테이블)                                              | ⏳   |
 | 닉네임, 방 코드, 회원 목록                                 | ⏳   |
@@ -40,9 +40,9 @@ Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 �
 
 ### 429 슬롯
 
-SPIN은 요청, 결과는 HTTP 응답. 과일은 돈이고 상태 코드는 이벤트다.
+SPIN은 요청, 결과는 HTTP 응답.
 
-- **200 OK** 와일드, **404 Not Found** 꽝 (세 개면 "찾았다!"), **500** 이 뜨면 그 릴이 치지직 깨지고 다시 돈다
+- **500** 이 뜨면 그 릴이 치지직 깨지고 다시 돈다
 - **429 세 개 = ×429 잭팟**. 실제로 리밋에 걸린 VIP HOUR엔 429가 더 자주 나온다
 - 결과는 `200 OK`, `304 Not Modified`, `404 Not Found`처럼 응답 코드로 표시
 
@@ -68,7 +68,7 @@ swift run lounge-bot --name 철수
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-wild|slot-found|slot-big|slot-jackpot|slot-lose|slot-live]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

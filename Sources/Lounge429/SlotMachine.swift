@@ -2,12 +2,12 @@ import Foundation
 import LoungeNet
 import Observation
 
-/// 슬롯 심볼. rawValue는 서버 값. 과일은 돈, 상태 코드는 이벤트.
+/// 슬롯 심볼. rawValue는 서버 값. 상태 코드 심볼은 429(잭팟)와 500(글리치)만.
 enum SlotSymbol: String, CaseIterable {
-    case cherry, bell, bar, seven
-    case s429 = "429", ok200 = "200", nf404 = "404", err500 = "500"
-    /// 예전 결과 호환용
-    case blank
+    case cherry, bell, bar, seven, blank
+    case s429 = "429", err500 = "500"
+    /// 예전 결과(HTTP 기믹 v1) 호환용. 지금 릴에는 없다.
+    case ok200 = "200", nf404 = "404"
 
     var sprite: PixelSprite {
         switch self {
@@ -36,8 +36,8 @@ enum SlotSymbol: String, CaseIterable {
 
     /// 화면에 보이는 릴 띠 순서 (위아래 이웃 심볼 연출용, 확률과는 무관 — 확률은 서버가 정한다)
     static let reelStrip: [SlotSymbol] = [
-        .cherry, .nf404, .bell, .bar, .seven, .nf404, .cherry, .err500, .bell, .s429,
-        .nf404, .cherry, .bar, .ok200, .bell, .nf404, .seven, .cherry, .bell, .nf404,
+        .cherry, .blank, .bell, .bar, .seven, .blank, .cherry, .err500, .bell, .s429,
+        .blank, .cherry, .bar, .bell, .blank, .seven, .cherry, .bell,
     ]
 
     static func neighbors(of s: SlotSymbol) -> (above: SlotSymbol, below: SlotSymbol) {

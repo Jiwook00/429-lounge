@@ -182,10 +182,8 @@ struct SlotView: View {
         if machine.isSpinning(at: t) { return ("102", Theme.cyan, "Processing…", Theme.muted) }
         guard let r = machine.result else { return (" ", Theme.muted, " ", Theme.muted) }
         let won = "+\(r.payout.formatted(.number))"
-        let found = r.reels.allSatisfy { $0 == SlotSymbol.nf404.rawValue }
         switch r.multiplier {
         case 429...: return ("429", Theme.neon, "JACKPOT · \(won)", Theme.gold)
-        case _ where found: return ("404 → 200", Theme.green, "찾았다! · \(won)", Theme.gold)
         case 10...: return ("201 Created", Theme.gold, "\(won) · \(combo(r)) ×\(r.multiplier)", Theme.gold)
         case 2...: return ("200 OK", Theme.green, "\(won) · \(combo(r)) ×\(r.multiplier)", Theme.gold)
         case 1: return ("304", Theme.cyan, "Not Modified · 본전", Theme.cream)
@@ -197,17 +195,16 @@ struct SlotView: View {
         let s = r.reels.compactMap(SlotSymbol.init(rawValue:))
         if Set(s).count == 1, let first = s.first { return Array(repeating: first.label, count: 3).joined(separator: " ") }
         if s.filter({ $0 == .cherry }).count == 2 { return "체리 2개" }
-        if s.contains(.ok200) { return s.map(\.label).joined(separator: " ") }
         if s.filter({ $0 == .s429 }).count == 2 { return "429 두 개" }
         return s.map(\.label).joined(separator: " ")
     }
 
-    /// 배당표 3×4. count 0 = 개수 표시 없이 설명만 (기믹 심볼)
+    /// 배당표 3×3. count 0 = 개수 표시 없이 설명만 (기믹 심볼)
     private var paytable: some View {
         let rows: [[(SlotSymbol, Int, String)]] = [
-            [(.s429, 3, "×429"), (.seven, 3, "×50"), (.bar, 3, "×20"), (.bell, 3, "×10")],
-            [(.ok200, 3, "×25"), (.cherry, 3, "×5"), (.cherry, 2, "×3"), (.nf404, 3, "×4")],
-            [(.s429, 2, "×3"), (.s429, 1, "×1"), (.ok200, 0, "와일드"), (.err500, 0, "리스핀")],
+            [(.s429, 3, "×429"), (.seven, 3, "×50"), (.bar, 3, "×20")],
+            [(.bell, 3, "×10"), (.cherry, 3, "×5"), (.cherry, 2, "×3")],
+            [(.s429, 2, "×3"), (.s429, 1, "×1 본전"), (.err500, 0, "리스핀")],
         ]
         return Grid(horizontalSpacing: 4, verticalSpacing: 6) {
             ForEach(0..<rows.count, id: \.self) { r in

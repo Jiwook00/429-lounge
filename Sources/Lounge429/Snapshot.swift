@@ -157,7 +157,7 @@ enum Snapshot {
         return t
     }
 
-    /// mode: slot-idle | slot-spinning | slot-glitch | slot-win | slot-wild | slot-found | slot-big | slot-jackpot | slot-lose
+    /// mode: slot-idle | slot-spinning | slot-glitch | slot-win | slot-big | slot-jackpot | slot-lose
     private static func fakeSlot(store: LoungeStore, me: Player, mode: String) -> SlotMachine {
         let m = SlotMachine(store: store)
         func result(_ reels: [String], _ mult: Int, initial: [String]? = nil, glitched: [Int] = []) -> SlotResult {
@@ -171,11 +171,9 @@ enum Snapshot {
             m.preview(result: result(["cherry", "bell", "cherry"], 3, initial: ["cherry", "bell", "500"], glitched: [2]),
                       elapsed: 1.6 + 0.25 + 0.25, pending: true)
         case "slot-win": m.preview(result: result(["cherry", "bell", "cherry"], 3), finishedAgo: 0.35)
-        case "slot-wild": m.preview(result: result(["bar", "200", "bar"], 20), finishedAgo: 0.35)
-        case "slot-found": m.preview(result: result(["404", "404", "404"], 4), finishedAgo: 0.35)
         case "slot-big": m.preview(result: result(["seven", "seven", "seven"], 50), finishedAgo: 0.9)
         case "slot-jackpot": m.preview(result: result(["429", "429", "429"], 429), finishedAgo: 1.2)
-        case "slot-lose": m.preview(result: result(["seven", "404", "bell"], 0), finishedAgo: 1)
+        case "slot-lose": m.preview(result: result(["seven", "blank", "bell"], 0), finishedAgo: 1)
         default: break
         }
         return m
