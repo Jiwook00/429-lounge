@@ -5,11 +5,14 @@ import SwiftUI
 enum Entry {
     static func main() {
         Fonts.register()
-        // 개발용: `Lounge429 --snapshot out.png [--locked]` → 팝오버를 PNG로 렌더링하고 종료
-        if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
+        setvbuf(stdout, nil, _IOLBF, 0)
+        // 개발용: `Lounge429 --snapshot out.png [--locked | --table betting|reveal]` → PNG로 렌더링하고 종료
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
+            let table = args.firstIndex(of: "--table").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
             MainActor.assumeIsolated {
-                Snapshot.render(to: CommandLine.arguments[i + 1],
-                                locked: CommandLine.arguments.contains("--locked"))
+                if table == "live" { Snapshot.renderLive(to: args[i + 1], seconds: 8) }
+                Snapshot.render(to: args[i + 1], locked: args.contains("--locked"), table: table)
             }
             return
         }
@@ -23,12 +26,7 @@ struct Lounge429App: App {
 
     var body: some Scene {
         MenuBarExtra {
-            LoungeView(
-                snapshot: store.snapshot,
-                lastScan: store.lastScan,
-                onRefresh: { Task { await store.refresh() } },
-                onQuit: { NSApp.terminate(nil) }
-            )
+            RootView(store: store)
         } label: {
             Image(nsImage: Sprites.menuBarIcon(gold: store.snapshot.activeLock() != nil))
             Text(store.chips.formatted(.number))

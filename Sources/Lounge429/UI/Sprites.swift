@@ -100,6 +100,29 @@ enum Sprites {
         "...RdRdRd...",
     ], palette: base)
 
+    /// 홀짝: 엎어 둔 그릇 (구슬을 덮고 있음)
+    static let bowl = PixelSprite(rows: [
+        "....kkkkkkkk....",
+        "..kkRRRRRRRRkk..",
+        ".kRRWRRRRRRRRRk.",
+        ".kRWRRRRRRRRRRk.",
+        "kRRRRRRRRRRRRRRk",
+        "kRRRRRRRRRRRRRRk",
+        "kYYYYYYYYYYYYYYk",
+        "kkkkkkkkkkkkkkkk",
+        "..dddddddddddd..",
+    ], palette: base)
+
+    /// 홀짝: 유리 구슬
+    static let marble = PixelSprite(rows: [
+        ".kkkk.",
+        "kWWYYk",
+        "kWYYYk",
+        "kYYYbk",
+        "kYYbbk",
+        ".kkkk.",
+    ], palette: base.merging(["b": Color(hex: 0xB8862B)]) { $1 })
+
     /// 메뉴바 아이콘: 16×16 칩 실루엣. 평소엔 템플릿(시스템 색), 리밋 중엔 골드.
     static func menuBarIcon(gold: Bool) -> NSImage {
         let n = 16

@@ -5,6 +5,9 @@ import SwiftUI
 struct LoungeView: View {
     let snapshot: UsageSnapshot
     let lastScan: Date?
+    var chips: Int
+    var online: Bool = false
+    var onOddEven: () -> Void = {}
     var onRefresh: () -> Void = {}
     var onQuit: () -> Void = {}
 
@@ -52,7 +55,7 @@ struct LoungeView: View {
         HStack(spacing: 12) {
             PixelView(sprite: Sprites.chip, scale: 3)
             VStack(alignment: .leading, spacing: 4) {
-                Text(Economy.provisionalChips(snapshot).formatted(.number))
+                Text(chips.formatted(.number))
                     .font(Fonts.mono(2))
                     .foregroundStyle(Theme.gold)
                 Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok · 5h \(snapshot.last5h.fresh.formatted(.number))")
@@ -85,14 +88,18 @@ struct LoungeView: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
             GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO")
             GameTile(sprite: Sprites.spade, title: "블랙잭", mode: "SOLO · TABLE")
-            GameTile(sprite: Sprites.dice, title: "홀짝", mode: "TABLE")
+            Button(action: onOddEven) {
+                GameTile(sprite: Sprites.dice, title: "구슬 홀짝", mode: "TABLE", soon: !online)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
             GameTile(sprite: Sprites.roulette, title: "룰렛", mode: "TABLE")
         }
     }
 
     private var footer: some View {
         HStack {
-            Text("친구 0명 접속 중")
+            Text(online ? "라운지 연결됨" : "오프라인")
             Spacer()
             Button("새로고침", action: onRefresh)
             Button("종료", action: onQuit)
@@ -112,6 +119,7 @@ private struct GameTile: View {
     let sprite: PixelSprite
     let title: String
     let mode: String
+    var soon = true
 
     var body: some View {
         HStack(spacing: 10) {
@@ -124,13 +132,14 @@ private struct GameTile: View {
         }
         .padding(10)
         .pixelBox()
+        .contentShape(Rectangle())
         .overlay(alignment: .topTrailing) {
-            Text("SOON")
+            if soon { Text("SOON")
                 .font(Fonts.small())
                 .foregroundStyle(Theme.bg)
                 .padding(.horizontal, 3)
                 .background(Theme.muted)
-                .padding(6)
+                .padding(6) }
         }
     }
 }
