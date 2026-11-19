@@ -1,7 +1,10 @@
 # 429 Lounge
 
 Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
-대상: Claude Code 사용자 (1차). 개요는 [README.md](README.md), 디자인은 [DESIGN.md](DESIGN.md), 결정 기록은 [docs/madr/](docs/madr/).
+대상: Claude Code 사용자 (1차).
+
+> **앱을 "설치"해 달라는 요청이면** 개발 환경(Supabase, swift build)을 세우지 말고 README의 설치 명령(`scripts/install.sh`)만 실행한다. 아래 내용은 개발용이다.
+ 개요는 [README.md](README.md), 디자인은 [DESIGN.md](DESIGN.md), 결정 기록은 [docs/madr/](docs/madr/).
 
 ## 명령어
 
@@ -14,7 +17,7 @@ supabase db reset                    # 처음부터 다시 적용 (테스트 데
 swift build                          # 전체 빌드
 swift test                           # LoungeCore 테스트
 scripts/build-app.sh --open          # build/429 Lounge.app 생성 후 재실행 (로컬 서버)
-scripts/build-app.sh --dist          # 운영 서버용 유니버설 앱 + build/429-Lounge-<버전>.zip
+scripts/build-app.sh --dist          # 운영 서버용 유니버설 앱 + build/429-Lounge.zip (릴리스 절차는 README)
 supabase db push --dry-run           # 운영 DB(서울, 링크됨)에 올라갈 마이그레이션 확인. 확인 후 --dry-run 빼고
 
 swift run lounge-bot --name 철수      # 상대 봇
@@ -49,7 +52,7 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
 ```
 
 - `--table live`: 실서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅

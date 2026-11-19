@@ -2,7 +2,7 @@
 # 429 Lounge.app 번들 생성.
 # 사용법: scripts/build-app.sh [--remote] [--dist] [--open]
 #   --remote  운영 서버(LoungeConfig.remote)에 붙는 앱
-#   --dist    배포용: --remote + 유니버설(arm64/x86_64) + build/429-Lounge-<버전>.zip
+#   --dist    배포용: --remote + 유니버설(arm64/x86_64) + build/429-Lounge.zip (릴리스 에셋 이름, 버전은 태그로)
 #   --open    빌드 후 재실행
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -55,7 +55,7 @@ codesign --force --deep --sign - "$APP" >/dev/null
 echo "built: $APP ($SERVER, $(lipo -archs "$APP/Contents/MacOS/Lounge429"))"
 
 if [[ $DIST == 1 ]]; then
-    ZIP="build/429-Lounge-$VERSION.zip"
+    ZIP="build/429-Lounge.zip"
     rm -f "$ZIP"
     ditto -c -k --keepParent "$APP" "$ZIP"
     echo "zip: $ZIP"

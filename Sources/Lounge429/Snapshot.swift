@@ -18,7 +18,19 @@ enum Snapshot {
         store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
 
         let content: AnyView
-        if let table, table.hasPrefix("nickname") {
+        if table == "readme" {
+            // README 대표 이미지: 라운지 · 홀짝 · 슬롯을 나란히 (--locked와 같이 쓰면 VIP HOUR)
+            content = AnyView(HStack(alignment: .top, spacing: 20) {
+                LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
+                           toast: store.toast, online: true, name: "새벽코더")
+                OddEvenView(table: fakeTable(store: store, me: me, mode: "crowd-won"), chips: store.chips,
+                            golden: store.golden())
+                SlotView(machine: fakeSlot(store: store, me: me, mode: "slot-jackpot"), chips: store.chips,
+                         golden: store.golden(), vip: locked)
+            }
+            .padding(24)
+            .background(Theme.outline))
+        } else if let table, table.hasPrefix("nickname") {
             // nickname: 처음 온 회원 / nickname-taken: 이름 바꾸다 중복
             let taken = table == "nickname-taken"
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, online: true,
@@ -43,7 +55,8 @@ enum Snapshot {
             })
         }
 
-        let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)).environment(\.snapshotting, true))
+        let framed = table == "readme" ? content : AnyView(content.padding(8).background(Color(white: 0.3)))
+        let renderer = ImageRenderer(content: framed.environment(\.snapshotting, true))
         renderer.scale = 2
         guard let image = renderer.nsImage,
               let tiff = image.tiffRepresentation,

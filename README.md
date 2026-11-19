@@ -4,6 +4,8 @@
 
 Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
 
+![라운지, 구슬 홀짝, 429 슬롯](docs/images/screens.png)
+
 - 빌드나 Claude 답변을 기다리는 **10~30초짜리 틈**에 한 판
 - 코딩하는 만큼 메뉴바의 칩이 오른다
 - 리밋(429)에 걸리면 짜증 대신 **VIP HOUR**. 리셋 전까지 쓸 수 있는 황금 칩을 준다
@@ -47,7 +49,24 @@ SPIN은 요청, 결과는 HTTP 응답.
 - **429 세 개 = ×429 잭팟**. 실제로 리밋에 걸린 VIP HOUR엔 429가 더 자주 나온다
 - 결과는 `200 OK`, `304 Not Modified`, `404 Not Found`처럼 응답 코드로 표시
 
-## 시작하기
+## 설치
+
+macOS 14 이상. 터미널에 한 줄:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/install.sh | bash
+```
+
+최신 [릴리스](https://github.com/Jiwook00/429-lounge/releases/latest)를 받아 `/Applications`에 넣고 실행한다. 업데이트도 같은 명령. Claude Code에게 "이 레포 설치해줘"라고 해도 이 명령을 쓴다.
+
+- 메뉴바에 칩 아이콘과 숫자가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다
+- 처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기"
+- 칩은 `~/.claude/projects`의 Claude Code 로그에서 토큰 사용량만 읽어서 계산한다. 대화 내용은 서버로 보내지 않는다
+- 지우기: `rm -rf "/Applications/429 Lounge.app" ~/Library/Application\ Support/429Lounge`
+
+릴리스 zip을 직접 받았다면 ad-hoc 서명이라 Gatekeeper가 막는다. `xattr -dr com.apple.quarantine "/Applications/429 Lounge.app"` 후 실행.
+
+## 개발 환경
 
 필요한 것: macOS 14+, Xcode(Swift 6), Docker, [Supabase CLI](https://supabase.com/docs/guides/cli)
 
@@ -56,39 +75,29 @@ supabase start                  # 로컬 백엔드 (첫 실행은 이미지 다�
 scripts/build-app.sh --open     # build/429 Lounge.app 빌드 후 실행
 ```
 
-메뉴바에 칩 아이콘과 숫자가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다.
-
-처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기".
-
-혼자 멀티를 해보려면 상대 봇을 앉힌다:
+이렇게 만든 앱은 로컬 서버에 붙는다. 혼자 멀티를 해보려면 상대 봇을 앉힌다:
 
 ```sh
 swift run lounge-bot --name 철수
 ```
 
-## 초대 회원에게 배포
+## 릴리스
 
 ```sh
-scripts/build-app.sh --dist     # 운영 서버용 유니버설 앱 → build/429-Lounge-<버전>.zip
-supabase db push --dry-run      # 마이그레이션 확인 후
-supabase db push                # 운영 DB에 반영
+supabase db push --dry-run      # 서버 변경이 있으면 먼저 운영 DB에 (확인 후 --dry-run 빼고)
+# scripts/build-app.sh의 VERSION을 올리고 커밋·푸시한 뒤
+scripts/build-app.sh --dist     # 운영 서버용 유니버설 앱 → build/429-Lounge.zip
+gh release create v0.1.0 build/429-Lounge.zip --title v0.1.0 --notes "..."
 ```
 
-받는 사람은 압축을 풀어 `/Applications`로 옮긴 뒤:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/429 Lounge.app"   # ad-hoc 서명이라 Gatekeeper 격리 해제
-open "/Applications/429 Lounge.app"
-```
-
-`--remote`만 주면 zip 없이 운영 서버용 앱을 만든다. 운영 서버는 `LoungeConfig.remote`, 배포 결정은 [ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md).
+설치 스크립트는 항상 최신 릴리스의 `429-Lounge.zip`을 받는다. `--remote`만 주면 zip 없이 운영 서버용 앱을 만든다. 운영 서버는 `LoungeConfig.remote`, 배포 결정은 [ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md).
 
 ## 개발
 
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
@@ -112,7 +121,7 @@ Sources/
   lounge-scan/    개발용 로그 확인 CLI
 supabase/
   migrations/     스키마 + 게임·칩 로직 (Postgres 함수)
-scripts/          .app 번들 / 배포 zip 빌드
+scripts/          .app 번들 / 배포 zip 빌드, 설치 스크립트
 docs/
   chip-economy.md 칩 규칙
   madr/           아키텍처 결정 기록 (ADR)
