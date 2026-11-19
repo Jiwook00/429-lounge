@@ -12,7 +12,7 @@ enum Snapshot {
             usage.lastLimitHit = RateLimitHit(
                 hitAt: .now, resetsAt: .now.addingTimeInterval(2 * 3600 + 13 * 60), type: "five_hour")
         }
-        let me = Player(id: UUID(), name: "danny", chips: 1_250,
+        let me = Player(id: UUID(), name: "guest", chips: 1_250,
                         goldenChips: locked ? 3 : 0, goldenUntil: usage.lastLimitHit?.resetsAt)
         let store = LoungeStore(live: false)
         store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
