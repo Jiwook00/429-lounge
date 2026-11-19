@@ -31,6 +31,12 @@ public struct RateLimitHit: Sendable, Equatable {
     /// "five_hour", "seven_day" 등 Claude가 내려주는 값 그대로.
     public let type: String
 
+    public init(hitAt: Date, resetsAt: Date, type: String) {
+        self.hitAt = hitAt
+        self.resetsAt = resetsAt
+        self.type = type
+    }
+
     public func isActive(at now: Date) -> Bool { resetsAt > now }
 }
 
