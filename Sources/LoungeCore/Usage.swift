@@ -28,7 +28,7 @@ public struct TokenTotals: Sendable, Equatable {
 public struct RateLimitHit: Sendable, Equatable {
     public let hitAt: Date
     public let resetsAt: Date
-    /// "five_hour", "seven_day" 등 Claude가 내려주는 값 그대로.
+    /// "five_hour", "seven_day" 등. Codex는 창 길이로 같은 이름에 맞춘다.
     public let type: String
 
     public init(hitAt: Date, resetsAt: Date, type: String) {
@@ -44,15 +44,25 @@ public struct UsageSnapshot: Sendable {
     public var today = TokenTotals()
     public var last5h = TokenTotals()
     public var lastActivity: Date?
-    /// 가장 최근의 429 기록 (해제됐을 수도 있음)
-    public var lastLimitHit: RateLimitHit?
+    /// 최근 7일의 429 기록 (Claude Code + Codex, 해제된 것 포함)
+    public var limitHits: [RateLimitHit] = []
 
     public init() {}
 
-    /// 지금 리밋에 걸려 있으면 그 기록을 돌려준다.
+    /// 가장 최근의 429 기록. 대입하면 그 기록 하나만 남긴다 (가짜 429용).
+    public var lastLimitHit: RateLimitHit? {
+        get { limitHits.max { $0.hitAt < $1.hitAt } }
+        set { limitHits = newValue.map { [$0] } ?? [] }
+    }
+
+    /// 지금 걸려 있는 리밋 전부. 도구마다 따로 황금 칩을 받는다 (ADR-0009)
+    public func activeLocks(at now: Date = .now) -> [RateLimitHit] {
+        limitHits.filter { $0.isActive(at: now) }
+    }
+
+    /// 지금 걸려 있는 리밋 중 가장 늦게 풀리는 것 (화면 표시용)
     public func activeLock(at now: Date = .now) -> RateLimitHit? {
-        guard let hit = lastLimitHit, hit.isActive(at: now) else { return nil }
-        return hit
+        activeLocks(at: now).max { $0.resetsAt < $1.resetsAt }
     }
 }
 

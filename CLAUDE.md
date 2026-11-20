@@ -27,7 +27,7 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 
 | 타깃                        | 역할                                                                     | 의존           |
 | --------------------------- | ------------------------------------------------------------------------ | -------------- |
-| `LoungeCore`                | Claude Code 로그(`~/.claude/projects/**/*.jsonl`) 파싱. UI·네트워크 없음 | -              |
+| `LoungeCore`                | Claude Code·Codex 로그(`~/.claude/projects`, `~/.codex/sessions`) 파싱. UI·네트워크 없음 | -              |
 | `LoungeNet`                 | Supabase: 익명 로그인, RPC 래퍼, Realtime 스트림                         | supabase-swift |
 | `Lounge429`                 | SwiftUI 메뉴바 앱 (`MenuBarExtra` window 스타일)                         | Core, Net      |
 | `lounge-bot`, `lounge-scan` | 개발용 CLI                                                               | Net / Core     |
@@ -67,6 +67,8 @@ swift build --product Lounge429
 
 - 로그 한 응답이 여러 줄로 기록된다 → `message.id + requestId`로 중복 제거
 - 429는 로그에 `apiErrorStatus: 429`, `quotaLimits.resetsAt`, `rateLimitType`으로 남는다
+- Codex는 `token_usage_record`(응답마다, `response_id`)로 세고, 429는 `token_count.rate_limits` 창이 100%일 때. 같은 리밋의 `resets_at`이 초 단위로 흔들리니 `UsageScanner.mergeHits`로 고정한다
+- 두 도구를 쓰면 토큰은 합쳐서 `claim_tokens` 한 번, 황금 칩은 리밋마다 ([ADR-0009](docs/madr/0009-codex-support-golden-per-tool.md))
 - 세션은 키체인이 아니라 `~/Library/Application Support/429Lounge/sessions/<host>/<profile>/`에 파일로 저장
 - `ImageRenderer`는 메인 런루프가 필요하다. `dispatchMain()`으로 돌리면 멈춘다 (`NSApplication.run()` 사용)
 - 메뉴바 관리 앱(Bartender, Ice 등)이 새 아이콘을 숨김 영역에 넣을 수 있다

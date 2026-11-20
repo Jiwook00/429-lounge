@@ -2,7 +2,7 @@
 
 > HTTP 429 Rate Limit. 한도에 걸린 개발자들이 찾아오는 VIP 카지노 라운지.
 
-Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
+Claude Code·Codex 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
 
 ![라운지, 구슬 홀짝, 429 슬롯](docs/images/screens.png)
 
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 - 메뉴바에 슬롯머신 아이콘과 칩 수가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다
 - 처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기"
-- 칩은 `~/.claude/projects`의 Claude Code 로그에서 토큰 사용량만 읽어서 계산한다. 대화 내용은 서버로 보내지 않는다
+- 칩은 `~/.claude/projects`(Claude Code)와 `~/.codex/sessions`(Codex) 로그에서 토큰 사용량만 읽어서 계산한다. 둘 다 쓰면 합산한다. 대화 내용은 서버로 보내지 않는다
 - 앱이 켜져 있는 동안 다른 회원에게 보이는 건 닉네임, 팝오버를 보고 있는지, 어느 게임 화면인지, 그리고 "코딩 중 / 429 VIP / 쉬는 중" 같은 대략적인 상태뿐이다. 프로젝트 이름이나 토큰 양은 공유하지 않는다
 - 지우기: `rm -rf "/Applications/429 Lounge.app" ~/Library/Application\ Support/429Lounge`
 
@@ -43,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 앱만 켜 두면 라운지에 들어와 있는 것. 팝오버를 열면 누가 같이 있는지 보인다.
 
 - **라운지 N명**: 앱이 켜져 있는 회원. **보는 중**인 회원은 시안 네온으로 빛난다
-- 회원마다 **코딩 중 / 429 VIP / 쉬는 중**: 각자의 Claude Code 로그에서 계산한 대략적인 상태
+- 회원마다 **코딩 중 / 429 VIP / 쉬는 중**: 각자의 Claude Code·Codex 로그에서 계산한 대략적인 상태
 - 사람이 앉아 있는 테이블은 `TABLE · 2명 앉음`으로 빛나고, 메뉴바 슬롯머신의 레버 공이 시안으로 켜진다
 - 누가 **잭팟**이나 큰 승리를 터뜨리면 로고 아래 **전광판**이 3분 동안 나타나 흐른다
 
@@ -116,7 +116,7 @@ supabase db reset                                      # 마이그레이션 전�
 
 ```
 Sources/
-  LoungeCore/     Claude Code 로그 파싱 (사용량, 429)
+  LoungeCore/     Claude Code·Codex 로그 파싱 (사용량, 429)
   LoungeNet/      Supabase: 익명 로그인, RPC, Realtime
   Lounge429/      메뉴바 앱 (SwiftUI)
     UI/           테마, 도트 렌더러, 스프라이트, 화면

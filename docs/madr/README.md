@@ -13,3 +13,4 @@
 | [0006](0006-anonymous-auth-file-session.md)      | 익명 로그인 + 파일 세션 저장                                                    | accepted |
 | [0007](0007-remote-supabase-zip-distribution.md) | 초대 회원 배포: 서울 Supabase + ad-hoc 서명 zip                                 | accepted |
 | [0008](0008-lounge-presence.md)                  | 라운지 접속: "라운지에 있음" + "보는 중" 두 단계, Claude 상태, 서버 기록 전광판 | accepted |
+| [0009](0009-codex-support-golden-per-tool.md)    | Codex 로그도 읽고 토큰은 합산, 황금 칩은 도구마다                                | accepted |

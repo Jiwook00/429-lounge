@@ -90,8 +90,10 @@ final class LoungeStore {
         if lastScan != nil, let g = try? await net.claimTokens(day: .now, fresh: s.today.fresh) {
             apply(g, "토큰 환전 +\(g.granted.formatted(.number))칩")
         }
-        if let lock = s.activeLock(), let g = try? await net.claimGolden(resetsAt: lock.resetsAt, type: lock.type) {
-            apply(g, "429! 황금 칩 +\(g.granted)", golden: true)
+        for lock in s.activeLocks() {
+            if let g = try? await net.claimGolden(resetsAt: lock.resetsAt, type: lock.type) {
+                apply(g, "429! 황금 칩 +\(g.granted)", golden: true)
+            }
         }
     }
 

@@ -56,7 +56,7 @@ private func assistant(id: String, req: String, ts: String, input: Int, output: 
     ].joined(separator: "\n")
     try Data(log.utf8).write(to: dir.appendingPathComponent("proj/s.jsonl"))
 
-    let s = UsageScanner(root: dir).scan(now: now, calendar: utc)
+    let s = UsageScanner(claudeRoot: dir, codexRoot: dir.appendingPathComponent("none")).scan(now: now, calendar: utc)
     #expect(s.today.fresh == 10)
     #expect(s.last5h.fresh == 110)
     #expect(s.activeLock(at: now)?.type == "five_hour")

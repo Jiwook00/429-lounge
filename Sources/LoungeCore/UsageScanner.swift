@@ -1,22 +1,30 @@
 import Foundation
 
-/// `~/.claude/projects/**/*.jsonl` (Claude Code 세션 로그)를 읽어서
-/// 오늘/최근 5시간 토큰 사용량과 마지막 429 기록을 계산한다.
+/// Claude Code(`~/.claude/projects/**/*.jsonl`)와 Codex CLI(`~/.codex/sessions/**/*.jsonl`)
+/// 세션 로그를 읽어서 오늘/최근 5시간 토큰 사용량과 429 기록을 계산한다. 두 도구를 함께 쓰면 합산한다.
 public struct UsageScanner: Sendable {
-    public let root: URL
+    public let claudeRoot: URL
+    public let codexRoot: URL
 
     /// 429 기록을 찾기 위해 거슬러 올라가는 기간. 주간 리밋까지 잡으려고 7일.
     public var limitLookback: TimeInterval = 7 * 24 * 3600
 
-    public init(root: URL = UsageScanner.defaultRoot) {
-        self.root = root
+    public init(claudeRoot: URL = UsageScanner.defaultClaudeRoot, codexRoot: URL = UsageScanner.defaultCodexRoot) {
+        self.claudeRoot = claudeRoot
+        self.codexRoot = codexRoot
     }
 
-    public static var defaultRoot: URL {
-        let base = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
-            .map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
-        return base.appendingPathComponent("projects")
+    public static var defaultClaudeRoot: URL {
+        home(env: "CLAUDE_CONFIG_DIR", fallback: ".claude").appendingPathComponent("projects")
+    }
+
+    public static var defaultCodexRoot: URL {
+        home(env: "CODEX_HOME", fallback: ".codex").appendingPathComponent("sessions")
+    }
+
+    private static func home(env: String, fallback: String) -> URL {
+        ProcessInfo.processInfo.environment[env].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(fallback)
     }
 
     public func scan(now: Date = .now, calendar: Calendar = .current) -> UsageSnapshot {
@@ -25,43 +33,55 @@ public struct UsageScanner: Sendable {
         let usageSince = min(dayStart, windowStart)
         let fileSince = min(usageSince, now.addingTimeInterval(-limitLookback))
 
-        var parser = LogParser()
-        for file in logFiles(modifiedSince: fileSince) {
-            guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { continue }
-            parser.consume(data)
-        }
+        var claude = LogParser()
+        for data in logs(in: claudeRoot, modifiedSince: fileSince) { claude.consume(data) }
+        var codex = CodexLogParser()
+        for data in logs(in: codexRoot, modifiedSince: fileSince) { codex.consume(data) }
 
         var snapshot = UsageSnapshot()
-        for r in parser.records where r.timestamp >= usageSince && r.timestamp <= now {
+        for r in claude.records + codex.records where r.timestamp >= usageSince && r.timestamp <= now {
             if r.timestamp >= dayStart { snapshot.today.add(r) }
             if r.timestamp >= windowStart { snapshot.last5h.add(r) }
             snapshot.lastActivity = max(snapshot.lastActivity ?? r.timestamp, r.timestamp)
         }
-        snapshot.lastLimitHit = parser.limitHits
-            .filter { $0.hitAt <= now }
-            .max { $0.hitAt < $1.hitAt }
+        snapshot.limitHits = Self.mergeHits(claude.limitHits + codex.limitHits, now: now)
         return snapshot
     }
 
-    private func logFiles(modifiedSince since: Date) -> [URL] {
+    /// 같은 리밋이 여러 줄에 찍히면 하나로 합친다. Codex는 같은 리밋의 resets_at이 초 단위로 흔들려서
+    /// (서버는 resets_at으로 중복 지급을 막는다) 종류가 같고 10분 안이면 가장 먼저 찍힌 기록으로 고정한다.
+    static func mergeHits(_ hits: [RateLimitHit], now: Date) -> [RateLimitHit] {
+        var merged: [RateLimitHit] = []
+        for hit in hits.filter({ $0.hitAt <= now }).sorted(by: { $0.hitAt < $1.hitAt }) {
+            let dup = merged.contains {
+                $0.type == hit.type && abs($0.resetsAt.timeIntervalSince(hit.resetsAt)) < 600
+            }
+            if !dup { merged.append(hit) }
+        }
+        return merged
+    }
+
+    /// 루트 아래에서 최근에 바뀐 jsonl 파일들의 내용. 폴더가 없으면(그 도구를 안 쓰면) 비어 있다.
+    private func logs(in root: URL, modifiedSince since: Date) -> [Data] {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
         guard let walker = FileManager.default.enumerator(
             at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        var files: [URL] = []
+        var files: [Data] = []
         for case let url as URL in walker where url.pathExtension == "jsonl" {
             let values = try? url.resourceValues(forKeys: Set(keys))
             guard values?.isRegularFile == true,
-                  let modified = values?.contentModificationDate, modified >= since
+                  let modified = values?.contentModificationDate, modified >= since,
+                  let data = try? Data(contentsOf: url, options: .mappedIfSafe)
             else { continue }
-            files.append(url)
+            files.append(data)
         }
         return files
     }
 }
 
-/// JSONL 바이트를 받아 사용량/429 기록을 모은다. 파일 I/O와 분리해서 테스트하기 쉽게.
+/// Claude Code JSONL 바이트를 받아 사용량/429 기록을 모은다. 파일 I/O와 분리해서 테스트하기 쉽게.
 struct LogParser {
     private(set) var records: [UsageRecord] = []
     private(set) var limitHits: [RateLimitHit] = []
