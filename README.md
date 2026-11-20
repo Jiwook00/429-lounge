@@ -42,7 +42,8 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 앱만 켜 두면 라운지에 들어와 있는 것. 팝오버를 열면 누가 같이 있는지 보인다.
 
-- **라운지 N명**: 앱이 켜져 있는 회원. **보는 중**인 회원은 시안 네온으로 빛난다
+- **라운지 3/12명**: 앱이 켜져 있는 회원 / 닉네임을 정한 전체 회원. **보는 중**인 회원은 시안 네온으로 빛난다
+- 지금 없는 회원은 `이름 · 3시간 전`처럼 마지막으로 본 시각과 함께 흐리게
 - 회원마다 **코딩 중 / 429 VIP / 쉬는 중**: 각자의 Claude Code·Codex 로그에서 계산한 대략적인 상태
 - 사람이 앉아 있는 테이블은 `TABLE · 2명 앉음`으로 빛나고, 메뉴바 슬롯머신의 레버 공이 시안으로 켜진다
 - 누가 **잭팟**이나 큰 승리를 터뜨리면 로고 아래 **전광판**이 3분 동안 나타나 흐른다
@@ -106,7 +107,7 @@ update public.client_policy set min_version = '0.4.0';
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-live|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

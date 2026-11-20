@@ -34,6 +34,10 @@ final class LoungeStore {
 
     /// 지금 라운지에 있는 회원 (나 포함)
     private(set) var members: [Member] = []
+    /// 회원 명부: 접속 중이 아닌 회원도 보여주기 위해 (ADR-0011)
+    private(set) var roster: [Regular] = []
+    private var rosterAt: Date?
+    private var seenAt: Date?
     /// 전광판 이벤트 (최근 것만 유지)
     private(set) var events: [LoungeEvent] = []
     /// 팝오버를 열어 보고 있는지. RootView가 창 상태로 갱신한다.
@@ -93,6 +97,23 @@ final class LoungeStore {
         lastScan = .now
         await claim()
         pushPresence()
+        await keepRoster()
+    }
+
+    /// 마지막으로 본 시각은 2분마다, 명부는 3분마다 (새 회원이 라운지에 들어오면 바로)
+    private func keepRoster(at now: Date = .now) async {
+        guard me != nil else { return }
+        if seenAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true {
+            if (try? await net.touchSeen()) != nil { seenAt = now }
+        }
+        let known = Set(roster.map(\.id))
+        let newcomer = members.contains { !known.contains($0.id) && $0.id != me?.id }
+        if newcomer || rosterAt.map({ now.timeIntervalSince($0) >= 180 }) ?? true {
+            if let list = try? await net.roster() {
+                roster = list
+                rosterAt = now
+            }
+        }
     }
 
     func connect() async {
@@ -104,6 +125,7 @@ final class LoungeStore {
             return
         }
         joinLounge()
+        await keepRoster()
         if let g = try? await net.dailyBonus() {
             apply(g, g.granted >= 300 ? "파산 구제 +\(g.granted)칩" : "출근 도장 +\(g.granted)칩")
         }
@@ -216,7 +238,7 @@ final class LoungeStore {
         // 내 상태는 서버 왕복을 기다리지 않고 지금 값으로
         var list = members.filter { $0.id != me?.id }
         if let mine = presenceState() { list.append(mine) }
-        return LoungeCrowd(members: list, me: me?.id, events: events.filter { now.timeIntervalSince($0.createdAt) < Self.tickerWindow })
+        return LoungeCrowd(members: list, roster: roster, me: me?.id, events: events.filter { now.timeIntervalSince($0.createdAt) < Self.tickerWindow })
     }
 
     /// 메뉴바 점: 다른 회원이 홀짝 테이블에 앉아 있다
@@ -225,8 +247,9 @@ final class LoungeStore {
     var vip: Bool { snapshot.activeLock() != nil }
 
     /// 스냅샷/프리뷰용
-    func preview(members: [Member], events: [LoungeEvent]) {
+    func preview(members: [Member], events: [LoungeEvent], roster: [Regular] = []) {
         self.members = members
+        self.roster = roster
         self.events = events
     }
 
@@ -259,11 +282,16 @@ struct LoungeCrowd {
     let oddEven: Int
     /// 슬롯을 돌리고 있는 다른 회원
     let slot: Int
+    /// 접속 중이 아닌 명부 회원 (나 빼고), 최근에 본 순
+    let offline: [Regular]
     let events: [LoungeEvent]
+
+    /// 라운지 전체 인원: 접속 중 + 오프라인
+    var everyone: Int { total + offline.count }
 
     static let empty = LoungeCrowd(members: [], me: nil, events: [])
 
-    init(members: [Member], me: UUID?, events: [LoungeEvent]) {
+    init(members: [Member], roster: [Regular] = [], me: UUID?, events: [LoungeEvent]) {
         func rank(_ m: Member) -> Int {
             if m.viewing { return 0 }
             switch m.status {
@@ -280,6 +308,10 @@ struct LoungeCrowd {
         othersViewing = others.filter(\.viewing).count
         oddEven = others.filter { $0.viewing && $0.place == .oddeven }.count
         slot = others.filter { $0.viewing && $0.place == .slot }.count
+        let online = Set(members.map(\.id))
+        offline = roster
+            .filter { !online.contains($0.id) && $0.id != me }
+            .sorted { ($0.lastSeenAt ?? .distantPast) > ($1.lastSeenAt ?? .distantPast) }
         self.events = events
     }
 }

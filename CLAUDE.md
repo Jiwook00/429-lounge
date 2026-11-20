@@ -25,12 +25,12 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 
 ## 구조
 
-| 타깃                        | 역할                                                                     | 의존           |
-| --------------------------- | ------------------------------------------------------------------------ | -------------- |
+| 타깃                        | 역할                                                                                     | 의존           |
+| --------------------------- | ---------------------------------------------------------------------------------------- | -------------- |
 | `LoungeCore`                | Claude Code·Codex 로그(`~/.claude/projects`, `~/.codex/sessions`) 파싱. UI·네트워크 없음 | -              |
-| `LoungeNet`                 | Supabase: 익명 로그인, RPC 래퍼, Realtime 스트림                         | supabase-swift |
-| `Lounge429`                 | SwiftUI 메뉴바 앱 (`MenuBarExtra` window 스타일)                         | Core, Net      |
-| `lounge-bot`, `lounge-scan` | 개발용 CLI                                                               | Net / Core     |
+| `LoungeNet`                 | Supabase: 익명 로그인, RPC 래퍼, Realtime 스트림                                         | supabase-swift |
+| `Lounge429`                 | SwiftUI 메뉴바 앱 (`MenuBarExtra` window 스타일)                                         | Core, Net      |
+| `lounge-bot`, `lounge-scan` | 개발용 CLI                                                                               | Net / Core     |
 
 - 화면 상태: `LoungeStore`(지갑, 사용량, 칩 지급), `OddEvenTable`(테이블 동기화). 둘 다 `@MainActor @Observable`
 - 뷰는 값을 받는다 (`LoungeView`, `OddEvenView`). 스냅샷 렌더링에 그대로 쓰기 위해서
@@ -51,7 +51,7 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-live|update|update-required]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-live|update|update-required]
 ```
 
 - `--table live`: 실서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅
@@ -76,6 +76,7 @@ swift build --product Lounge429
 - 서버 선택: `LOUNGE_SUPABASE_URL/KEY` → `LOUNGE_SERVER` → Info.plist `LoungeServer` → 로컬. Finder로 띄운 앱엔 환경변수가 없어서 배포 빌드는 Info.plist로 정한다 ([ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md))
 - 원격 Auth 설정은 대시보드에서. `supabase config push`는 로컬 개발용 `config.toml`까지 덮어쓴다
 - `ImageRenderer`는 `TextField`를 못 그린다. 스냅샷에선 `\.snapshotting` 환경값으로 Text로 바꿔 그린다
+- 라운지 목록 = Presence(접속 중) + 명부(`named` 회원, `last_seen_at`). 앱은 `touch_seen`을 2분마다 ([ADR-0011](docs/madr/0011-lounge-roster-offline.md)). App Nap은 `AppDelegate`에서 막는다 (재워지면 하트비트가 밀려 Presence에서 빠진다)
 - 업데이트는 안내만 ([ADR-0010](docs/madr/0010-update-notice-min-version.md)). RPC를 깨는 마이그레이션이면 같은 파일에서 `client_policy.min_version`을 올린다. 번들 없이 돌면 버전이 "dev"라 안내가 안 뜬다
 - 닉네임은 `set_nickname` RPC로만, 라운지 전체에서 하나뿐(`lower(name)` 유니크). 처음엔 서버가 "손님 XXXXXX"
 

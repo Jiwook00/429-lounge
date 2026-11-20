@@ -115,6 +115,17 @@ public final class LoungeClient: Sendable {
         return row.min_version
     }
 
+    /// 회원 명부: 닉네임을 정한 회원, 최근에 본 순 (ADR-0011)
+    public func roster(limit: Int = 100) async throws -> [Regular] {
+        try await supabase.from("players").select("id, name, last_seen_at").eq("named", value: true)
+            .order("last_seen_at", ascending: false, nullsFirst: false).limit(limit).execute().value
+    }
+
+    /// 앱이 켜져 있다고 알린다 (마지막으로 본 시각). 서버가 1분 안의 중복은 무시한다
+    public func touchSeen() async throws {
+        try await supabase.rpc("touch_seen").execute()
+    }
+
     // MARK: - 칩 경제 (docs/chip-economy.md)
 
     /// 하루 한 번 출근 도장 (+100, 잔액 100 미만이면 +300)

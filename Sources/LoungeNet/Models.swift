@@ -218,6 +218,25 @@ public struct Member: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// 회원 명부의 한 명 (닉네임을 정한 회원). 접속 중이 아니면 "오프라인 · 3시간 전"으로 보여준다 (ADR-0011)
+public struct Regular: Codable, Sendable, Identifiable, Hashable {
+    public let id: UUID
+    public let name: String
+    /// 앱이 마지막으로 켜져 있던 시각
+    public let lastSeenAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case lastSeenAt = "last_seen_at"
+    }
+
+    public init(id: UUID, name: String, lastSeenAt: Date?) {
+        self.id = id
+        self.name = name
+        self.lastSeenAt = lastSeenAt
+    }
+}
+
 /// 전광판 이벤트 (서버가 정산하면서 기록)
 public struct LoungeEvent: Codable, Sendable, Identifiable, Equatable {
     public let id: Int64

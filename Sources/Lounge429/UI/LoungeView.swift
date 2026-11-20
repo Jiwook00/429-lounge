@@ -61,7 +61,7 @@ struct LoungeView: View {
                         initialError: nicknameDraft?.error
                     )
                 } else {
-                    if online { PresenceStrip(crowd: crowd) }
+                    if online { PresenceStrip(crowd: crowd, now: context.date) }
                     games
                 }
                 footer

@@ -244,9 +244,14 @@ enum Snapshot {
             m("서연", .resting), m("도윤", .resting), m("수아"), m("우진", .coding), m("지은", .resting),
         ]
         let now = Date()
+        func r(_ name: String, _ ago: TimeInterval) -> Regular { Regular(id: UUID(), name: name, lastSeenAt: now.addingTimeInterval(-ago)) }
+        // 오프라인 명부 회원 (ADR-0011)
+        let away = [r("논스탁", 40), r("madman", 12 * 60), r("집산다", 3 * 3600), r("조곽철", 2 * 86_400)]
         switch mode {
         case "lobby-quiet":
-            return LoungeCrowd(members: [mine, m("예린", .vip)], me: me.id, events: [])
+            return LoungeCrowd(members: [mine, m("예린", .vip)], roster: away, me: me.id, events: [])
+        case "lobby-alone":
+            return LoungeCrowd(members: [mine], me: me.id, events: [])
         case "lobby-ticker":
             let events = [
                 LoungeEvent(id: 1, kind: "bigwin", game: "slot", name: "민수", amount: 1_000, createdAt: now.addingTimeInterval(-40)),
@@ -254,7 +259,7 @@ enum Snapshot {
             ]
             return LoungeCrowd(members: busy, me: me.id, events: events)
         default:
-            return LoungeCrowd(members: busy, me: me.id, events: [])
+            return LoungeCrowd(members: busy, roster: away, me: me.id, events: [])
         }
     }
 }

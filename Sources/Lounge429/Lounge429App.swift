@@ -38,8 +38,15 @@ struct Lounge429App: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// App Nap 막기. 팝오버를 닫아 두면 macOS가 앱을 재워 타이머가 밀리고,
+    /// Realtime 하트비트가 늦어 서버가 연결을 끊는다 → 다른 회원 화면에서 사라진다.
+    /// 맥 자체의 잠자기는 막지 않는다 (잠들면 라운지에서 빠지는 게 맞다)
+    private var activity: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `swift run`으로 띄울 때도 Dock 아이콘 없이 메뉴바 전용으로
         NSApp.setActivationPolicy(.accessory)
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep, reason: "라운지 접속 유지")
     }
 }
