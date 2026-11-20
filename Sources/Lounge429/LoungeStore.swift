@@ -192,6 +192,8 @@ final class LoungeStore {
 
     /// 메뉴바 점: 다른 회원이 홀짝 테이블에 앉아 있다
     var tableBusy: Bool { crowd().oddEven > 0 }
+    /// 429에 걸려 리셋 전인지 (메뉴바 아이콘이 VIP로 바뀐다)
+    var vip: Bool { snapshot.activeLock() != nil }
 
     /// 스냅샷/프리뷰용
     func preview(members: [Member], events: [LoungeEvent]) {

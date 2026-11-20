@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 ## 4. 사용자에게 알려 줄 것
 
-- 메뉴바의 칩 아이콘을 눌러 입장. 처음엔 닉네임부터 정한다
+- 메뉴바의 슬롯머신 아이콘을 눌러 입장. 처음엔 닉네임부터 정한다
 - 아이콘이 안 보이면 Bartender·Ice 같은 메뉴바 관리 앱의 숨김 영역 확인
 - 칩은 Claude Code 로그의 토큰 수만 읽어서 계산한다. 대화 내용은 서버로 보내지 않는다
 - 지우기: `rm -rf "/Applications/429 Lounge.app" ~/Library/Application\ Support/429Lounge`

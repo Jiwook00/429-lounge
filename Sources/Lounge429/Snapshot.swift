@@ -49,8 +49,8 @@ enum Snapshot {
         } else {
             content = AnyView(VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Image(nsImage: Sprites.menuBarIcon())
-                    Image(nsImage: Sprites.menuBarIcon(dot: true))
+                    Image(nsImage: Sprites.menuBarIcon(vip: locked))
+                    Image(nsImage: Sprites.menuBarIcon(vip: locked, busy: true))
                     Text("메뉴바 아이콘").font(Fonts.small()).foregroundStyle(.white)
                 }
                 .padding(6)

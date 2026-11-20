@@ -30,7 +30,7 @@ struct Lounge429App: App {
         MenuBarExtra {
             RootView(store: store)
         } label: {
-            Image(nsImage: Sprites.menuBarIcon(dot: store.tableBusy))
+            Image(nsImage: Sprites.menuBarIcon(vip: store.vip, busy: store.tableBusy))
             Text(store.chips.formatted(.number))
         }
         .menuBarExtraStyle(.window)
