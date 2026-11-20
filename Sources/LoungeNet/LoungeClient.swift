@@ -204,6 +204,7 @@ public final class LoungeClient: Sendable {
                 let bets = channel.postgresChange(AnyAction.self, table: "oddeven_bets", filter: .eq("room_code", value: room))
                 let players = channel.postgresChange(UpdateAction.self, table: "players")
                 let presence = channel.presenceChange()
+                let statuses = channel.statusChange
 
                 do {
                     try await channel.subscribeWithError()
@@ -214,6 +215,12 @@ public final class LoungeClient: Sendable {
                 }
 
                 await withTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        // 재연결 뒤 착석 다시 알리기 (라운지 채널과 같은 이유)
+                        for await _ in statuses.resubscribed() {
+                            try? await channel.track(seat)
+                        }
+                    }
                     group.addTask {
                         for await action in rounds {
                             if let r: Round = action.decoded() { continuation.yield(.round(r)) }
@@ -234,6 +241,7 @@ public final class LoungeClient: Sendable {
                     group.addTask {
                         var seats: [String: Seat] = [:]
                         for await action in presence {
+                            if action.isFullState { seats = [:] }
                             // 상태 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리
                             for key in action.leaves.keys { seats[key] = nil }
                             for (key, p) in action.joins {
@@ -303,6 +311,7 @@ public final class LoungeLink: Sendable {
         init(_ m: Member) { member = m }
         func set(_ m: Member) -> Bool { member = m; return subscribed }
         func markSubscribed() -> Member { subscribed = true; return member }
+        var current: Member { member }
     }
 
     init(supabase: SupabaseClient, me: Member) {
@@ -311,6 +320,7 @@ public final class LoungeLink: Sendable {
         self.channel = channel
         self.latest = latest
         let presence = channel.presenceChange()
+        let statuses = channel.statusChange
         let inserts = channel.postgresChange(InsertAction.self, table: "lounge_events")
         let (stream, continuation) = AsyncStream<LoungeSignal>.makeStream()
         signals = stream
@@ -327,12 +337,21 @@ public final class LoungeLink: Sendable {
                 group.addTask {
                     var members: [String: Member] = [:]
                     for await action in presence {
+                        // 재연결하면 서버가 전체 목록을 다시 보낸다 → 갈아끼운다 (끊긴 사이 나간 회원이 남지 않게)
+                        if action.isFullState { members = [:] }
                         // 상태 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리
                         for key in action.leaves.keys { members[key] = nil }
                         for (key, p) in action.joins {
                             if let m = try? p.decodeState(as: Member.self) { members[key] = m }
                         }
                         continuation.yield(.members(Array(members.values)))
+                    }
+                }
+                group.addTask {
+                    // 맥이 잠들었다 깨는 등으로 소켓이 다시 연결되면 SDK는 채널에 다시 들어가기만 하고
+                    // track은 다시 보내지 않는다 → 나는 남들이 보이는데 남들 화면에선 내가 사라진다
+                    for await _ in statuses.resubscribed() {
+                        try? await channel.track(await latest.current)
                     }
                 }
                 group.addTask {
@@ -355,5 +374,19 @@ public final class LoungeLink: Sendable {
 
     public func leave() {
         task.cancel()
+    }
+}
+
+extension PresenceAction {
+    /// 구독(재구독) 직후 서버가 보내는 전체 목록인지. 아니면 변화분(diff)
+    var isFullState: Bool { rawMessage.event == ChannelEvent.presenceState }
+}
+
+extension AsyncStream<RealtimeChannelStatus> {
+    /// 처음 구독 이후 다시 구독될 때마다 (소켓 재연결 → SDK가 채널에 다시 들어감).
+    /// 구독 전에 만든 스트림이어야 처음 `.subscribed`를 건너뛸 수 있다
+    func resubscribed() -> AsyncFilterSequence<AsyncFilterSequence<Self>> {
+        var seen = 0
+        return filter { $0 == .subscribed }.filter { _ in seen += 1; return seen > 1 }
     }
 }

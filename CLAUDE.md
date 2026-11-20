@@ -59,6 +59,7 @@ swift build --product Lounge429
 - 멀티플레이는 `lounge-bot` 두 개 + `--table live` 조합으로 확인
 - 라운지 접속은 `lounge-bot --name 철수 [--blink] [--watch]` + `--table lobby-live`(20초 동안 회원 목록 출력 후 화면). `--blink`는 7초마다 보는 중을 껐다 켜고, `--watch`는 봇 쪽에서 본 회원 목록을 찍는다 (다른 회원 화면에 내가 어떻게 보이는지)
 - Presence 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리해야 회원이 사라지지 않는다
+- 소켓이 재연결되면 SDK는 채널에 다시 들어가기만 하고 `track`은 다시 안 보낸다 → `statusChange`의 두 번째 `.subscribed`부터 다시 track. 재연결 땐 `presence_state`(전체 목록)가 "들어옴"으로만 오니 목록을 갈아끼운다. 재현: `lounge-bot` 띄우고 `docker restart supabase_realtime_429-lounge` 후 `--table lobby-live`
 - 서버 함수를 바꾸면 RPC를 직접 호출해 거절 케이스까지 확인한다. 로컬 공개 키는 `LoungeConfig.local` 참고
 - E2E는 앱과 같은 `default` 프로필 세션을 쓴다. 테스트 후 지갑이 지저분하면 `supabase db reset`
 - 운영 서버로 확인할 땐 `LOUNGE_SERVER=remote`. 운영 DB엔 실제 회원 데이터가 있으니 테스트 계정은 끝나고 지운다
