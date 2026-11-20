@@ -34,5 +34,5 @@ xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 echo "✓ 설치: $APP"
 if [[ -z "${LOUNGE_NO_OPEN:-}" ]]; then
     open "$APP"
-    echo "  메뉴바의 칩 아이콘을 눌러 입장하세요. (Bartender·Ice를 쓰면 숨김 영역에 있을 수 있어요)"
+    echo "  메뉴바의 슬롯머신 아이콘을 눌러 입장하세요. (Bartender·Ice를 쓰면 숨김 영역에 있을 수 있어요)"
 fi
