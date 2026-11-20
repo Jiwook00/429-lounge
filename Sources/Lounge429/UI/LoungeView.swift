@@ -31,6 +31,9 @@ struct LoungeView: View {
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
     var onBoard: () -> Void = {}
+    /// 잭팟 시스템 알림 켬/끔
+    var notify = false
+    var onNotify: () -> Void = {}
     var onRefresh: () -> Void = {}
     var onQuit: () -> Void = {}
 
@@ -227,6 +230,12 @@ struct LoungeView: View {
             Spacer()
             if online, name != nil, !renaming {
                 Button("이름 바꾸기") { renaming = true }.padding(.trailing, 6)
+            }
+            if online {
+                Button(notify ? "알림 켬" : "알림 끔", action: onNotify)
+                    .foregroundStyle(notify ? Theme.cream : Theme.muted)
+                    .help("다른 회원이 잭팟을 터뜨리면 알려 줘요")
+                    .padding(.trailing, 6)
             }
             Button("의견") { openURL(AppInfo.feedbackURL) }.padding(.trailing, 6)
             Button("새로고침", action: onRefresh).padding(.trailing, 6)

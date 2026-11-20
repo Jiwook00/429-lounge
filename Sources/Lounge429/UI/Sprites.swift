@@ -213,6 +213,23 @@ enum Sprites {
     /// 평소엔 레드 기계에 골드 777, VIP HOUR엔 골드 기계에 네온 429.
     /// busy면 홀짝 테이블에 다른 회원이 있다는 뜻으로 레버 공이 시안으로 켜진다.
     static func menuBarIcon(vip: Bool = false, busy: Bool = false) -> NSImage {
+        let sprite = slotMachine(vip: vip, busy: busy)
+        let image = NSImage(size: NSSize(width: sprite.width, height: sprite.height), flipped: true) { _ in
+            for (y, row) in sprite.rows.enumerated() {
+                for (x, ch) in row.enumerated() {
+                    guard let color = sprite.palette[ch] else { continue }
+                    NSColor(color).setFill()
+                    NSRect(x: x, y: y, width: 1, height: 1).fill()
+                }
+            }
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    /// 메뉴바·앱 아이콘이 같이 쓰는 18×14 슬롯머신 격자
+    static func slotMachine(vip: Bool = false, busy: Bool = false) -> PixelSprite {
         let seven = ["777", "..7", "..7", ".7.", ".7."]
         let reels = vip
             ? [["7.7", "7.7", "777", "..7", "..7"], ["777", "..7", "777", "7..", "777"], ["777", "7.7", "777", "..7", "777"]]
@@ -239,18 +256,6 @@ enum Sprites {
             "B": busy ? Theme.cyan : (vip ? Theme.neon : Theme.gold),
             "S": Theme.dim,
         ]
-        let sprite = PixelSprite(rows: rows, palette: palette)
-        let image = NSImage(size: NSSize(width: sprite.width, height: sprite.height), flipped: true) { _ in
-            for (y, row) in sprite.rows.enumerated() {
-                for (x, ch) in row.enumerated() {
-                    guard let color = sprite.palette[ch] else { continue }
-                    NSColor(color).setFill()
-                    NSRect(x: x, y: y, width: 1, height: 1).fill()
-                }
-            }
-            return true
-        }
-        image.isTemplate = false
-        return image
+        return PixelSprite(rows: rows, palette: palette)
     }
 }

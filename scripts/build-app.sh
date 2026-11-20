@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 SERVER="local"; DIST=0; OPEN=0
 for arg in "$@"; do
     case "$arg" in
@@ -32,6 +32,17 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Lounge429" "$APP/Contents/MacOS/"
 cp -R "$BIN"/*_Lounge429.bundle "$APP/Contents/Resources/"
 
+# 앱 아이콘: 앱이 코드로 그린 1024px 도트 아이콘을 .icns로. 1024 = 32칸 × 32px라 절반씩 줄이면 도트가 안 번진다 (16px 제외)
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+"$APP/Contents/MacOS/Lounge429" --app-icon "$ICONSET/icon_512x512@2x.png"
+for s in 16 32 128 256 512; do
+    sips -z $s $s "$ICONSET/icon_512x512@2x.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+    [[ $s == 512 ]] || sips -z $((s * 2)) $((s * 2)) "$ICONSET/icon_512x512@2x.png" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,6 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>429 Lounge</string>
     <key>CFBundleIdentifier</key><string>co.dwook.lounge429</string>
     <key>CFBundleExecutable</key><string>Lounge429</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>

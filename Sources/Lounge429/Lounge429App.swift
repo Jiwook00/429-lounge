@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @main
 enum Entry {
@@ -8,6 +9,11 @@ enum Entry {
         setvbuf(stdout, nil, _IOLBF, 0)
         // 개발용: `Lounge429 --snapshot out.png [--locked | --table betting|reveal|nickname|...]` → PNG로 렌더링하고 종료
         let args = CommandLine.arguments
+        // 빌드용: `Lounge429 --app-icon out.png` → 1024px 앱 아이콘 PNG
+        if let i = args.firstIndex(of: "--app-icon"), i + 1 < args.count {
+            let ok = MainActor.assumeIsolated { AppIcon.write(to: args[i + 1]) }
+            exit(ok ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             let table = args.firstIndex(of: "--table").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
             MainActor.assumeIsolated {
@@ -30,14 +36,15 @@ struct Lounge429App: App {
         MenuBarExtra {
             RootView(store: store)
         } label: {
-            Image(nsImage: Sprites.menuBarIcon(vip: store.vip, busy: store.tableBusy))
+            // 다른 회원의 잭팟이면 VIP ↔ 평소로 깜빡인다
+            Image(nsImage: Sprites.menuBarIcon(vip: store.vip != store.jackpotFlash, busy: store.tableBusy))
             Text(store.chips.formatted(.number))
         }
         .menuBarExtraStyle(.window)
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     /// App Nap 막기. 팝오버를 닫아 두면 macOS가 앱을 재워 타이머가 밀리고,
     /// Realtime 하트비트가 늦어 서버가 연결을 끊는다 → 다른 회원 화면에서 사라진다.
     /// 맥 자체의 잠자기는 막지 않는다 (잠들면 라운지에서 빠지는 게 맞다)
@@ -48,5 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         activity = ProcessInfo.processInfo.beginActivity(
             options: .userInitiatedAllowingIdleSystemSleep, reason: "라운지 접속 유지")
+        if Notifier.available { UNUserNotificationCenter.current().delegate = self }
+    }
+
+    /// 팝오버를 열어 둔 상태(앱이 앞)에서도 배너를 띄운다
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .list]
     }
 }

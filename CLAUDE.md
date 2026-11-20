@@ -60,6 +60,7 @@ swift build --product Lounge429
 - 멀티플레이는 `lounge-bot` 두 개 + `--table live` 조합으로 확인
 - 라운지 접속은 `lounge-bot --name 철수 [--blink] [--watch]` + `--table lobby-live`(20초 동안 회원 목록 출력 후 화면). `--blink`는 7초마다 보는 중을 껐다 켜고, `--watch`는 봇 쪽에서 본 회원 목록을 찍는다 (다른 회원 화면에 내가 어떻게 보이는지)
 - 이번 주 큰손은 `--table lobby-live`가 끝날 때 `board [...]`로 출력한다. 봇이 판을 돌리는 동안 두 번 찍어 순수익이 바뀌는지 본다
+- 잭팟 알림은 로컬 DB에 다른 회원 이름으로 `insert into lounge_events (kind, game, player_id, name, amount) select 'jackpot','slot',id,name,4290 from players where name='철수'`를 넣어 본다. 번들로 띄운 앱(`build-app.sh --open`)에서만 macOS 알림이 뜬다 (`swift run`·스냅샷은 번들 ID가 없어 건너뜀)
 - Presence 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리해야 회원이 사라지지 않는다
 - 소켓이 재연결되면 SDK는 채널에 다시 들어가기만 하고 `track`은 다시 안 보낸다 → `statusChange`의 두 번째 `.subscribed`부터 다시 track. 재연결 땐 `presence_state`(전체 목록)가 "들어옴"으로만 오니 목록을 갈아끼운다. 재현: `lounge-bot` 띄우고 `docker restart supabase_realtime_429-lounge` 후 `--table lobby-live`
 - 서버 함수를 바꾸면 RPC를 직접 호출해 거절 케이스까지 확인한다. 로컬 공개 키는 `LoungeConfig.local` 참고

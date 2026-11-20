@@ -31,6 +31,8 @@ struct RootView: View {
                     onOddEven: { go(.oddEven(OddEvenTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
                     onBoard: { Task { await store.loadBoard() } },
+                    notify: store.notify,
+                    onNotify: { Task { await store.toggleNotify() } },
                     onRefresh: { Task { await store.refresh() } },
                     onQuit: { NSApp.terminate(nil) }
                 )

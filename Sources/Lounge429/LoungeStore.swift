@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LoungeCore
 import LoungeNet
@@ -40,6 +41,13 @@ final class LoungeStore {
     private var seenAt: Date?
     /// 전광판 이벤트 (최근 것만 유지)
     private(set) var events: [LoungeEvent] = []
+    /// 다른 회원이 잭팟을 터뜨리면 잠깐 켜졌다 꺼졌다 한다 → 메뉴바 아이콘이 VIP ↔ 평소로 깜빡임
+    private(set) var jackpotFlash = false
+    private var flashing: Task<Void, Never>?
+    /// 잭팟 시스템 알림 (켜는 사람만)
+    private(set) var notify = UserDefaults.standard.bool(forKey: "notifyJackpot") {
+        didSet { UserDefaults.standard.set(notify, forKey: "notifyJackpot") }
+    }
     /// 이번 주 큰손 (ADR-0012). 라운지 카드를 뒤집을 때 읽는다. 아직 못 읽었으면 nil
     private(set) var board: [BoardRow]?
     private var boardAt: Date?
@@ -152,6 +160,10 @@ final class LoungeStore {
     private func apply(_ grant: Grant, _ message: String, golden: Bool = false) {
         me = grant.player
         guard grant.granted > 0 else { return }
+        showToast(message, golden: golden)
+    }
+
+    private func showToast(_ message: String, golden: Bool = false) {
         let t = Toast(text: message, golden: golden, at: .now)
         toast = t
         Task {
@@ -207,7 +219,9 @@ final class LoungeStore {
             for await signal in link.signals {
                 switch signal {
                 case .members(let m): members = m
-                case .event(let e): addEvents([e])
+                case .event(let e):
+                    addEvents([e])
+                    celebrate(e)
                 }
             }
             // 연결이 끊겼다 (구독 실패 등) → 잠시 뒤 다시
@@ -227,6 +241,34 @@ final class LoungeStore {
         var byID = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
         for e in new { byID[e.id] = e }
         events = byID.values.filter { $0.createdAt > cutoff }.sorted { $0.id < $1.id }
+    }
+
+    /// 다른 회원의 잭팟: 메뉴바 깜빡임 + (켰으면) 시스템 알림.
+    /// Realtime으로 방금 들어온 것만. 앱을 켤 때 받아 오는 지난 이벤트로는 알리지 않는다
+    private func celebrate(_ e: LoungeEvent) {
+        guard e.kind == "jackpot", e.name != me?.name, Date().timeIntervalSince(e.createdAt) < 60 else { return }
+        if notify { Notifier.jackpot(e) }
+        flashing?.cancel()
+        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        flashing = Task {
+            // 0.3초마다 바뀌며 5초. 동작 줄이기면 깜빡이지 않고 5초 동안 켜 둔다
+            for i in 0..<(still ? 1 : 16) {
+                jackpotFlash = still || i % 2 == 0
+                try? await Task.sleep(for: .seconds(still ? 5 : 0.3))
+                if Task.isCancelled { return }
+            }
+            jackpotFlash = false
+        }
+    }
+
+    /// 바닥 줄 알림 켬/끔. 켤 때 권한을 묻고, 막혀 있으면 안내
+    func toggleNotify() async {
+        if notify { notify = false; return }
+        if await Notifier.requestPermission() {
+            notify = true
+        } else {
+            showToast("시스템 설정 > 알림에서 429 Lounge를 허용해 주세요")
+        }
     }
 
     /// 바뀐 게 있을 때만 다시 알린다
