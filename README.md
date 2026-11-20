@@ -93,6 +93,12 @@ scripts/build-app.sh --dist     # 운영 서버용 유니버설 앱 → build/42
 gh release create v0.1.0 build/429-Lounge.zip --title v0.1.0 --notes "..."
 ```
 
+새 버전이 나오면 앱이 OPEN 위에 `vX.Y.Z 나옴`을 띄운다 (30분마다 확인). RPC를 깨는 마이그레이션이면 같은 마이그레이션에서 최소 버전을 올려 옛 앱의 테이블을 막는다:
+
+```sql
+update public.client_policy set min_version = '0.4.0';
+```
+
 설치 스크립트는 항상 최신 릴리스의 `429-Lounge.zip`을 받는다. `--remote`만 주면 zip 없이 운영 서버용 앱을 만든다. 운영 서버는 `LoungeConfig.remote`, 배포 결정은 [ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md).
 
 ## 개발
@@ -100,7 +106,7 @@ gh release create v0.1.0 build/429-Lounge.zip --title v0.1.0 --notes "..."
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-live]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

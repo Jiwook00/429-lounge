@@ -17,6 +17,10 @@ struct LoungeView: View {
     var onRename: (String) async -> String? = { _ in nil }
     /// 스냅샷용: 이름 바꾸기 카드를 펼친 상태로
     var nicknameDraft: (text: String, error: String?)?
+    /// 새 버전 안내 (ADR-0010). required면 게임 대신 업데이트 카드
+    var appUpdate: AppUpdate?
+    /// 스냅샷용: 업데이트 카드를 펼친 상태로
+    var showUpdate = false
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
     var onRefresh: () -> Void = {}
@@ -27,6 +31,7 @@ struct LoungeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
     @State private var renaming = false
+    @State private var updating = false
 
     var body: some View {
         // 0.1초 틱: 네온 깜빡임과 전구 띠용. 팝오버가 열려 있을 때만 그려진다.
@@ -41,7 +46,9 @@ struct LoungeView: View {
                 wallet
                 if let lock { vipBanner(lock, now: context.date) }
                 if let toast { toastView(toast) }
-                if online && (name == nil || renaming || nicknameDraft != nil) {
+                if let appUpdate, appUpdate.required || updating || showUpdate {
+                    UpdateCard(update: appUpdate, onClose: appUpdate.required ? nil : { updating = false })
+                } else if online && (name == nil || renaming || nicknameDraft != nil) {
                     NicknameCard(
                         current: name,
                         onSave: { new in
@@ -89,10 +96,19 @@ struct LoungeView: View {
                     .glow(Theme.cyan)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    // 버전: 얼핏 보면 안 보이고, 들여다보면 보이는 정도
-                    Text(AppInfo.versionLabel)
-                        .font(Fonts.small())
-                        .foregroundStyle(Theme.line)
+                    // 버전: 얼핏 보면 안 보이고, 들여다보면 보이는 정도. 새 버전이 있으면 시안으로 눌러 볼 수 있게
+                    if let appUpdate {
+                        Button { updating.toggle() } label: {
+                            Text("v\(appUpdate.target.description) 나옴")
+                                .font(Fonts.small())
+                                .foregroundStyle(Theme.cyan)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(AppInfo.versionLabel)
+                            .font(Fonts.small())
+                            .foregroundStyle(Theme.line)
+                    }
                     HStack(spacing: 4) {
                         let color = locked ? Theme.gold : Theme.green
                         Rectangle().fill(color).frame(width: 6, height: 6)

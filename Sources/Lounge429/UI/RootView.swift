@@ -25,6 +25,7 @@ struct RootView: View {
                     crowd: store.crowd(),
                     name: store.me.flatMap { $0.named ? $0.name : nil },
                     onRename: { await store.rename($0) },
+                    appUpdate: store.appUpdate,
                     onOddEven: { go(.oddEven(OddEvenTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
                     onRefresh: { Task { await store.refresh() } },
@@ -46,6 +47,12 @@ struct RootView: View {
         }
         // 팝오버가 실제로 화면에 보이는지 → "보는 중"
         .background(WindowVisibility { store.viewing = $0 })
+        // 최소 버전에 못 미치면 테이블에서 일으켜 세운다 (ADR-0010)
+        .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
+            guard blocked else { return }
+            if case .oddEven(let table) = screen { table.leave() }
+            go(.lounge)
+        }
         .task {
             if store.me == nil { await store.connect() }
         }

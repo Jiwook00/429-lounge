@@ -108,6 +108,13 @@ public final class LoungeClient: Sendable {
         return try await supabase.from("players").select().in("id", values: ids).execute().value
     }
 
+    /// 서버가 요구하는 앱 최소 버전 (ADR-0010). 로그인 전에도 읽힌다
+    public func minClientVersion() async throws -> String {
+        struct Row: Decodable { let min_version: String }
+        let row: Row = try await supabase.from("client_policy").select("min_version").single().execute().value
+        return row.min_version
+    }
+
     // MARK: - 칩 경제 (docs/chip-economy.md)
 
     /// 하루 한 번 출근 도장 (+100, 잔액 100 미만이면 +300)

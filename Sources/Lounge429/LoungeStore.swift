@@ -19,6 +19,17 @@ final class LoungeStore {
     /// 칩이 들어왔을 때 잠깐 보여주는 알림
     private(set) var toast: Toast?
 
+    // MARK: 업데이트 (ADR-0010)
+
+    /// GitHub 최신 릴리스
+    private(set) var latestRelease: AppVersion?
+    /// 서버가 요구하는 최소 버전
+    private(set) var minVersion: AppVersion?
+    /// 새 버전 안내. required면 테이블을 막는다
+    var appUpdate: AppUpdate? {
+        AppUpdate.check(current: AppVersion(AppInfo.version), latest: latestRelease, minimum: minVersion)
+    }
+
     // MARK: 라운지 접속 (ADR-0008)
 
     /// 지금 라운지에 있는 회원 (나 포함)
@@ -53,6 +64,22 @@ final class LoungeStore {
             await connect()
             await poll()
         }
+        Task { await watchUpdates() }
+    }
+
+    /// 앱을 켤 때, 그 뒤로 30분마다 최신 릴리스와 최소 버전을 본다. 실패하면 이전 값을 둔다
+    private func watchUpdates() async {
+        while !Task.isCancelled {
+            await checkUpdates()
+            try? await Task.sleep(for: .seconds(30 * 60))
+        }
+    }
+
+    func checkUpdates() async {
+        async let latest = AppInfo.latestRelease()
+        async let minimum = try? net.minClientVersion()
+        if let v = await latest { latestRelease = v }
+        if let v = await minimum.flatMap(AppVersion.init) { minVersion = v }
     }
 
     var chips: Int { Int(me?.chips ?? 0) }
