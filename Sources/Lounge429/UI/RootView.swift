@@ -6,6 +6,7 @@ struct RootView: View {
         case lounge
         case oddEven(OddEvenTable)
         case slot(SlotMachine)
+        case minority
     }
 
     let store: LoungeStore
@@ -31,6 +32,8 @@ struct RootView: View {
                     onOddEven: { go(.oddEven(OddEvenTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
                     onBoard: { Task { await store.loadBoard() } },
+                    minority: store.minorityTile,
+                    onMinority: { go(.minority) },
                     notify: store.notify,
                     onNotify: { Task { await store.toggleNotify() } },
                     onRefresh: { Task { await store.refresh() } },
@@ -43,6 +46,16 @@ struct RootView: View {
                 }
                 .onAppear { table.enter() }
                 .onDisappear { table.leave() } // 팝오버 닫으면 자리에서 일어남
+            case .minority:
+                if let result = store.minorityUnseen {
+                    MinorityResultView(result: result, onDone: { store.ackMinorityResult() }, onBack: { go(.lounge) })
+                } else {
+                MinorityView(screen: store.minorityScreen, chips: store.chips, picking: store.minorityPicking,
+                             message: store.minorityMessage,
+                             onPick: { c in Task { await store.pickMinority(c) } },
+                             onBack: { go(.lounge) })
+                    .task { await store.tickMinority() }
+                }
             case .slot(let machine):
                 SlotView(machine: machine, chips: store.chips, golden: store.golden(),
                          vip: (store.me?.goldenUntil ?? .distantPast) > .now) {
@@ -69,6 +82,8 @@ struct RootView: View {
         case .lounge: store.place = .lounge
         case .oddEven: store.place = .oddeven
         case .slot: store.place = .slot
+        // 옛 앱이 모르는 위치 값을 보내면 회원 목록이 깨진다 → 소수결은 라운지로
+        case .minority: store.place = .lounge
         }
     }
 }

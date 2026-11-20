@@ -21,6 +21,16 @@ do {
     let me = try await client.signIn(name: name)
     log("🤖 \(me.name) 착석 · ROOM \(room) · 칩 \(me.chips)")
 
+    // --minority 0|1: 지금 열린 소수결에 고른다
+    if let pick = Int(arg("--minority", default: "")) {
+        do {
+            let s = try await client.minorityPick(pick)
+            log("🗳 소수결 \(s.round?.question ?? "-") → \(pick == 0 ? s.round?.optionA ?? "" : s.round?.optionB ?? "") · 참가 \(s.round?.participants ?? 0)명")
+        } catch {
+            log("🗳 소수결 실패: \(error.localizedDescription)")
+        }
+    }
+
     // 라운지 접속: 홀짝 테이블을 보는 중, 코딩 중. --blink면 7초마다 보는 중을 껐다 켠다 (Presence 갱신 테스트)
     let blink = CommandLine.arguments.contains("--blink")
     var presence = Member(id: me.id, name: me.name, viewing: true, place: .oddeven, status: .coding)

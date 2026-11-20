@@ -52,7 +52,14 @@ enum Snapshot {
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, crowd: crowd, board: fakeBoard(table),
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
-                                         name: "새벽코더"))
+                                         name: "새벽코더",
+                                         minority: .open(closesAt: Self.kst(hour: 17), picked: false)))
+        } else if let table, table.hasPrefix("minority-result") {
+            // minority-result-win | minority-result-lose | minority-result-void
+            content = AnyView(MinorityResultView(result: fakeMinorityResult(table), shownAt: .now.addingTimeInterval(-0.5)))
+        } else if let table, table.hasPrefix("minority") {
+            // minority-open | minority-picked | minority-closed
+            content = AnyView(MinorityView(screen: fakeMinority(table), chips: store.chips))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -159,6 +166,8 @@ enum Snapshot {
                 print("t+\(i)s total \(c.total) viewing \(c.viewing) oddEven \(c.oddEven) others \(names) events \(c.events.map { "\($0.name) \($0.kind) \($0.amount)" }) dot \(store.tableBusy)")
             }
             await store.loadBoard()
+            await store.tickMinority()
+            print("minority \(store.minority.map { "round \($0.round.map { "\($0.question) \($0.optionA)/\($0.optionB) 참가 \($0.participants) 내 선택 \($0.myPick.map(String.init) ?? "-")" } ?? "-") · next \($0.nextOpensAt.map { "\($0)" } ?? "-") · mine \($0.mine.map { "\($0.question) win \($0.winner.map(String.init) ?? "무효") net \($0.net)" } ?? "-")" } ?? "nil") · toast \(store.toast?.text ?? "-")")
             print("board \(store.board.map { $0.map { "\($0.rank). \($0.name) \($0.net)\($0.me ? " (나)" : "")" } } ?? ["-"])")
             write(AnyView(LoungeView(snapshot: store.snapshot, lastScan: .now, chips: store.chips, online: true,
                                      crowd: store.crowd(), board: store.board, name: store.me?.name)), to: path)
@@ -236,6 +245,48 @@ enum Snapshot {
         default: break
         }
         return m
+    }
+
+    /// 오늘(지났으면 다음 날) KST hour시 정각
+    private static func kst(hour: Int, weekday: Int? = nil) -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        var c = DateComponents(hour: hour, minute: 0, second: 0)
+        c.weekday = weekday
+        return cal.nextDate(after: .now, matching: c, matchingPolicy: .nextTime)!
+    }
+
+    private static func fakeMinorityResult(_ mode: String) -> MinorityResult {
+        func p(_ n: String, _ c: Int) -> MinorityResult.Pick { .init(name: n, choice: c, me: n == "나") }
+        switch mode {
+        case "minority-result-lose":
+            return MinorityResult(question: "금요일 오후 배포", options: ("한다", "안 한다"),
+                                  picks: [p("나", 0), p("예린", 0), p("민수", 0), p("지호", 1)], winner: 1, net: -500)
+        case "minority-result-void":
+            return MinorityResult(question: "아침 첫 잔", options: ("아아", "뜨아"),
+                                  picks: [p("나", 0), p("예린", 0), p("지호", 0)], winner: nil, net: 0)
+        default:
+            return MinorityResult(question: "금요일 오후 배포", options: ("한다", "안 한다"),
+                                  picks: [p("나", 1), p("예린", 0), p("민수", 0), p("철수", 0), p("영희", 0)],
+                                  winner: 1, net: 2_000)
+        }
+    }
+
+    private static func fakeMinority(_ mode: String) -> MinorityScreen {
+        let deploy = MinorityScreen.Round(question: "금요일 오후 배포", options: ("한다", "안 한다"),
+                                          closesAt: kst(hour: 17), participants: 4)
+        switch mode {
+        case "minority-picked":
+            var r = deploy
+            r.myPick = 1
+            return MinorityScreen(round: r)
+        case "minority-closed":
+            // 금요일 17시 정산 뒤: 다음 판은 월요일 8시
+            return MinorityScreen(round: nil, nextOpensAt: kst(hour: 8, weekday: 2),
+                                  mine: .init(question: "금요일 오후 배포", winner: "안 한다", net: 1_000))
+        default:
+            return MinorityScreen(round: deploy)
+        }
     }
 
     private static func fakeBoard(_ mode: String) -> [BoardRow]? {

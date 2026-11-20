@@ -31,6 +31,9 @@ struct LoungeView: View {
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
     var onBoard: () -> Void = {}
+    /// 소수결 타일 상태. nil이면 아직 모름(연결 전)
+    var minority: MinorityTileState?
+    var onMinority: () -> Void = {}
     /// 잭팟 시스템 알림 켬/끔
     var notify = false
     var onNotify: () -> Void = {}
@@ -219,6 +222,15 @@ struct LoungeView: View {
             .buttonStyle(.plain)
             .disabled(!online)
             GameTile(sprite: Sprites.roulette, title: "룰렛", mode: "TABLE")
+            Button(action: onMinority) {
+                GameTile(sprite: Sprites.ox, title: "소수결",
+                         mode: !online ? "평일 3번" : minority?.line(now: .now) ?? "평일 3번",
+                         soon: !online, live: online && minority?.open == true)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
+            // 6번째 칸: 아직 비공개
+            GameTile(sprite: Sprites.lock, title: "???", mode: "SECRET", soon: false, secret: true)
         }
     }
 
@@ -263,19 +275,21 @@ private struct GameTile: View {
     var badge: String?
     /// 테이블에 사람이 앉아 있음: 아래 줄 강조 + 더 강한 발광
     var hot = false
+    /// 아직 비공개 칸: 전부 흐리게
+    var secret = false
 
     var body: some View {
         HStack(spacing: 10) {
-            PixelView(sprite: sprite, scale: 2)
+            PixelView(sprite: sprite, scale: 2).opacity(secret ? 0.35 : 1)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(Fonts.body())
-                Text(mode).font(Fonts.small()).foregroundStyle(live ? Theme.neon : Theme.muted)
+                Text(title).font(Fonts.body()).foregroundStyle(secret ? Theme.dim : Theme.cream)
+                Text(mode).font(Fonts.small()).foregroundStyle(live ? Theme.neon : secret ? Theme.dim : Theme.muted)
                     .glow(hot ? Theme.neon : .clear)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
-        .pixelBox(border: live ? Theme.neon : Theme.line)
+        .pixelBox(fill: secret ? Theme.bg : Theme.panel, border: live ? Theme.neon : Theme.line)
         .glow(live ? Theme.neon : .clear, radius: hot ? 6 : 4, strong: hot)
         .contentShape(Rectangle())
         .overlay(alignment: .topTrailing) {

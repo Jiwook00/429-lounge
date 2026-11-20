@@ -288,3 +288,63 @@ public struct BoardRow: Codable, Sendable, Identifiable, Hashable {
         self.me = me
     }
 }
+
+// MARK: - 소수결 (ADR-0013)
+
+/// minority_tick() 결과: 지금 판, 다음 판 시각, 내가 참가한 가장 최근 정산 판
+public struct MinorityState: Decodable, Sendable, Equatable {
+    public struct Round: Decodable, Sendable, Equatable {
+        public let id: Int64
+        public let question: String
+        public let optionA: String
+        public let optionB: String
+        public let closesAt: Date
+        /// 참가 인원 (누가 뭘 골랐는지는 정산 뒤에)
+        public let participants: Int
+        /// 0 / 1. 안 골랐으면 nil
+        public let myPick: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case id, question, participants
+            case optionA = "option_a", optionB = "option_b", closesAt = "closes_at", myPick = "my_pick"
+        }
+    }
+
+    public struct Mine: Decodable, Sendable, Equatable {
+        public let id: Int64
+        public let question: String
+        public let optionA: String
+        public let optionB: String
+        /// 이긴 쪽 0 / 1. nil = 무효
+        public let winner: Int?
+        public let aCount: Int
+        public let bCount: Int
+        public let choice: Int
+        /// 손익 (무효면 0)
+        public let net: Int64
+        /// 누가 뭘 골랐는지 (정산 뒤라 공개)
+        public let picks: [Pick]
+
+        public struct Pick: Decodable, Sendable, Equatable {
+            public let name: String
+            public let choice: Int
+            public let me: Bool
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, question, winner, choice, net, picks
+            case optionA = "option_a", optionB = "option_b", aCount = "a_count", bCount = "b_count"
+        }
+
+        public var winnerLabel: String? { winner.map { $0 == 0 ? optionA : optionB } }
+    }
+
+    public let round: Round?
+    public let nextOpensAt: Date?
+    public let mine: Mine?
+
+    enum CodingKeys: String, CodingKey {
+        case round, mine
+        case nextOpensAt = "next_opens_at"
+    }
+}

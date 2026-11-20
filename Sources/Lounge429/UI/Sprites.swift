@@ -40,6 +40,22 @@ enum Sprites {
         "kkkkkkkkkk",
     ], palette: base)
 
+    /// 소수결 타일: 네온 O + 크림 X (12×12)
+    static let ox = PixelSprite(rows: [
+        "............",
+        "............",
+        "............",
+        "..RR...W...W",
+        ".R..R...W.W.",
+        ".R..R....W..",
+        ".R..R....W..",
+        ".R..R...W.W.",
+        "..RR...W...W",
+        "............",
+        "............",
+        "............",
+    ], palette: base)
+
     static let seven = PixelSprite(rows: [
         "............",
         ".RRRRRRRRRR.",

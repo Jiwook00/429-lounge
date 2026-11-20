@@ -64,6 +64,10 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 엎어 둔 그릇 아래 구슬이 홀인지 짝인지 맞힌다. 같은 방 사람들이 15초 동안 동시에 베팅하고, 구슬이 하나씩 굴러 나온 뒤 5초 후 다음 판. 맞히면 2배. 결과와 정산은 전부 서버에서.
 
+### 소수결
+
+평일 8시, 11시, 14시에 질문이 올라온다 ("탭 vs 스페이스"). 둘 중 하나에 500칩을 걸고, 3시간 뒤 **적게 고른 쪽**이 진 사람 칩을 나눠 갖는다. 3명이 안 모이거나 동점, 전원 일치면 무효. 결과가 나오면 누가 뭘 골랐는지 공개된다.
+
 ### 429 슬롯
 
 SPIN은 요청, 결과는 HTTP 응답.
@@ -109,7 +113,7 @@ update public.client_policy set min_version = '0.4.0';
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

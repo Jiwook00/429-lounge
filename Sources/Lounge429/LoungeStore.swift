@@ -48,6 +48,19 @@ final class LoungeStore {
     private(set) var notify = UserDefaults.standard.bool(forKey: "notifyJackpot") {
         didSet { UserDefaults.standard.set(notify, forKey: "notifyJackpot") }
     }
+    /// 소수결 (ADR-0013). 30초마다 같이 부른다 → 정각이 지나면 누군가의 앱이 정산한다
+    private(set) var minority: MinorityState?
+    private(set) var minorityMessage: String?
+    private(set) var minorityPicking = false
+    /// 결과를 알린 마지막 판 (같은 결과를 두 번 알리지 않게)
+    private var minorityNotified: Int64 {
+        get { Int64(UserDefaults.standard.integer(forKey: "minorityNotified")) }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "minorityNotified") }
+    }
+    /// 결과 화면을 본 마지막 판. 이보다 새 판이 정산돼 있으면 소수결에 들어올 때 결과부터
+    private(set) var minoritySeen = Int64(UserDefaults.standard.integer(forKey: "minoritySeen")) {
+        didSet { UserDefaults.standard.set(Int(minoritySeen), forKey: "minoritySeen") }
+    }
     /// 이번 주 큰손 (ADR-0012). 라운지 카드를 뒤집을 때 읽는다. 아직 못 읽었으면 nil
     private(set) var board: [BoardRow]?
     private var boardAt: Date?
@@ -109,6 +122,72 @@ final class LoungeStore {
         await claim()
         pushPresence()
         await keepRoster()
+        await tickMinority()
+    }
+
+    // MARK: - 소수결
+
+    func tickMinority() async {
+        guard me != nil, let state = try? await net.minorityTick() else { return }
+        setMinority(state)
+    }
+
+    func pickMinority(_ choice: Int) async {
+        guard !minorityPicking else { return }
+        minorityPicking = true
+        defer { minorityPicking = false }
+        do {
+            setMinority(try await net.minorityPick(choice))
+            minorityMessage = nil
+            await refreshMe()
+        } catch {
+            minorityMessage = error.localizedDescription
+        }
+    }
+
+    /// 내가 참가한 판이 새로 정산됐으면 토스트 + (켰으면) 알림
+    private func setMinority(_ state: MinorityState) {
+        minority = state
+        guard let m = state.mine, m.id > minorityNotified else { return }
+        minorityNotified = m.id
+        let text: String
+        if let w = m.winnerLabel {
+            text = m.net > 0 ? "\(w) 승 · 나 +\(m.net.formatted(.number))칩" : "\(w) 승 · 나 -\((-m.net).formatted(.number))칩"
+        } else {
+            text = "무효 · 500칩 돌려받았어요"
+        }
+        showToast("소수결 \(text)", golden: m.net > 0)
+        if notify { Notifier.minority(text, question: m.question) }
+        Task { await refreshMe() }
+    }
+
+    /// 아직 결과 화면을 안 본 내 판
+    var minorityUnseen: MinorityResult? {
+        guard let m = minority?.mine, m.id > minoritySeen else { return nil }
+        return MinorityResult(question: m.question, options: (m.optionA, m.optionB),
+                              picks: m.picks.map { .init(name: $0.name, choice: $0.choice, me: $0.me) },
+                              winner: m.winner, net: m.net)
+    }
+
+    func ackMinorityResult() {
+        if let m = minority?.mine { minoritySeen = m.id }
+    }
+
+    /// 로비 5번째 타일
+    var minorityTile: MinorityTileState? {
+        guard let m = minority else { return nil }
+        if let r = m.round { return .open(closesAt: r.closesAt, picked: r.myPick != nil) }
+        return m.nextOpensAt.map { .closed(nextOpensAt: $0) }
+    }
+
+    /// 소수결 화면에 그릴 값
+    var minorityScreen: MinorityScreen {
+        let r = minority?.round.map {
+            MinorityScreen.Round(question: $0.question, options: ($0.optionA, $0.optionB), closesAt: $0.closesAt,
+                                 participants: $0.participants, myPick: $0.myPick)
+        }
+        let mine = minority?.mine.map { MinorityScreen.Mine(question: $0.question, winner: $0.winnerLabel, net: $0.net) }
+        return MinorityScreen(round: r, nextOpensAt: minority?.nextOpensAt, mine: mine)
     }
 
     /// 마지막으로 본 시각은 2분마다, 명부는 3분마다 (새 회원이 라운지에 들어오면 바로)
