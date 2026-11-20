@@ -23,11 +23,14 @@ struct RootView: View {
                     toast: store.toast,
                     online: store.me != nil,
                     crowd: store.crowd(),
+                    board: store.board,
+                    visible: store.viewing,
                     name: store.me.flatMap { $0.named ? $0.name : nil },
                     onRename: { await store.rename($0) },
                     appUpdate: store.appUpdate,
                     onOddEven: { go(.oddEven(OddEvenTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
+                    onBoard: { Task { await store.loadBoard() } },
                     onRefresh: { Task { await store.refresh() } },
                     onQuit: { NSApp.terminate(nil) }
                 )

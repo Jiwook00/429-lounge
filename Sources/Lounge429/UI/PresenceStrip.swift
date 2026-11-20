@@ -8,12 +8,30 @@ import SwiftUI
 struct PresenceStrip: View {
     let crowd: LoungeCrowd
     var now: Date = .now
+    /// 카드 뒤집기 → 이번 주 큰손 (ADR-0012)
+    var onFlip: (() -> Void)?
 
     /// 띠 안쪽 폭: 팝오버 340 - 바깥 여백 28 - 박스 여백 20
     private static let innerWidth: CGFloat = LoungeView.width - 28 - 20
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Button { onFlip?() } label: { headline }
+                .buttonStyle(.plain)
+                .disabled(onFlip == nil)
+            if crowd.others.isEmpty && crowd.offline.isEmpty {
+                Text("누가 오면 여기 불이 켜져요").font(Fonts.small()).foregroundStyle(Theme.dim)
+            } else {
+                chips
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(10)
+        .pixelBox()
+    }
+
+    /// 첫 줄: 라운지 N/M명 · 보는 중 · 랭킹 ▸ (줄 어디를 눌러도 뒤집힌다)
+    private var headline: some View {
             HStack(spacing: 6) {
                 Rectangle().fill(Theme.green).frame(width: 6, height: 6).glow(Theme.green, radius: 3)
                 Text(crowd.offline.isEmpty ? "라운지 \(crowd.total)명" : "라운지 \(crowd.total)/\(crowd.everyone)명")
@@ -29,15 +47,11 @@ struct PresenceStrip: View {
                 } else if crowd.total <= 2 {
                     Text("조용한 밤").font(Fonts.small()).foregroundStyle(Theme.dim)
                 }
+                if onFlip != nil {
+                    Text("랭킹 ▸").font(Fonts.small()).foregroundStyle(Theme.muted).padding(.leading, 4)
+                }
             }
-            if crowd.others.isEmpty && crowd.offline.isEmpty {
-                Text("누가 오면 여기 불이 켜져요").font(Fonts.small()).foregroundStyle(Theme.dim)
-            } else {
-                chips
-            }
-        }
-        .padding(10)
-        .pixelBox()
+            .contentShape(Rectangle())
     }
 
     private var chips: some View {

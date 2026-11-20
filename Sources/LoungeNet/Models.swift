@@ -268,3 +268,23 @@ public enum LoungeSignal: Sendable {
     case members([Member])
     case event(LoungeEvent)
 }
+
+/// 이번 주 큰손 한 줄 (ADR-0012). 순수익 = 지급액 - 실제로 건 칩
+public struct BoardRow: Codable, Sendable, Identifiable, Hashable {
+    /// 동점이면 같은 순위
+    public let rank: Int
+    public let name: String
+    public let net: Int64
+    /// 내 줄
+    public let me: Bool
+
+    /// 닉네임은 라운지에서 하나뿐이라 id로 쓴다
+    public var id: String { name }
+
+    public init(rank: Int, name: String, net: Int64, me: Bool = false) {
+        self.rank = rank
+        self.name = name
+        self.net = net
+        self.me = me
+    }
+}

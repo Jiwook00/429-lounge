@@ -46,9 +46,13 @@ enum Snapshot {
                                          showUpdate: !required))
         } else if let table, table.hasPrefix("lobby-") {
             // lobby-busy | lobby-quiet | lobby-ticker: 접속 현황 (가짜 회원)
+            // lobby-board | lobby-board-me | lobby-board-empty: 카드 뒷면 큰손 / lobby-flip: 뒤집는 중(반쯤)
             let crowd = fakeCrowd(me: me, mode: table)
+            let back = table.hasPrefix("lobby-board")
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
-                                         online: true, crowd: crowd, name: "새벽코더"))
+                                         online: true, crowd: crowd, board: fakeBoard(table),
+                                         cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
+                                         name: "새벽코더"))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -154,8 +158,10 @@ enum Snapshot {
                 let names = c.others.map { "\($0.name)\($0.viewing ? "👁" : "")\($0.status.map { "·" + $0.rawValue } ?? "")" }
                 print("t+\(i)s total \(c.total) viewing \(c.viewing) oddEven \(c.oddEven) others \(names) events \(c.events.map { "\($0.name) \($0.kind) \($0.amount)" }) dot \(store.tableBusy)")
             }
+            await store.loadBoard()
+            print("board \(store.board.map { $0.map { "\($0.rank). \($0.name) \($0.net)\($0.me ? " (나)" : "")" } } ?? ["-"])")
             write(AnyView(LoungeView(snapshot: store.snapshot, lastScan: .now, chips: store.chips, online: true,
-                                     crowd: store.crowd(), name: store.me?.name)), to: path)
+                                     crowd: store.crowd(), board: store.board, name: store.me?.name)), to: path)
             exit(0)
         }
         NSApplication.shared.setActivationPolicy(.prohibited)
@@ -230,6 +236,19 @@ enum Snapshot {
         default: break
         }
         return m
+    }
+
+    private static func fakeBoard(_ mode: String) -> [BoardRow]? {
+        switch mode {
+        case "lobby-board-empty": return []
+        case "lobby-board-me":
+            // 내가 4위 밖
+            return [BoardRow(rank: 1, name: "지호", net: 21_450), BoardRow(rank: 2, name: "예린", net: 1_850),
+                    BoardRow(rank: 3, name: "민수", net: 320), BoardRow(rank: 7, name: "새벽코더", net: -600, me: true)]
+        default:
+            return [BoardRow(rank: 1, name: "지호", net: 21_450), BoardRow(rank: 2, name: "새벽코더", net: 1_850, me: true),
+                    BoardRow(rank: 3, name: "madman", net: 0)]
+        }
     }
 
     private static func fakeCrowd(me: Player, mode: String) -> LoungeCrowd {

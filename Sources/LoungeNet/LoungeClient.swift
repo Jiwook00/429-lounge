@@ -126,6 +126,11 @@ public final class LoungeClient: Sendable {
         try await supabase.rpc("touch_seen").execute()
     }
 
+    /// 이번 주 큰손: 위 `top`명 + (그 밖이면) 내 줄 (ADR-0012)
+    public func weeklyBoard(top: Int = 3) async throws -> [BoardRow] {
+        try await supabase.rpc("weekly_board", params: ["p_top": top]).execute().value
+    }
+
     // MARK: - 칩 경제 (docs/chip-economy.md)
 
     /// 하루 한 번 출근 도장 (+100, 잔액 100 미만이면 +300)

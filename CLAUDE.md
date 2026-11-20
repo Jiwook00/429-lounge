@@ -41,6 +41,7 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 - **결과와 칩 증감은 서버에서만.** 클라이언트는 테이블을 읽기만 하고, 쓰기는 `security definer` RPC로만 한다. 새 게임도 같은 패턴. ([ADR-0003](docs/madr/0003-server-authoritative-rpc.md))
 - **마이그레이션은 추가만.** 이미 적용된 파일은 고치지 말고 새 파일을 만든다. 함수 시그니처가 바뀌면 `drop function` 후 재생성하고 권한(`revoke`/`grant`)도 다시 건다.
 - **픽셀 규칙.** 스프라이트 정수 배율, Galmuri는 12/24pt(Galmuri9는 10pt)만, `pixelBox` 테두리. 색은 `Theme` 토큰만 쓰고 hex를 뷰에 직접 넣지 않는다. 발광은 `.glow()`로, DESIGN.md §7에 적힌 곳에만. 자세한 건 DESIGN.md.
+- **새 게임을 만들면** `game_results` 뷰를 다시 만들어 그 게임의 한 판(`net` = 지급액 − 건 칩, 황금 칩은 0)을 `union all`로 더한다. 안 하면 이번 주 큰손에서 빠진다 ([ADR-0012](docs/madr/0012-weekly-board-net-winnings.md))
 - **칩 규칙을 바꾸면** `docs/chip-economy.md`도 같이 고친다.
 - **Swift 6 strict concurrency.** `LoungeCore`, `LoungeNet` 타입은 `Sendable`로 유지한다.
 - 코드 주석과 UI 카피는 한국어. 카피 톤은 DESIGN.md §11.
@@ -51,13 +52,14 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-live|update|update-required]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|update|update-required]
 ```
 
 - `--table live`: 실서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅
 - `LOUNGE_FAKE_429=1`: 가짜 429 상태 (리셋 시각은 "2시간 뒤 정각"으로 고정이라 재실행해도 황금 칩 중복 없음)
 - 멀티플레이는 `lounge-bot` 두 개 + `--table live` 조합으로 확인
 - 라운지 접속은 `lounge-bot --name 철수 [--blink] [--watch]` + `--table lobby-live`(20초 동안 회원 목록 출력 후 화면). `--blink`는 7초마다 보는 중을 껐다 켜고, `--watch`는 봇 쪽에서 본 회원 목록을 찍는다 (다른 회원 화면에 내가 어떻게 보이는지)
+- 이번 주 큰손은 `--table lobby-live`가 끝날 때 `board [...]`로 출력한다. 봇이 판을 돌리는 동안 두 번 찍어 순수익이 바뀌는지 본다
 - Presence 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리해야 회원이 사라지지 않는다
 - 소켓이 재연결되면 SDK는 채널에 다시 들어가기만 하고 `track`은 다시 안 보낸다 → `statusChange`의 두 번째 `.subscribed`부터 다시 track. 재연결 땐 `presence_state`(전체 목록)가 "들어옴"으로만 오니 목록을 갈아끼운다. 재현: `lounge-bot` 띄우고 `docker restart supabase_realtime_429-lounge` 후 `--table lobby-live`
 - 서버 함수를 바꾸면 RPC를 직접 호출해 거절 케이스까지 확인한다. 로컬 공개 키는 `LoungeConfig.local` 참고

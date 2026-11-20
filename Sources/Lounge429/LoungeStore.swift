@@ -40,6 +40,9 @@ final class LoungeStore {
     private var seenAt: Date?
     /// 전광판 이벤트 (최근 것만 유지)
     private(set) var events: [LoungeEvent] = []
+    /// 이번 주 큰손 (ADR-0012). 라운지 카드를 뒤집을 때 읽는다. 아직 못 읽었으면 nil
+    private(set) var board: [BoardRow]?
+    private var boardAt: Date?
     /// 팝오버를 열어 보고 있는지. RootView가 창 상태로 갱신한다.
     var viewing = false { didSet { pushPresence() } }
     /// 보고 있는 화면
@@ -231,6 +234,15 @@ final class LoungeStore {
         guard let link, let state = presenceState(), state != pushed else { return }
         pushed = state
         Task { await link.update(state) }
+    }
+
+    /// 큰손 카드를 볼 때 부른다. 1분 안에 읽었으면 다시 안 읽는다
+    func loadBoard(at now: Date = .now) async {
+        guard me != nil, boardAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true else { return }
+        if let rows = try? await net.weeklyBoard() {
+            board = rows
+            boardAt = now
+        }
     }
 
     /// 라운지 화면에 그릴 접속 현황

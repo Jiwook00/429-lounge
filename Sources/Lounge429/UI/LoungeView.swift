@@ -12,6 +12,13 @@ struct LoungeView: View {
     var online: Bool = false
     /// 지금 라운지 접속 현황 + 전광판 이벤트
     var crowd: LoungeCrowd = .empty
+    /// 이번 주 큰손 (라운지 카드 뒷면, ADR-0012)
+    var board: [BoardRow]?
+    /// 팝오버가 화면에 보이는지. 닫히면 라운지 카드가 앞면으로 돌아온다
+    var visible = true
+    /// 스냅샷용: 라운지 카드 면과 뒤집는 중간 프레임
+    var cardFace: LoungeCard.Face = .front
+    var cardFrame = 0
     /// 직접 정한 닉네임. 아직 안 정했으면 nil → 게임 대신 닉네임 카드
     var name: String?
     var onRename: (String) async -> String? = { _ in nil }
@@ -23,6 +30,7 @@ struct LoungeView: View {
     var showUpdate = false
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
+    var onBoard: () -> Void = {}
     var onRefresh: () -> Void = {}
     var onQuit: () -> Void = {}
 
@@ -61,7 +69,10 @@ struct LoungeView: View {
                         initialError: nicknameDraft?.error
                     )
                 } else {
-                    if online { PresenceStrip(crowd: crowd, now: context.date) }
+                    if online {
+                        LoungeCard(crowd: crowd, now: context.date, board: board, visible: visible,
+                                   face: cardFace, frame: cardFrame, onBoard: onBoard)
+                    }
                     games
                 }
                 footer
