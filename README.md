@@ -14,7 +14,7 @@ Claude Code·Codex 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카�
 
 ## 설치
 
-**Claude Code에 붙여 넣기(추천):**
+**Claude Code/Codex에 붙여 넣기(추천):**
 
 ```
 https://raw.githubusercontent.com/Jiwook00/429-lounge/main/docs/install.md 읽고 그대로 429 Lounge 설치해줘
