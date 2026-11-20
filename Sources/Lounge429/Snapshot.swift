@@ -52,7 +52,7 @@ enum Snapshot {
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, crowd: crowd, board: fakeBoard(table),
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
-                                         name: "새벽코더",
+                                         name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
                                          minority: .open(closesAt: Self.kst(hour: 17), picked: false)))
         } else if let table, table.hasPrefix("minority-result") {
             // minority-result-win | minority-result-lose | minority-result-void
@@ -60,6 +60,11 @@ enum Snapshot {
         } else if let table, table.hasPrefix("minority") {
             // minority-open | minority-picked | minority-closed
             content = AnyView(MinorityView(screen: fakeMinority(table), chips: store.chips))
+        } else if let table, table.hasPrefix("bj-") {
+            // bj-idle | bj-betting | bj-full | bj-dealing | bj-deal | bj-myturn | bj-turn | bj-dealer | bj-result
+            // bj-help: 설명 카드 (뒤는 내 차례 판)
+            content = AnyView(BlackjackView(table: fakeBlackjack(store: store, me: me, mode: table == "bj-help" ? "bj-myturn" : table),
+                                            chips: store.chips, golden: store.golden(), showHelp: table == "bj-help"))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -91,6 +96,77 @@ enum Snapshot {
         }
         try? png.write(to: URL(fileURLWithPath: path))
         print("wrote \(path)")
+    }
+
+    /// 블랙잭 가짜 판: 시안과 같은 판 (린트봇 블랙잭, 나는 11에서 더블, 영희 버스트, 딜러 18)
+    static func fakeBlackjack(store: LoungeStore, me: Player, mode: String) -> BlackjackTable {
+        let table = BlackjackTable(store: store)
+        let now = Date()
+        let yhID = UUID()
+        // 카드: 무늬 × 13 + 숫자 (0 스페이드, 1 하트, 2 다이아, 3 클럽 / 0 = A, 9 = 10, 12 = K)
+        let ah = 13, kc = 51, td = 35, s8 = 7, h6 = 18, c5 = 43, tc = 48, d6 = 31, s9 = 8, ks = 12, c7 = 45, d2 = 27, qd = 37
+        func seat(_ n: Int, _ name: String, id: UUID?, amount: Int64 = 0, cards: [Int], state: BJSeat.State,
+                  action: BJSeat.Action? = nil, doubled: Bool = false, result: BJSeat.Result? = nil, payout: Int64? = nil) -> BJSeat {
+            BJSeat(seat: n, playerId: id, name: name, amount: amount, doubled: doubled, cards: cards, state: state,
+                   lastAction: action, result: result, payout: payout)
+        }
+        let lint = seat(1, "린트봇", id: nil, cards: [ah, kc], state: .blackjack)
+        let build = seat(2, "빌드봇", id: nil, cards: [td, s8], state: .stood, action: .stand)
+        func mine(_ cards: [Int], _ state: BJSeat.State, doubled: Bool = false, result: BJSeat.Result? = nil, payout: Int64? = nil) -> BJSeat {
+            seat(3, "새벽코더", id: me.id, amount: 100, cards: cards, state: state, action: doubled ? .double : nil,
+                 doubled: doubled, result: result, payout: payout)
+        }
+        func yh(_ cards: [Int], _ state: BJSeat.State, action: BJSeat.Action? = nil, result: BJSeat.Result? = nil, payout: Int64? = nil) -> BJSeat {
+            seat(4, "영희", id: yhID, amount: 50, cards: cards, state: state, action: action, result: result, payout: payout)
+        }
+        func round(_ phase: BJRound.Phase, closed: TimeInterval, turn: Int? = nil, deadline: TimeInterval? = nil,
+                   dealer: [Int], next: TimeInterval? = nil) -> BJRound {
+            BJRound(id: 1, phase: phase, betClosesAt: now.addingTimeInterval(closed), turnSeat: turn,
+                    turnDeadline: deadline.map { now.addingTimeInterval($0) }, dealerCards: dealer,
+                    nextAt: next.map { now.addingTimeInterval($0) })
+        }
+        let at = { (s: TimeInterval) in now.addingTimeInterval(s) }
+        switch mode {
+        case "bj-idle":
+            table.apply(BJState(now: now, round: nil, seats: []))
+        case "bj-betting":
+            table.apply(BJState(now: now, round: round(.betting, closed: 7, dealer: []),
+                                seats: [seat(1, "영희", id: yhID, amount: 50, cards: [], state: .waiting)]))
+        case "bj-full":
+            let names = ["영희", "철수", "민수", "지호"]
+            table.apply(BJState(now: now, round: round(.betting, closed: 5, dealer: []),
+                                seats: names.enumerated().map { seat($0 + 1, $1, id: UUID(), amount: 50, cards: [], state: .waiting) }))
+        case "bj-dealing":
+            // 딜 1.3초째: 둘째 장이 날아가는 중
+            table.apply(BJState(now: now, round: round(.playing, closed: -1.55, dealer: [s9]),
+                                seats: [lint, seat(2, "빌드봇", id: nil, cards: [td, s8], state: .playing),
+                                        mine([h6, c5], .playing), yh([tc, d6], .playing)]))
+        case "bj-deal":
+            table.apply(BJState(now: now, round: round(.playing, closed: -3.1, deadline: 0, dealer: [s9]),
+                                seats: [lint, seat(2, "빌드봇", id: nil, cards: [td, s8], state: .playing),
+                                        mine([h6, c5], .playing), yh([tc, d6], .playing)]))
+        case "bj-myturn":
+            table.apply(BJState(now: now, round: round(.playing, closed: -20, turn: 3, deadline: 7, dealer: [s9]),
+                                seats: [lint, build, mine([h6, c5], .playing), yh([tc, d6], .playing)]))
+            table.preview(actions: [2: .init(action: .stand, cards: 2, at: at(-1))], myTurnSince: at(-1))
+        case "bj-turn":
+            // 영희가 히트: 카드가 날아가는 중 (서버는 이미 버스트지만 화면은 도착해야 안다)
+            table.apply(BJState(now: now, round: round(.playing, closed: -40, turn: 4, deadline: 0.6, dealer: [s9]),
+                                seats: [lint, build, mine([h6, c5, ks], .stood, doubled: true), yh([tc, d6, qd], .bust, action: .hit)]))
+            table.preview(arrivals: ["s4-2": at(0.12)], actions: [4: .init(action: .hit, cards: 3, at: at(-0.2))])
+        case "bj-dealer":
+            table.apply(BJState(now: now, round: round(.dealer, closed: -50, deadline: 1, dealer: [s9, c7, d2]),
+                                seats: [lint, build, mine([h6, c5, ks], .stood, doubled: true), yh([tc, d6, qd], .bust, action: .hit)]))
+            table.preview(arrivals: ["d-1": at(-0.7), "d-2": at(0.15)])
+        default: // bj-result
+            table.apply(BJState(now: now, round: round(.done, closed: -60, dealer: [s9, c7, d2], next: 4),
+                                seats: [seat(1, "린트봇", id: nil, cards: [ah, kc], state: .blackjack, result: .blackjack),
+                                        seat(2, "빌드봇", id: nil, cards: [td, s8], state: .stood, result: .push),
+                                        mine([h6, c5, ks], .stood, doubled: true, result: .win, payout: 400),
+                                        yh([tc, d6, qd], .bust, result: .lose, payout: 0)]))
+            table.preview(arrivals: ["d-2": at(-1.0)])
+        }
+        return table
     }
 
     /// 실제 서버에 접속해 테이블에 앉은 뒤 `seconds` 후의 화면을 찍는다 (Realtime 검증용)
@@ -126,6 +202,48 @@ enum Snapshot {
             exit(0)
         }
         // ImageRenderer는 메인 런루프가 필요하다 (dispatchMain으론 멈춤)
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+    }
+
+    /// 실서버 블랙잭 테이블에 앉아 `seconds` 동안 매초 상태를 찍고 마지막 화면을 저장한다.
+    /// LOUNGE_E2E_BET=1이면 앱 계정도 걸고, 내 차례엔 12 미만 히트 · 그 외 스탠드
+    static func renderBlackjackLive(to path: String, seconds: Int) {
+        Task { @MainActor in
+            let store = LoungeStore(live: false)
+            await store.connect()
+            guard let me = store.me else { print("connect failed"); exit(1) }
+            print("signed in as \(me.name) · chips \(me.chips)")
+            let table = BlackjackTable(store: store)
+            table.enter()
+            let play = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"] != nil
+            table.stake = 30
+            var last = ""
+            for _ in 0..<(seconds * 2) {
+                try? await Task.sleep(for: .milliseconds(500))
+                let now = Date()
+                if play, table.mySeat == nil, !table.busy, table.idle(at: now) || table.round?.phase == .betting {
+                    await table.bet()
+                    print("bet → seat \(table.mySeat?.seat ?? 0) · \(table.message ?? "ok") · chips \(store.chips)")
+                }
+                if play, let r = table.round, let mine = table.mySeat, r.phase == .playing, r.turnSeat == mine.seat,
+                   mine.state == .playing, !table.busy, now >= table.local(r.betClosesAt).addingTimeInterval(3.5) {
+                    let t = BJCard.total(mine.cards.map(BJCard.init)).value
+                    await table.act(t < 12 ? .hit : .stand)
+                    print("act \(t < 12 ? "hit" : "stand") at \(t) → \(table.message ?? "ok")")
+                }
+                guard let r = table.round else { continue }
+                let seats = table.seats.map { s in
+                    "\(s.seat):\(s.name)\(s.bot ? "(AI)" : "") \(BJCard.total(s.cards.map(BJCard.init)).value)/\(s.state.rawValue)\(s.result.map { "=" + $0.rawValue } ?? "")"
+                }.joined(separator: " ")
+                let line = "#\(r.id) \(r.phase.rawValue) turn \(r.turnSeat.map(String.init) ?? "-") dealer \(BJCard.total(r.dealerCards.map(BJCard.init)).value) | \(seats)"
+                if line != last { print(line); last = line }
+            }
+            print("chips \(store.chips)")
+            write(AnyView(BlackjackView(table: table, chips: store.chips, golden: store.golden())), to: path)
+            table.leave()
+            exit(0)
+        }
         NSApplication.shared.setActivationPolicy(.prohibited)
         NSApplication.shared.run()
     }

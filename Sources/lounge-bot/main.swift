@@ -1,5 +1,6 @@
 // 개발용 봇: 홀짝 테이블에 앉아서 매 판 랜덤 베팅한다.
-// 사용법: swift run lounge-bot [--name 봇이름] [--room LOUNGE]
+// 사용법: swift run lounge-bot [--name 봇이름] [--room LOUNGE] [--blackjack]
+// --blackjack: 홀짝 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
 import Foundation
 import LoungeNet
 
@@ -58,6 +59,12 @@ do {
         }
     }
 
+    if CommandLine.arguments.contains("--blackjack") {
+        presence.place = .lounge // 옛 앱 호환: 블랙잭도 라운지로 (ADR-0014)
+        await link.update(presence)
+        try await playBlackjack(me: me)
+    }
+
     var current: Int64?
     var placed = false
     while true {
@@ -96,4 +103,58 @@ do {
 } catch {
     log("💥 \(error)")
     exit(1)
+}
+
+/// 블랙잭: 판이 없거나 베팅 중이면 걸고, 내 차례면 잠깐 고민하다 친다
+func playBlackjack(me: Player) async throws -> Never {
+    var reported: Int64?
+    while true {
+        let s = try await client.bjTick(room: room)
+        let mine = s.seats.first { $0.playerId == me.id }
+        let r = s.round
+        let idle = r == nil || (r!.phase == .done && (r!.nextAt ?? .distantPast) <= s.now)
+
+        if let r, r.phase == .done, let mine, let net = mine.net, reported != r.id {
+            reported = r.id
+            let chips = try await client.me()?.chips ?? 0
+            let dealer = BJCard.total(r.dealerCards.map(BJCard.init)).value
+            log("🃏 #\(r.id) 나 \(BJCard.total(mine.cards.map(BJCard.init)).value) vs 딜러 \(dealer) → \(mine.result?.rawValue ?? "?") \(net >= 0 ? "+" : "")\(net) · 칩 \(chips)")
+        }
+
+        if idle || (r?.phase == .betting && mine == nil && s.seats.count < 4) {
+            try await Task.sleep(for: .seconds(Double.random(in: 1...2.5)))
+            let amount = Int64([10, 30, 50, 100].randomElement()!)
+            do {
+                let after = try await client.bjBet(room: room, amount: amount)
+                log("🪙 #\(after.round?.id ?? -1) \(amount) 걸고 \(after.seats.first { $0.playerId == me.id }?.seat ?? 0)번 자리")
+            } catch {
+                log("⚠️ \(error.localizedDescription)")
+            }
+            continue
+        }
+
+        if let r, r.phase == .playing, let mine, r.turnSeat == mine.seat, mine.state == .playing,
+           s.now >= r.betClosesAt.addingTimeInterval(3) {
+            try await Task.sleep(for: .seconds(Double.random(in: 1...3)))
+            let mineTotal = BJCard.total(mine.cards.map(BJCard.init))
+            let up = BJCard.total(r.dealerCards.map(BJCard.init)).value
+            let action: BJSeat.Action
+            if mine.cards.count == 2, (10...11).contains(mineTotal.value), up < 10, !mine.golden {
+                action = .double
+            } else if mineTotal.value >= 17 || (mineTotal.value >= 13 && !mineTotal.soft && up <= 6) {
+                action = .stand
+            } else {
+                action = .hit
+            }
+            do {
+                let after = try await client.bjAction(room: room, action)
+                let now = after.seats.first { $0.playerId == me.id }
+                log("👉 \(action.rawValue) → \(now.map { "\(BJCard.total($0.cards.map(BJCard.init)).value) \($0.state.rawValue)" } ?? "?")")
+            } catch {
+                log("⚠️ \(error.localizedDescription)")
+            }
+            continue
+        }
+        try await Task.sleep(for: .milliseconds(500))
+    }
 }

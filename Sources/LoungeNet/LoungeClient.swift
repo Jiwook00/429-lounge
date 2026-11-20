@@ -44,6 +44,11 @@ public enum LoungeError: LocalizedError {
         case .server("no_golden"): "쓸 수 있는 황금 칩이 없어요"
         case .server("invalid_nickname"): "1~12자로 정해 주세요"
         case .server("nickname_taken"): "누가 벌써 쓰는 이름이에요"
+        case .server("table_full"): "자리가 다 찼어요"
+        case .server("not_your_turn"): "지금은 내 차례가 아니에요"
+        case .server("cannot_double"): "지금은 더블할 수 없어요"
+        case .server("not_alone"): "다른 회원도 앉아 있어요"
+        case .server("not_seated"): "먼저 걸어 주세요"
         case .server(let m): m
         }
     }
@@ -145,6 +150,74 @@ public final class LoungeClient: Sendable {
             return try await supabase.rpc("minority_pick", params: ["p_choice": choice]).execute().value
         } catch {
             throw LoungeError.wrap(error)
+        }
+    }
+
+    // MARK: - 블랙잭 (ADR-0014)
+
+    /// 밀린 단계를 진행하고 지금 판 전부를 받는다
+    public func bjTick(room: String) async throws -> BJState {
+        try await supabase.rpc("bj_tick", params: ["p_room": room]).execute().value
+    }
+
+    /// 자리에 앉아 건다. 판이 없으면 10초 베팅 창이 열린다
+    public func bjBet(room: String, amount: Int64, golden: Bool = false) async throws -> BJState {
+        struct Params: Encodable { let p_room: String; let p_amount: Int64; let p_golden: Bool }
+        do {
+            return try await supabase.rpc("bj_bet", params: Params(p_room: room, p_amount: amount, p_golden: golden)).execute().value
+        } catch {
+            throw LoungeError.wrap(error)
+        }
+    }
+
+    /// 혼자 앉아 있으면 바로 딜
+    public func bjDeal(room: String) async throws -> BJState {
+        do {
+            return try await supabase.rpc("bj_deal", params: ["p_room": room]).execute().value
+        } catch {
+            throw LoungeError.wrap(error)
+        }
+    }
+
+    /// 내 차례: hit | stand | double
+    public func bjAction(room: String, _ action: BJSeat.Action) async throws -> BJState {
+        do {
+            return try await supabase.rpc("bj_action", params: ["p_room": room, "p_action": action.rawValue]).execute().value
+        } catch {
+            throw LoungeError.wrap(error)
+        }
+    }
+
+    /// 라운지 타일: 지금 판에 앉은 회원 수 (AI 제외)
+    public func bjSeated(room: String) async throws -> Int {
+        try await supabase.rpc("bj_seated", params: ["p_room": room]).execute().value
+    }
+
+    /// 블랙잭 테이블이 바뀌었다는 신호 (라운드·좌석). 받으면 bjTick으로 다시 읽는다.
+    /// 재연결 뒤에도 한 번 보낸다 (그 사이 놓친 변경이 있을 수 있어서)
+    public func bjChanges(room: String) -> AsyncStream<Void> {
+        let supabase = self.supabase
+        return AsyncStream { continuation in
+            let task = Task {
+                let channel = supabase.channel("bj:\(room)")
+                let rounds = channel.postgresChange(AnyAction.self, table: "bj_rounds", filter: .eq("room_code", value: room))
+                let seats = channel.postgresChange(AnyAction.self, table: "bj_seats", filter: .eq("room_code", value: room))
+                let statuses = channel.statusChange
+                do {
+                    try await channel.subscribeWithError()
+                } catch {
+                    continuation.finish()
+                    return
+                }
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { for await _ in statuses.resubscribed() { continuation.yield() } }
+                    group.addTask { for await _ in rounds { continuation.yield() } }
+                    group.addTask { for await _ in seats { continuation.yield() } }
+                }
+                await supabase.removeChannel(channel)
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 

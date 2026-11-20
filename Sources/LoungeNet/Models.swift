@@ -348,3 +348,143 @@ public struct MinorityState: Decodable, Sendable, Equatable {
         case nextOpensAt = "next_opens_at"
     }
 }
+
+// MARK: - 블랙잭 (ADR-0014)
+
+/// 카드 한 장. 서버는 0~51 정수로 준다: 무늬 = c / 13 (스페이드·하트·다이아·클럽), 숫자 = c % 13 (0 = A, 9~12 = 10 J Q K)
+public struct BJCard: Sendable, Hashable {
+    public let code: Int
+
+    public init(_ code: Int) { self.code = code }
+
+    public var rank: Int { code % 13 }
+    public var suit: Int { code / 13 }
+    /// 하트·다이아
+    public var red: Bool { suit == 1 || suit == 2 }
+    /// 카드에 찍는 글자: A 2 … 10 J Q K
+    public var label: String {
+        switch rank {
+        case 0: "A"
+        case 10: "J"
+        case 11: "Q"
+        case 12: "K"
+        default: "\(rank + 1)"
+        }
+    }
+
+    /// 손패 합계 (A는 넘치지 않으면 11). soft = 11로 센 A가 남아 있음
+    public static func total(_ cards: [BJCard]) -> (value: Int, soft: Bool) {
+        var t = 0, aces = 0
+        for c in cards {
+            t += c.rank == 0 ? 11 : c.rank >= 9 ? 10 : c.rank + 1
+            if c.rank == 0 { aces += 1 }
+        }
+        while t > 21 && aces > 0 { t -= 10; aces -= 1 }
+        return (t, aces > 0)
+    }
+}
+
+/// bj_tick / bj_bet / bj_action 결과: 지금 판 전부
+public struct BJState: Decodable, Sendable, Equatable {
+    /// 서버 시각 (시계 차이 보정용)
+    public let now: Date
+    public let round: BJRound?
+    public let seats: [BJSeat]
+
+    public init(now: Date, round: BJRound?, seats: [BJSeat]) {
+        self.now = now
+        self.round = round
+        self.seats = seats
+    }
+}
+
+public struct BJRound: Decodable, Sendable, Equatable {
+    public enum Phase: String, Decodable, Sendable {
+        case betting, playing, dealer, done
+    }
+
+    public let id: Int64
+    public let phase: Phase
+    public let betClosesAt: Date
+    /// 지금 차례인 자리. nil = 딜 연출 중 / 딜러 / 끝
+    public let turnSeat: Int?
+    public let turnDeadline: Date?
+    public let dealerCards: [Int]
+    public let settledAt: Date?
+    /// 결과 연출이 끝나는 시각
+    public let nextAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, phase
+        case betClosesAt = "bet_closes_at", turnSeat = "turn_seat", turnDeadline = "turn_deadline"
+        case dealerCards = "dealer_cards", settledAt = "settled_at", nextAt = "next_at"
+    }
+
+    public init(id: Int64, phase: Phase, betClosesAt: Date, turnSeat: Int? = nil, turnDeadline: Date? = nil,
+                dealerCards: [Int] = [], settledAt: Date? = nil, nextAt: Date? = nil) {
+        self.id = id
+        self.phase = phase
+        self.betClosesAt = betClosesAt
+        self.turnSeat = turnSeat
+        self.turnDeadline = turnDeadline
+        self.dealerCards = dealerCards
+        self.settledAt = settledAt
+        self.nextAt = nextAt
+    }
+}
+
+public struct BJSeat: Decodable, Sendable, Equatable, Identifiable {
+    public enum State: String, Decodable, Sendable {
+        case waiting, playing, stood, bust, blackjack
+    }
+
+    public enum Result: String, Decodable, Sendable {
+        case win, lose, push, blackjack
+    }
+
+    public enum Action: String, Codable, Sendable {
+        case hit, stand, double, timeout
+    }
+
+    /// 1~4. 딜과 차례는 1번부터
+    public let seat: Int
+    /// nil = AI 봇
+    public let playerId: UUID?
+    public let name: String
+    public let amount: Int64
+    public let golden: Bool
+    public let doubled: Bool
+    public let cards: [Int]
+    public let state: State
+    public let lastAction: Action?
+    public let result: Result?
+    /// 지급액 (건 칩 포함). 봇은 늘 nil
+    public let payout: Int64?
+
+    public var id: Int { seat }
+    public var bot: Bool { playerId == nil }
+    /// 실제로 건 칩 (더블이면 두 배, 황금 칩은 0)
+    public var staked: Int64 { golden ? 0 : amount * (doubled ? 2 : 1) }
+    /// 순수익 (정산 뒤)
+    public var net: Int64? { payout.map { $0 - staked } }
+
+    enum CodingKeys: String, CodingKey {
+        case seat, name, amount, golden, doubled, cards, state, result, payout
+        case playerId = "player_id", lastAction = "last_action"
+    }
+
+    public init(seat: Int, playerId: UUID?, name: String, amount: Int64 = 0, golden: Bool = false, doubled: Bool = false,
+                cards: [Int] = [], state: State = .waiting, lastAction: Action? = nil, result: Result? = nil, payout: Int64? = nil) {
+        self.seat = seat
+        self.playerId = playerId
+        self.name = name
+        self.amount = amount
+        self.golden = golden
+        self.doubled = doubled
+        self.cards = cards
+        self.state = state
+        self.lastAction = lastAction
+        self.result = result
+        self.payout = payout
+    }
+}

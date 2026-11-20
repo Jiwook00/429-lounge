@@ -30,6 +30,9 @@ struct LoungeView: View {
     var showUpdate = false
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
+    /// 블랙잭에 앉은 회원 수 (AI 제외)
+    var blackjackSeated = 0
+    var onBlackjack: () -> Void = {}
     var onBoard: () -> Void = {}
     /// 소수결 타일 상태. nil이면 아직 모름(연결 전)
     var minority: MinorityTileState?
@@ -212,7 +215,14 @@ struct LoungeView: View {
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            GameTile(sprite: Sprites.spade, title: "블랙잭", mode: "SOLO · TABLE")
+            Button(action: onBlackjack) {
+                // AI 빼고 앉은 회원만 센다 (빈 자리는 딜 때 AI가 채움). 4명이면 만석이라 흐리게
+                GameTile(sprite: Sprites.spade, title: "블랙잭",
+                         mode: !online ? "TABLE" : blackjackSeated >= 4 ? "TABLE · 4/4 만석" : "TABLE · \(blackjackSeated)/4",
+                         soon: !online, live: online && blackjackSeated < 4, hot: blackjackSeated > 0 && blackjackSeated < 4)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
             Button(action: onOddEven) {
                 // 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
                 GameTile(sprite: Sprites.dice, title: "구슬 홀짝",

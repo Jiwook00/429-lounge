@@ -65,7 +65,14 @@ final class LoungeStore {
     private(set) var board: [BoardRow]?
     private var boardAt: Date?
     /// 팝오버를 열어 보고 있는지. RootView가 창 상태로 갱신한다.
-    var viewing = false { didSet { pushPresence() } }
+    var viewing = false {
+        didSet {
+            pushPresence()
+            if viewing && !oldValue { Task { await countBlackjack() } }
+        }
+    }
+    /// 블랙잭 테이블에 앉은 회원 수 (AI 제외, ADR-0014). 라운지 타일에 N/4로
+    private(set) var blackjackSeated = 0
     /// 보고 있는 화면
     var place: Member.Place = .lounge { didSet { pushPresence() } }
     private var link: LoungeLink?
@@ -123,6 +130,12 @@ final class LoungeStore {
         pushPresence()
         await keepRoster()
         await tickMinority()
+        await countBlackjack()
+    }
+
+    func countBlackjack() async {
+        guard me != nil, let n = try? await net.bjSeated(room: "LOUNGE") else { return }
+        blackjackSeated = n
     }
 
     // MARK: - 소수결

@@ -6,6 +6,7 @@ struct RootView: View {
         case lounge
         case oddEven(OddEvenTable)
         case slot(SlotMachine)
+        case blackjack(BlackjackTable)
         case minority
     }
 
@@ -31,6 +32,8 @@ struct RootView: View {
                     appUpdate: store.appUpdate,
                     onOddEven: { go(.oddEven(OddEvenTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
+                    blackjackSeated: store.blackjackSeated,
+                    onBlackjack: { go(.blackjack(BlackjackTable(store: store))) },
                     onBoard: { Task { await store.loadBoard() } },
                     minority: store.minorityTile,
                     onMinority: { go(.minority) },
@@ -56,6 +59,13 @@ struct RootView: View {
                              onBack: { go(.lounge) })
                     .task { await store.tickMinority() }
                 }
+            case .blackjack(let table):
+                BlackjackView(table: table, chips: store.chips, golden: store.golden()) {
+                    table.leave()
+                    go(.lounge)
+                }
+                .onAppear { table.enter() }
+                .onDisappear { table.leave() }
             case .slot(let machine):
                 SlotView(machine: machine, chips: store.chips, golden: store.golden(),
                          vip: (store.me?.goldenUntil ?? .distantPast) > .now) {
@@ -69,6 +79,7 @@ struct RootView: View {
         .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
             guard blocked else { return }
             if case .oddEven(let table) = screen { table.leave() }
+            if case .blackjack(let table) = screen { table.leave() }
             go(.lounge)
         }
         .task {
@@ -79,11 +90,15 @@ struct RootView: View {
     private func go(_ next: Screen) {
         screen = next
         switch next {
-        case .lounge: store.place = .lounge
+        case .lounge:
+            store.place = .lounge
+            Task { await store.countBlackjack() }
         case .oddEven: store.place = .oddeven
         case .slot: store.place = .slot
         // 옛 앱이 모르는 위치 값을 보내면 회원 목록이 깨진다 → 소수결은 라운지로
         case .minority: store.place = .lounge
+        // 블랙잭도 같은 이유로 라운지. 인원은 Presence가 아니라 서버 좌석에서 센다 (ADR-0014)
+        case .blackjack: store.place = .lounge
         }
     }
 }

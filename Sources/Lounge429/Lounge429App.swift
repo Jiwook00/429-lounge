@@ -19,6 +19,7 @@ enum Entry {
             MainActor.assumeIsolated {
                 if table == "live" { Snapshot.renderLive(to: args[i + 1], seconds: 8) }
                 if table == "lobby-live" { Snapshot.renderLobbyLive(to: args[i + 1], seconds: 20) }
+                if table == "bj-live" { Snapshot.renderBlackjackLive(to: args[i + 1], seconds: 25) }
                 if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 8) }
                 Snapshot.render(to: args[i + 1], locked: args.contains("--locked"), table: table)
             }
