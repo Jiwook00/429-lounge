@@ -1,6 +1,6 @@
 # 429 Lounge
 
-> HTTP 429 Rate Limit. 한도에 걸린 개발자들이 찾아오은 VIP 카지노 라운지.
+> HTTP 429 Rate Limit. 한도에 걸린 개발자들이 찾아오는 VIP 카지노 라운지.
 
 Claude Code 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
 
