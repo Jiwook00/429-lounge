@@ -25,6 +25,7 @@ struct LoungeView: View {
     static let width: CGFloat = 340
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openURL) private var openURL
     @State private var renaming = false
 
     var body: some View {
@@ -87,14 +88,22 @@ struct LoungeView: View {
                     .foregroundStyle(Theme.cyan)
                     .glow(Theme.cyan)
                 Spacer()
-                HStack(spacing: 4) {
-                    let color = locked ? Theme.gold : Theme.green
-                    Rectangle().fill(color).frame(width: 6, height: 6)
-                    Text(locked ? "VIP HOUR" : "OPEN")
+                VStack(alignment: .trailing, spacing: 2) {
+                    // 버전: 얼핏 보면 안 보이고, 들여다보면 보이는 정도
+                    Text(AppInfo.versionLabel)
                         .font(Fonts.small())
-                        .foregroundStyle(color)
+                        .foregroundStyle(Theme.line)
+                    HStack(spacing: 4) {
+                        let color = locked ? Theme.gold : Theme.green
+                        Rectangle().fill(color).frame(width: 6, height: 6)
+                        Text(locked ? "VIP HOUR" : "OPEN")
+                            .font(Fonts.small())
+                            .foregroundStyle(color)
+                    }
+                    .glow(locked ? Theme.gold : .clear)
                 }
-                .glow(locked ? Theme.gold : .clear)
+                // 간판 줄 정렬은 OPEN 기준 (버전 줄은 그 위로 올라간다)
+                .alignmentGuide(.firstTextBaseline) { $0[.lastTextBaseline] }
             }
             bulbs(offset: chase + 1)
         }
@@ -192,6 +201,7 @@ struct LoungeView: View {
             if online, name != nil, !renaming {
                 Button("이름 바꾸기") { renaming = true }.padding(.trailing, 6)
             }
+            Button("의견") { openURL(AppInfo.feedbackURL) }.padding(.trailing, 6)
             Button("새로고침", action: onRefresh).padding(.trailing, 6)
             Button("종료", action: onQuit)
         }
