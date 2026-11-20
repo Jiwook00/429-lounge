@@ -200,26 +200,44 @@ enum Sprites {
 
     static let blank = PixelSprite(rows: Array(repeating: "............", count: 12), palette: base)
 
-    /// 메뉴바 아이콘: 16×16 칩 실루엣. 평소엔 템플릿(시스템 색), 리밋 중엔 골드.
-    static func menuBarIcon(gold: Bool) -> NSImage {
+    /// 라운지 띠 "보는 중" 눈 (7×5)
+    static let eye = PixelSprite(rows: [
+        "..CCC..",
+        ".C...C.",
+        "C..W..C",
+        ".C...C.",
+        "..CCC..",
+    ], palette: ["C": Theme.cyan, "W": Theme.cream])
+
+    /// 메뉴바 아이콘: 16×16 칩 실루엣.
+    /// 평소엔 템플릿(시스템 색). dot이면 홀짝 테이블에 다른 회원이 있다는 네온 점을 오른쪽 위에 찍는다.
+    /// 템플릿 이미지는 단색이라 점이 있을 땐 칩을 메뉴바 글자색(labelColor)으로 직접 그린다.
+    /// (VIP HOUR 골드 칩은 아이콘 디자인이 정해질 때까지 보류)
+    static func menuBarIcon(dot: Bool = false) -> NSImage {
         let n = 16
         let c = Double(n - 1) / 2
         let image = NSImage(size: NSSize(width: n, height: n), flipped: true) { _ in
-            (gold ? NSColor(Theme.gold) : .black).setFill()
+            (dot ? NSColor.labelColor : .black).setFill()
             for y in 0..<n {
                 for x in 0..<n {
                     let dx = Double(x) - c, dy = Double(y) - c
                     let d = (dx * dx + dy * dy).squareRoot()
                     let notch = d >= 5.6 && (abs(dx) < 1.5 || abs(dy) < 1.5)
                     let ring = d >= 3.6 && d < 4.6
-                    if d <= 7.6 && !notch && !ring {
+                    // 점 자리 둘레 1칸은 비워서 점이 칩에 묻히지 않게
+                    let dotHole = dot && x >= 11 && y <= 4
+                    if d <= 7.6 && !notch && !ring && !dotHole {
                         NSRect(x: x, y: y, width: 1, height: 1).fill()
                     }
                 }
             }
+            if dot {
+                NSColor(Theme.neon).setFill()
+                NSRect(x: 12, y: 0, width: 4, height: 4).fill()
+            }
             return true
         }
-        image.isTemplate = !gold
+        image.isTemplate = !dot
         return image
     }
 }

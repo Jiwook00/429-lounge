@@ -12,6 +12,7 @@ enum Entry {
             let table = args.firstIndex(of: "--table").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
             MainActor.assumeIsolated {
                 if table == "live" { Snapshot.renderLive(to: args[i + 1], seconds: 8) }
+                if table == "lobby-live" { Snapshot.renderLobbyLive(to: args[i + 1], seconds: 20) }
                 if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 8) }
                 Snapshot.render(to: args[i + 1], locked: args.contains("--locked"), table: table)
             }
@@ -29,7 +30,7 @@ struct Lounge429App: App {
         MenuBarExtra {
             RootView(store: store)
         } label: {
-            Image(nsImage: Sprites.menuBarIcon(gold: store.snapshot.activeLock() != nil))
+            Image(nsImage: Sprites.menuBarIcon(dot: store.tableBusy))
             Text(store.chips.formatted(.number))
         }
         .menuBarExtraStyle(.window)

@@ -19,6 +19,10 @@ enum Theme {
     static let green    = Color(hex: 0x3DDC84)
     /// 꺼진 전구
     static let bulbOff  = Color(hex: 0x5A3A12)
+    /// "보는 중" 칩 바탕
+    static let cyanBg   = Color(hex: 0x0E2A2E)
+    /// 전광판 바탕
+    static let marquee  = Color(hex: 0x120806)
     /// 버튼 테두리 (홀 / 짝)
     static let neonDeep  = Color(hex: 0xB81E46)
     static let creamDeep = Color(hex: 0xC9BFA8)

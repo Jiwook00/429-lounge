@@ -169,6 +169,23 @@ public final class LoungeClient: Sendable {
         return rows.first
     }
 
+    // MARK: - 라운지 접속 / 전광판 (ADR-0008)
+
+    /// 최근 `within`초 안의 전광판 이벤트 (오래된 것부터)
+    public func recentEvents(within seconds: TimeInterval) async throws -> [LoungeEvent] {
+        let since = Date().addingTimeInterval(-seconds).formatted(.iso8601)
+        let rows: [LoungeEvent] = try await supabase.from("lounge_events").select()
+            .gte("created_at", value: since).order("id", ascending: false).limit(10).execute().value
+        return rows.reversed()
+    }
+
+    /// 라운지 전체 채널에 들어간다. 앱이 켜져 있는 동안 계속 붙어 있고,
+    /// 맥이 잠들거나 앱을 끄면 Presence가 알아서 빠진다.
+    /// 상태가 바뀌면 `LoungeLink.update`로 다시 알린다.
+    public func joinLounge(as me: Member) -> LoungeLink {
+        LoungeLink(supabase: supabase, me: me)
+    }
+
     /// 테이블 실시간 이벤트: 라운드/베팅 변경, 칩 변동, 착석자(Presence).
     /// 스트림을 끝내면(구독 Task 취소) 채널도 정리된다.
     public func tableEvents(room: String, seat: Seat) -> AsyncStream<TableEvent> {
@@ -210,10 +227,11 @@ public final class LoungeClient: Sendable {
                     group.addTask {
                         var seats: [String: Seat] = [:]
                         for await action in presence {
+                            // 상태 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리
+                            for key in action.leaves.keys { seats[key] = nil }
                             for (key, p) in action.joins {
                                 if let s = try? p.decodeState(as: Seat.self) { seats[key] = s }
                             }
-                            for key in action.leaves.keys { seats[key] = nil }
                             continuation.yield(.seats(seats.values.sorted { $0.name < $1.name }))
                         }
                     }
@@ -261,5 +279,74 @@ struct FileAuthStorage: AuthLocalStorage {
 
     func remove(key: String) throws {
         try? FileManager.default.removeItem(at: file(key))
+    }
+}
+
+/// 라운지 채널 연결. signals로 회원 목록과 전광판 이벤트를 받고, update로 내 상태를 알린다.
+public final class LoungeLink: Sendable {
+    public let signals: AsyncStream<LoungeSignal>
+    private let channel: RealtimeChannelV2
+    private let task: Task<Void, Never>
+    private let latest: Latest
+
+    /// 구독이 끝나기 전에 들어온 갱신을 잃지 않게: 마지막 상태를 들고 있다가 구독 직후 보낸다
+    private actor Latest {
+        var member: Member
+        var subscribed = false
+        init(_ m: Member) { member = m }
+        func set(_ m: Member) -> Bool { member = m; return subscribed }
+        func markSubscribed() -> Member { subscribed = true; return member }
+    }
+
+    init(supabase: SupabaseClient, me: Member) {
+        let channel = supabase.channel("lounge") { $0.presence.key = me.id.uuidString }
+        let latest = Latest(me)
+        self.channel = channel
+        self.latest = latest
+        let presence = channel.presenceChange()
+        let inserts = channel.postgresChange(InsertAction.self, table: "lounge_events")
+        let (stream, continuation) = AsyncStream<LoungeSignal>.makeStream()
+        signals = stream
+
+        task = Task {
+            do {
+                try await channel.subscribeWithError()
+                try await channel.track(await latest.markSubscribed())
+            } catch {
+                continuation.finish()
+                return
+            }
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    var members: [String: Member] = [:]
+                    for await action in presence {
+                        // 상태 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리
+                        for key in action.leaves.keys { members[key] = nil }
+                        for (key, p) in action.joins {
+                            if let m = try? p.decodeState(as: Member.self) { members[key] = m }
+                        }
+                        continuation.yield(.members(Array(members.values)))
+                    }
+                }
+                group.addTask {
+                    for await action in inserts {
+                        if let e = try? action.decodeRecord(as: LoungeEvent.self, decoder: AnyJSON.decoder) {
+                            continuation.yield(.event(e))
+                        }
+                    }
+                }
+            }
+            await supabase.removeChannel(channel)
+            continuation.finish()
+        }
+    }
+
+    /// 내 상태가 바뀌었을 때 (보는 중, 위치, Claude 상태, 이름)
+    public func update(_ me: Member) async {
+        if await latest.set(me) { try? await channel.track(me) }
+    }
+
+    public func leave() {
+        task.cancel()
     }
 }

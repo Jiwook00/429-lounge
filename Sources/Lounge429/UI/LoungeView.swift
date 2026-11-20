@@ -1,4 +1,5 @@
 import LoungeCore
+import LoungeNet
 import SwiftUI
 
 /// 메뉴바 팝오버. 스냅샷 렌더링을 위해 store 대신 값을 받는다.
@@ -9,6 +10,8 @@ struct LoungeView: View {
     var golden: Int = 0
     var toast: LoungeStore.Toast?
     var online: Bool = false
+    /// 지금 라운지 접속 현황 + 전광판 이벤트
+    var crowd: LoungeCrowd = .empty
     /// 직접 정한 닉네임. 아직 안 정했으면 nil → 게임 대신 닉네임 카드
     var name: String?
     var onRename: (String) async -> String? = { _ in nil }
@@ -30,6 +33,10 @@ struct LoungeView: View {
             let lock = snapshot.activeLock(at: context.date)
             VStack(spacing: 12) {
                 header(locked: lock != nil, now: context.date)
+                // 전광판: 잭팟·빅 윈 직후에만 나타난다
+                if !crowd.events.isEmpty {
+                    EventTicker(events: crowd.events, now: context.date, still: reduceMotion)
+                }
                 wallet
                 if let lock { vipBanner(lock, now: context.date) }
                 if let toast { toastView(toast) }
@@ -46,6 +53,7 @@ struct LoungeView: View {
                         initialError: nicknameDraft?.error
                     )
                 } else {
+                    if online { PresenceStrip(crowd: crowd) }
                     games
                 }
                 footer
@@ -157,13 +165,17 @@ struct LoungeView: View {
     private var games: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
             Button(action: onSlot) {
-                GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO", soon: !online, live: online)
+                GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO", soon: !online, live: online,
+                         badge: crowd.slot > 0 ? "\(crowd.slot)명" : nil)
             }
             .buttonStyle(.plain)
             .disabled(!online)
             GameTile(sprite: Sprites.spade, title: "블랙잭", mode: "SOLO · TABLE")
             Button(action: onOddEven) {
-                GameTile(sprite: Sprites.dice, title: "구슬 홀짝", mode: "TABLE", soon: !online, live: online)
+                // 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
+                GameTile(sprite: Sprites.dice, title: "구슬 홀짝",
+                         mode: !online ? "TABLE" : crowd.oddEven > 0 ? "TABLE · \(crowd.oddEven)명 앉음" : "TABLE · 비어 있음",
+                         soon: !online, live: online, hot: crowd.oddEven > 0)
             }
             .buttonStyle(.plain)
             .disabled(!online)
@@ -201,6 +213,10 @@ private struct GameTile: View {
     var soon = true
     /// 지금 들어갈 수 있는 테이블: 네온 테두리 + 발광
     var live = false
+    /// 오른쪽 위 인원 배지 (시안)
+    var badge: String?
+    /// 테이블에 사람이 앉아 있음: 아래 줄 강조 + 더 강한 발광
+    var hot = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -208,15 +224,23 @@ private struct GameTile: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Fonts.body())
                 Text(mode).font(Fonts.small()).foregroundStyle(live ? Theme.neon : Theme.muted)
+                    .glow(hot ? Theme.neon : .clear)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
         .pixelBox(border: live ? Theme.neon : Theme.line)
-        .glow(live ? Theme.neon : .clear)
+        .glow(live ? Theme.neon : .clear, radius: hot ? 6 : 4, strong: hot)
         .contentShape(Rectangle())
         .overlay(alignment: .topTrailing) {
-            if soon { Text("SOON")
+            if let badge {
+                Text(badge)
+                    .font(Fonts.small())
+                    .foregroundStyle(Theme.bg)
+                    .padding(.horizontal, 4)
+                    .background(Theme.cyan)
+                    .padding(6)
+            } else if soon { Text("SOON")
                 .font(Fonts.small())
                 .foregroundStyle(Theme.bg)
                 .padding(.horizontal, 3)

@@ -12,3 +12,4 @@
 | [0005](0005-pixel-sprites-in-code.md)            | 도트 스프라이트는 코드 격자로, 폰트는 Galmuri      | accepted |
 | [0006](0006-anonymous-auth-file-session.md)      | 익명 로그인 + 파일 세션 저장                       | accepted |
 | [0007](0007-remote-supabase-zip-distribution.md) | 초대 회원 배포: 서울 Supabase + ad-hoc 서명 zip    | accepted |
+| [0008](0008-lounge-presence.md) | 라운지 접속: "라운지에 있음" + "보는 중" 두 단계, Claude 상태, 서버 기록 전광판 | accepted |

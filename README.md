@@ -31,11 +31,21 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 - 메뉴바에 칩 아이콘과 숫자가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다
 - 처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기"
 - 칩은 `~/.claude/projects`의 Claude Code 로그에서 토큰 사용량만 읽어서 계산한다. 대화 내용은 서버로 보내지 않는다
+- 앱이 켜져 있는 동안 다른 회원에게 보이는 건 닉네임, 팝오버를 보고 있는지, 어느 게임 화면인지, 그리고 "코딩 중 / 429 VIP / 쉬는 중" 같은 대략적인 상태뿐이다. 프로젝트 이름이나 토큰 양은 공유하지 않는다
 - 지우기: `rm -rf "/Applications/429 Lounge.app" ~/Library/Application\ Support/429Lounge`
 
 릴리스 zip을 직접 받았다면 ad-hoc 서명이라 Gatekeeper가 막는다. `xattr -dr com.apple.quarantine "/Applications/429 Lounge.app"` 후 실행.
 
 ## 기능
+
+### 지금 라운지
+
+앱만 켜 두면 라운지에 들어와 있는 것. 팝오버를 열면 누가 같이 있는지 보인다.
+
+- **라운지 N명**: 앱이 켜져 있는 회원. **보는 중**인 회원은 시안 네온으로 빛난다
+- 회원마다 **코딩 중 / 429 VIP / 쉬는 중**: 각자의 Claude Code 로그에서 계산한 대략적인 상태
+- 사람이 앉아 있는 테이블은 `TABLE · 2명 앉음`으로 빛나고, 메뉴바 칩에 네온 점이 켜진다
+- 누가 **잭팟**이나 큰 승리를 터뜨리면 로고 아래 **전광판**이 3분 동안 나타나 흐른다
 
 ### 칩
 
@@ -90,17 +100,17 @@ gh release create v0.1.0 build/429-Lounge.zip --title v0.1.0 --notes "..."
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-live]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
-| 환경변수                                     |                                          |
+| 환경변수 | |
 | -------------------------------------------- | ---------------------------------------- | ----------------------------------- |
-| `LOUNGE_FAKE_429=1`                          | 가짜 429 상태로 실행 (VIP HOUR, 황금 칩) |
-| `LOUNGE_DEBUG=1`                             | Realtime 이벤트 로그                     |
-| `LOUNGE_E2E_BET=golden                       | chips`                                   | `--table live` 스냅샷에서 자동 베팅 |
-| `LOUNGE_SERVER=remote`                       | 운영 서버(`LoungeConfig.remote`) 사용    |
-| `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` | 임의의 Supabase 사용 (가장 우선)         |
+| `LOUNGE_FAKE_429=1` | 가짜 429 상태로 실행 (VIP HOUR, 황금 칩) |
+| `LOUNGE_DEBUG=1` | Realtime 이벤트 로그 |
+| `LOUNGE_E2E_BET=golden                       | chips` | `--table live` 스냅샷에서 자동 베팅 |
+| `LOUNGE_SERVER=remote` | 운영 서버(`LoungeConfig.remote`) 사용 |
+| `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` | 임의의 Supabase 사용 (가장 우선) |
 
 ## 구조
 

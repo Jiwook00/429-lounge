@@ -180,3 +180,72 @@ public enum TableEvent: Sendable {
     case player(Player)
     case seats([Seat])
 }
+
+// MARK: - 라운지 접속 (ADR-0008)
+
+/// 라운지에 있는 회원 한 명의 상태. Realtime Presence로 주고받는다.
+/// 프로젝트 이름, 토큰 양 같은 건 절대 담지 않는다. 대략적인 상태만.
+public struct Member: Codable, Sendable, Hashable, Identifiable {
+    public enum Place: String, Codable, Sendable {
+        case lounge, oddeven, slot
+    }
+
+    /// 로컬 Claude Code 로그에서 계산한 대략적인 상태
+    public enum Status: String, Codable, Sendable {
+        /// 최근 5분 안에 Claude 활동
+        case coding
+        /// 429 리밋 걸려서 리셋 대기
+        case vip
+        /// 30분 넘게 활동 없음
+        case resting
+    }
+
+    public let id: UUID
+    public var name: String
+    /// 팝오버를 열어 보고 있는지
+    public var viewing: Bool
+    /// 보고 있는 화면
+    public var place: Place
+    /// nil = 5~30분 사이 (표시 안 함)
+    public var status: Status?
+
+    public init(id: UUID, name: String, viewing: Bool = false, place: Place = .lounge, status: Status? = nil) {
+        self.id = id
+        self.name = name
+        self.viewing = viewing
+        self.place = place
+        self.status = status
+    }
+}
+
+/// 전광판 이벤트 (서버가 정산하면서 기록)
+public struct LoungeEvent: Codable, Sendable, Identifiable, Equatable {
+    public let id: Int64
+    /// jackpot | bigwin
+    public let kind: String
+    /// slot | oddeven
+    public let game: String
+    public let name: String
+    public let amount: Int64
+    public let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, game, name, amount
+        case createdAt = "created_at"
+    }
+
+    public init(id: Int64, kind: String, game: String, name: String, amount: Int64, createdAt: Date) {
+        self.id = id
+        self.kind = kind
+        self.game = game
+        self.name = name
+        self.amount = amount
+        self.createdAt = createdAt
+    }
+}
+
+public enum LoungeSignal: Sendable {
+    /// 지금 라운지에 있는 회원 전체 (나 포함)
+    case members([Member])
+    case event(LoungeEvent)
+}

@@ -36,6 +36,11 @@ enum Snapshot {
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, online: true,
                                          name: taken ? "새벽코더" : nil,
                                          nicknameDraft: taken ? ("danny", "누가 벌써 쓰는 이름이에요") : nil))
+        } else if let table, table.hasPrefix("lobby-") {
+            // lobby-busy | lobby-quiet | lobby-ticker: 접속 현황 (가짜 회원)
+            let crowd = fakeCrowd(me: me, mode: table)
+            content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
+                                         online: true, crowd: crowd, name: "새벽코더"))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -44,8 +49,8 @@ enum Snapshot {
         } else {
             content = AnyView(VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Image(nsImage: Sprites.menuBarIcon(gold: false))
-                    Image(nsImage: Sprites.menuBarIcon(gold: true))
+                    Image(nsImage: Sprites.menuBarIcon())
+                    Image(nsImage: Sprites.menuBarIcon(dot: true))
                     Text("메뉴바 아이콘").font(Fonts.small()).foregroundStyle(.white)
                 }
                 .padding(6)
@@ -128,6 +133,27 @@ enum Snapshot {
         NSApplication.shared.run()
     }
 
+    /// 실서버 라운지에 접속해 `seconds`초 동안 회원 목록을 지켜보고 화면을 찍는다
+    static func renderLobbyLive(to path: String, seconds: Int) {
+        Task { @MainActor in
+            let store = LoungeStore(live: false)
+            await store.connect()
+            guard store.me != nil else { print("connect failed"); exit(1) }
+            store.viewing = true
+            for i in 1...seconds {
+                try? await Task.sleep(for: .seconds(1))
+                let c = store.crowd()
+                let names = c.others.map { "\($0.name)\($0.viewing ? "👁" : "")\($0.status.map { "·" + $0.rawValue } ?? "")" }
+                print("t+\(i)s total \(c.total) viewing \(c.viewing) oddEven \(c.oddEven) others \(names) events \(c.events.map { "\($0.name) \($0.kind) \($0.amount)" }) dot \(store.tableBusy)")
+            }
+            write(AnyView(LoungeView(snapshot: store.snapshot, lastScan: .now, chips: store.chips, online: true,
+                                     crowd: store.crowd(), name: store.me?.name)), to: path)
+            exit(0)
+        }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+    }
+
     private static func write(_ content: AnyView, to path: String) {
         let renderer = ImageRenderer(content: content.padding(8).background(Color(white: 0.3)).environment(\.snapshotting, true))
         renderer.scale = 2
@@ -196,5 +222,31 @@ enum Snapshot {
         default: break
         }
         return m
+    }
+
+    private static func fakeCrowd(me: Player, mode: String) -> LoungeCrowd {
+        func m(_ name: String, viewing: Bool = false, place: Member.Place = .lounge, _ status: Member.Status? = nil) -> Member {
+            Member(id: UUID(), name: name, viewing: viewing, place: place, status: status)
+        }
+        let mine = Member(id: me.id, name: "새벽코더", viewing: true)
+        let busy = [
+            mine,
+            m("철수", viewing: true, place: .oddeven, .coding), m("영희", viewing: true, place: .oddeven),
+            m("예린", .vip), m("민수", .coding), m("지호", .coding), m("하준", .coding),
+            m("서연", .resting), m("도윤", .resting), m("수아"), m("우진", .coding), m("지은", .resting),
+        ]
+        let now = Date()
+        switch mode {
+        case "lobby-quiet":
+            return LoungeCrowd(members: [mine, m("예린", .vip)], me: me.id, events: [])
+        case "lobby-ticker":
+            let events = [
+                LoungeEvent(id: 1, kind: "bigwin", game: "slot", name: "민수", amount: 1_000, createdAt: now.addingTimeInterval(-40)),
+                LoungeEvent(id: 2, kind: "jackpot", game: "slot", name: "지호", amount: 21_450, createdAt: now.addingTimeInterval(-5)),
+            ]
+            return LoungeCrowd(members: busy, me: me.id, events: events)
+        default:
+            return LoungeCrowd(members: busy, me: me.id, events: [])
+        }
     }
 }

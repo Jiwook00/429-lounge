@@ -93,9 +93,14 @@ enum ChipFit {
     static func overflowLabel(_ hidden: Int) -> String { "+\(hidden)명" }
 
     static func visibleCount(_ labels: [String], width: CGFloat, maxLines: Int = 2) -> Int {
-        for shown in stride(from: labels.count, through: 0, by: -1) {
-            var widths = labels.prefix(shown).map(Self.width)
-            if shown < labels.count { widths.append(Self.width(overflowLabel(labels.count - shown))) }
+        visibleCount(itemWidths: labels.map(Self.width), width: width, maxLines: maxLines)
+    }
+
+    /// 칩마다 아이콘 같은 추가 폭이 있을 때
+    static func visibleCount(itemWidths: [CGFloat], width: CGFloat, maxLines: Int = 2) -> Int {
+        for shown in stride(from: itemWidths.count, through: 0, by: -1) {
+            var widths = Array(itemWidths.prefix(shown))
+            if shown < itemWidths.count { widths.append(Self.width(overflowLabel(itemWidths.count - shown))) }
             if lines(widths, width: width) <= maxLines { return shown }
         }
         return 0

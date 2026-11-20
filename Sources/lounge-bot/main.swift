@@ -21,6 +21,33 @@ do {
     let me = try await client.signIn(name: name)
     log("🤖 \(me.name) 착석 · ROOM \(room) · 칩 \(me.chips)")
 
+    // 라운지 접속: 홀짝 테이블을 보는 중, 코딩 중. --blink면 7초마다 보는 중을 껐다 켠다 (Presence 갱신 테스트)
+    let blink = CommandLine.arguments.contains("--blink")
+    var presence = Member(id: me.id, name: me.name, viewing: true, place: .oddeven, status: .coding)
+    let link = client.joinLounge(as: presence)
+    // --watch면 라운지 회원 목록이 바뀔 때마다 출력 (다른 회원 화면에 내가 어떻게 보이는지 확인용)
+    let watch = CommandLine.arguments.contains("--watch")
+    Task {
+        var lastLine = ""
+        for await signal in link.signals {
+            guard watch, case .members(let list) = signal else { continue }
+            let line = list.filter { $0.id != me.id }.sorted { $0.name < $1.name }
+                .map { "\($0.name)\($0.viewing ? "👁" : "")@\($0.place.rawValue)\($0.status.map { "·" + $0.rawValue } ?? "")" }
+                .joined(separator: ", ")
+            if line != lastLine { log("라운지: [\(line)]"); lastLine = line }
+        }
+    }
+    if blink {
+        Task {
+            while true {
+                try? await Task.sleep(for: .seconds(7))
+                presence.viewing.toggle()
+                await link.update(presence)
+                log("👁 보는 중 \(presence.viewing ? "켬" : "끔")")
+            }
+        }
+    }
+
     var current: Int64?
     var placed = false
     while true {

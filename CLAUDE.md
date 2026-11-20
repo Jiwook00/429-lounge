@@ -51,12 +51,14 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-live]
 ```
 
 - `--table live`: 실서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅
 - `LOUNGE_FAKE_429=1`: 가짜 429 상태 (리셋 시각은 "2시간 뒤 정각"으로 고정이라 재실행해도 황금 칩 중복 없음)
 - 멀티플레이는 `lounge-bot` 두 개 + `--table live` 조합으로 확인
+- 라운지 접속은 `lounge-bot --name 철수 [--blink] [--watch]` + `--table lobby-live`(20초 동안 회원 목록 출력 후 화면). `--blink`는 7초마다 보는 중을 껐다 켜고, `--watch`는 봇 쪽에서 본 회원 목록을 찍는다 (다른 회원 화면에 내가 어떻게 보이는지)
+- Presence 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리해야 회원이 사라지지 않는다
 - 서버 함수를 바꾸면 RPC를 직접 호출해 거절 케이스까지 확인한다. 로컬 공개 키는 `LoungeConfig.local` 참고
 - E2E는 앱과 같은 `default` 프로필 세션을 쓴다. 테스트 후 지갑이 지저분하면 `supabase db reset`
 - 운영 서버로 확인할 땐 `LOUNGE_SERVER=remote`. 운영 DB엔 실제 회원 데이터가 있으니 테스트 계정은 끝나고 지운다

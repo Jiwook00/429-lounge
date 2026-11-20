@@ -19,6 +19,22 @@ final class LoungeStore {
     /// 칩이 들어왔을 때 잠깐 보여주는 알림
     private(set) var toast: Toast?
 
+    // MARK: 라운지 접속 (ADR-0008)
+
+    /// 지금 라운지에 있는 회원 (나 포함)
+    private(set) var members: [Member] = []
+    /// 전광판 이벤트 (최근 것만 유지)
+    private(set) var events: [LoungeEvent] = []
+    /// 팝오버를 열어 보고 있는지. RootView가 창 상태로 갱신한다.
+    var viewing = false { didSet { pushPresence() } }
+    /// 보고 있는 화면
+    var place: Member.Place = .lounge { didSet { pushPresence() } }
+    private var link: LoungeLink?
+    private var pushed: Member?
+
+    /// 전광판은 이벤트 후 이 시간 동안만 나타난다
+    static let tickerWindow: TimeInterval = 180
+
     let net = LoungeClient()
     private let scanner = UsageScanner()
 
@@ -49,6 +65,7 @@ final class LoungeStore {
         snapshot = s
         lastScan = .now
         await claim()
+        pushPresence()
     }
 
     func connect() async {
@@ -59,6 +76,7 @@ final class LoungeStore {
             netError = "라운지 서버에 연결할 수 없어요"
             return
         }
+        joinLounge()
         if let g = try? await net.dailyBonus() {
             apply(g, g.granted >= 300 ? "파산 구제 +\(g.granted)칩" : "출근 도장 +\(g.granted)칩")
         }
@@ -92,6 +110,7 @@ final class LoungeStore {
     func rename(_ name: String) async -> String? {
         do {
             me = try await net.setNickname(name)
+            pushPresence()
             return nil
         } catch {
             return error.localizedDescription
@@ -107,6 +126,79 @@ final class LoungeStore {
         if player.id == me?.id { me = player }
     }
 
+    // MARK: - 라운지 접속
+
+    /// 로그에서 계산한 대략적인 Claude 상태 (프로젝트, 토큰 양은 보내지 않는다)
+    private func claudeStatus(at now: Date = .now) -> Member.Status? {
+        guard lastScan != nil else { return nil } // 아직 로그를 안 읽었으면 모른다
+        if snapshot.activeLock(at: now) != nil { return .vip }
+        guard let last = snapshot.lastActivity else { return .resting }
+        let idle = now.timeIntervalSince(last)
+        if idle <= 5 * 60 { return .coding }
+        if idle >= 30 * 60 { return .resting }
+        return nil
+    }
+
+    private func presenceState() -> Member? {
+        guard let me else { return nil }
+        return Member(id: me.id, name: me.name, viewing: viewing, place: place, status: claudeStatus())
+    }
+
+    private func joinLounge() {
+        guard link == nil, let state = presenceState() else { return }
+        let link = net.joinLounge(as: state)
+        self.link = link
+        pushed = state
+        Task {
+            for await signal in link.signals {
+                switch signal {
+                case .members(let m): members = m
+                case .event(let e): addEvents([e])
+                }
+            }
+            // 연결이 끊겼다 (구독 실패 등) → 잠시 뒤 다시
+            if self.link === link {
+                self.link = nil
+                try? await Task.sleep(for: .seconds(15))
+                joinLounge()
+            }
+        }
+        Task {
+            if let recent = try? await net.recentEvents(within: Self.tickerWindow) { addEvents(recent) }
+        }
+    }
+
+    private func addEvents(_ new: [LoungeEvent]) {
+        let cutoff = Date().addingTimeInterval(-Self.tickerWindow)
+        var byID = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
+        for e in new { byID[e.id] = e }
+        events = byID.values.filter { $0.createdAt > cutoff }.sorted { $0.id < $1.id }
+    }
+
+    /// 바뀐 게 있을 때만 다시 알린다
+    private func pushPresence() {
+        guard let link, let state = presenceState(), state != pushed else { return }
+        pushed = state
+        Task { await link.update(state) }
+    }
+
+    /// 라운지 화면에 그릴 접속 현황
+    func crowd(at now: Date = .now) -> LoungeCrowd {
+        // 내 상태는 서버 왕복을 기다리지 않고 지금 값으로
+        var list = members.filter { $0.id != me?.id }
+        if let mine = presenceState() { list.append(mine) }
+        return LoungeCrowd(members: list, me: me?.id, events: events.filter { now.timeIntervalSince($0.createdAt) < Self.tickerWindow })
+    }
+
+    /// 메뉴바 점: 다른 회원이 홀짝 테이블에 앉아 있다
+    var tableBusy: Bool { crowd().oddEven > 0 }
+
+    /// 스냅샷/프리뷰용
+    func preview(members: [Member], events: [LoungeEvent]) {
+        self.members = members
+        self.events = events
+    }
+
     /// 스냅샷/프리뷰용
     func preview(me: Player, snapshot: UsageSnapshot, toast: String? = nil) {
         self.me = me
@@ -119,5 +211,44 @@ final class LoungeStore {
             await refresh()
             try? await Task.sleep(for: .seconds(30))
         }
+    }
+}
+
+/// 라운지 접속 현황 (화면용 값)
+struct LoungeCrowd {
+    /// 나를 뺀 회원. 보는 중 → 429 VIP → 코딩 중 → 표시 없음 → 쉬는 중 순
+    let others: [Member]
+    /// 나 포함 인원
+    let total: Int
+    /// 보는 중 (나 포함)
+    let viewing: Int
+    /// 나를 뺀 보는 중
+    let othersViewing: Int
+    /// 홀짝 테이블에 앉아 있는 다른 회원
+    let oddEven: Int
+    /// 슬롯을 돌리고 있는 다른 회원
+    let slot: Int
+    let events: [LoungeEvent]
+
+    static let empty = LoungeCrowd(members: [], me: nil, events: [])
+
+    init(members: [Member], me: UUID?, events: [LoungeEvent]) {
+        func rank(_ m: Member) -> Int {
+            if m.viewing { return 0 }
+            switch m.status {
+            case .vip: return 1
+            case .coding: return 2
+            case nil: return 3
+            case .resting: return 4
+            }
+        }
+        let others = members.filter { $0.id != me }
+        self.others = others.sorted { (rank($0), $0.name) < (rank($1), $1.name) }
+        total = max(members.count, me == nil ? 0 : 1)
+        viewing = members.filter(\.viewing).count
+        othersViewing = others.filter(\.viewing).count
+        oddEven = others.filter { $0.viewing && $0.place == .oddeven }.count
+        slot = others.filter { $0.viewing && $0.place == .slot }.count
+        self.events = events
     }
 }
