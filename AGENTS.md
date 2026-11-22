@@ -60,7 +60,7 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|bj-idle|bj-betting|bj-full|bj-dealing|bj-deal|bj-myturn|bj-turn|bj-dealer|bj-result|bj-help|bj-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|bj-idle|bj-betting|bj-full|bj-dealing|bj-deal|bj-myturn|bj-turn|bj-dealer|bj-result|bj-help|bj-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
 ```
 
 - `--table roulette-live`: 설정된 Supabase 서버의 룰렛 테이블에 앉아 25초 동안 상태 줄을 찍고 화면을 저장한다. `LOUNGE_E2E_BET=chips`면 빨강 50 + 7에 10, `golden`이면 홀에 황금 칩을 한 번 건다
