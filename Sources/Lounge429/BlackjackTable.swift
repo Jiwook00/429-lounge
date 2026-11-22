@@ -19,6 +19,9 @@ final class BlackjackTable {
     private(set) var state: BJState?
     private(set) var message: String?
     private(set) var busy = false
+    private(set) var acceptedAction: BJSeat.Action?
+    private(set) var actionRequestedAt: Date?
+    private(set) var resultReceivedAt: Date?
     var stake: Int64 = 100
     var useGolden = false
 
@@ -88,7 +91,13 @@ final class BlackjackTable {
     }
 
     func act(_ action: BJSeat.Action) async {
-        await run { try await self.store.net.bjAction(room: self.room, action) }
+        let requested = Date()
+        await run {
+            let state = try await self.store.net.bjAction(room: self.room, action)
+            self.acceptedAction = action
+            self.actionRequestedAt = requested
+            return state
+        }
         if action == .double { await store.refreshMe() }
     }
 
@@ -139,6 +148,11 @@ final class BlackjackTable {
         if fresh {
             arrivals = [:]
             actions = [:]
+        }
+        if fresh {
+            resultReceivedAt = nil
+        } else if s.round?.phase == .done, state?.round?.phase != .done {
+            resultReceivedAt = now
         }
         state = s
         guard let r = s.round else { return }

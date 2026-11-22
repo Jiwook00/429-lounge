@@ -29,13 +29,24 @@ struct SlotView: View {
                 spinButton(t)
                 bottomBar
             }
+            .onChange(of: machine.startedAt) { _, start in
+                GameAudio.shared.play(.lever, at: start)
+            }
+            .onChange(of: machine.turningReels(at: t), initial: true) { _, count in
+                GameAudio.shared.setReelsTurning(count)
+            }
             .onChange(of: (0..<3).compactMap(machine.stopTime).last { $0 <= t }) { _, stop in
                 GameAudio.shared.play(.reel, at: stop)
             }
             .onChange(of: machine.finishAt.flatMap { $0 <= t ? $0 : nil }) { _, end in
                 if !machine.glitched.isEmpty { GameAudio.shared.play(.reel, at: end) }
                 if let tier = machine.tier {
-                    GameAudio.shared.play(tier == .jackpot ? .jackpot : .win, at: end)
+                    let sound: GameAudio.Effect = switch tier {
+                    case .win: .win
+                    case .big: .bigWin
+                    case .jackpot: .jackpot
+                    }
+                    GameAudio.shared.play(sound, at: end)
                 }
             }
             .padding(14)

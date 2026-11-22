@@ -60,7 +60,30 @@ struct LoungeView: View {
                 Button("‹ 라운지") { settingsOpen = false }
                     .font(Fonts.small()).foregroundStyle(Theme.muted)
                 Text("설정").font(Fonts.bold()).foregroundStyle(Theme.neon)
-                settingRow("게임 효과음", enabled: audio.enabled) { audio.enabled.toggle() }
+                settingRow("게임 소리", enabled: audio.enabled) { audio.enabled.toggle() }
+                settingRow("배경음", enabled: audio.backgroundEnabled) { audio.backgroundEnabled.toggle() }
+                    .disabled(!audio.enabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("배경 음악").font(Fonts.small()).foregroundStyle(Theme.muted)
+                    ForEach(GameAudio.Track.allCases, id: \.self) { track in
+                        Button {
+                            audio.track = track
+                        } label: {
+                            HStack {
+                                Text(track.title)
+                                Spacer()
+                                if track == audio.track {
+                                    Image(systemName: "checkmark").foregroundStyle(Theme.green).accessibilityHidden(true)
+                                }
+                            }
+                            .frame(minHeight: 22)
+                            .contentShape(Rectangle())
+                        }
+                        .accessibilityAddTraits(track == audio.track ? .isSelected : [])
+                    }
+                }
+                .padding(10)
+                .pixelBox(fill: Theme.panel, border: Theme.line)
                 settingRow("다른 회원의 잭팟 알림", enabled: notify, action: onNotify)
                     .disabled(!online)
                 if online, let name {

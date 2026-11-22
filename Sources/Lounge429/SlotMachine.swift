@@ -101,6 +101,13 @@ final class SlotMachine {
         return stopTime(2)
     }
 
+    func turningReels(at time: Date) -> Int {
+        (0..<3).filter { index in
+            if case .spinning = reelState(index, at: time) { return true }
+            return false
+        }.count
+    }
+
     func isSpinning(at now: Date) -> Bool {
         guard startedAt != nil else { return false }
         guard let end = finishAt else { return true }

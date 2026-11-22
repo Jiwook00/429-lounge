@@ -43,7 +43,19 @@ struct BlackjackView: View {
                 walletBar
             }
             .onChange(of: table.arrivals.values.filter { $0 <= now }.max()) { _, arrival in
-                GameAudio.shared.play(.card, at: arrival)
+                let mine = table.mySeat.map { table.settledAt("s\($0.seat)", total: $0.cards.count) }
+                GameAudio.shared.play(.card, at: arrival, volume: arrival == mine ? 1 : 0.55)
+            }
+            .onChange(of: table.actionRequestedAt) { _, _ in
+                switch table.acceptedAction {
+                case .hit: GameAudio.shared.play(.hit, at: .now)
+                case .stand: GameAudio.shared.play(.stand, at: .now)
+                case .double: GameAudio.shared.play(.chips, at: .now)
+                default: break
+                }
+            }
+            .onChange(of: handSound(at: now)) { _, cue in
+                if let cue { GameAudio.shared.play(cue.effect, at: cue.time) }
             }
             .padding(14)
             .frame(width: LoungeView.width)
@@ -73,6 +85,27 @@ struct BlackjackView: View {
     private func resultsShown(_ now: Date) -> Bool {
         guard let r = round, r.phase == .done else { return false }
         return now >= table.settledAt("d", total: r.dealerCards.count).addingTimeInterval(0.4)
+    }
+
+    private struct HandSound: Equatable {
+        let effect: GameAudio.Effect
+        let time: Date
+    }
+
+    private func handSound(at now: Date) -> HandSound? {
+        guard let me = table.mySeat, !me.cards.isEmpty else { return nil }
+        let arrival = table.settledAt("s\(me.seat)", total: me.cards.count)
+        guard now >= arrival else { return nil }
+        if me.state == .bust { return HandSound(effect: .bust, time: arrival) }
+        if me.state == .blackjack { return HandSound(effect: .natural, time: arrival) }
+        guard let round, resultsShown(now), let received = table.resultReceivedAt else { return nil }
+        let dealer = table.settledAt("d", total: round.dealerCards.count)
+        let time = max(received, dealer.addingTimeInterval(0.4))
+        switch me.result {
+        case .win: return HandSound(effect: .collect, time: time)
+        case .push: return HandSound(effect: .push, time: time)
+        default: return nil
+        }
     }
 
     private func myTurn(_ now: Date) -> Bool {

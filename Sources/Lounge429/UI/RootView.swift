@@ -74,7 +74,13 @@ struct RootView: View {
             }
         }
         // 팝오버가 실제로 화면에 보이는지 → "보는 중"
-        .background(WindowVisibility { store.viewing = $0; GameAudio.shared.setVisible($0) })
+        .background(WindowVisibility { visible in
+            store.viewing = visible
+            if visible, case .slot(let machine) = screen {
+                GameAudio.shared.setReelsTurning(machine.turningReels(at: .now))
+            }
+            GameAudio.shared.setVisible(visible)
+        })
         // 최소 버전에 못 미치면 테이블에서 일으켜 세운다 (ADR-0010)
         .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
             guard blocked else { return }
@@ -88,7 +94,13 @@ struct RootView: View {
     }
 
     private func go(_ next: Screen) {
-        GameAudio.shared.reset()
+        switch next {
+        case .slot: GameAudio.shared.enter(.floor)
+        case .blackjack: GameAudio.shared.enter(.felt)
+        case .oddEven: GameAudio.shared.enter(.marbles)
+        case .minority: GameAudio.shared.enter(.ballot)
+        case .lounge: GameAudio.shared.enter(.lounge)
+        }
         screen = next
         switch next {
         case .lounge:

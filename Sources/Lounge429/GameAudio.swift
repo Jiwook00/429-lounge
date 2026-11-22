@@ -1,4 +1,4 @@
-import AppKit
+import AVFAudio
 import SwiftUI
 
 @MainActor @Observable
@@ -7,34 +7,141 @@ final class GameAudio {
     var enabled = UserDefaults.standard.bool(forKey: "gameEffectsEnabled") {
         didSet {
             UserDefaults.standard.set(enabled, forKey: "gameEffectsEnabled")
-            reset()
+            refreshPlayback()
         }
     }
-    private var visible = false
-    private var since = Date()
-    private var sounds: [Effect: NSSound] = [:]
+    var backgroundEnabled = UserDefaults.standard.object(forKey: "gameAmbienceEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(backgroundEnabled, forKey: "gameAmbienceEnabled")
+            updateAmbience()
+        }
+    }
 
-    enum Effect: String { case reel, card, win, jackpot }
+    enum Track: String, CaseIterable {
+        case veranda = "21", pixel = "24", pending = "27", lowball = "22"
+
+        var title: String {
+            switch self {
+            case .veranda: "Neon Veranda"
+            case .pixel: "One Pixel to Midnight"
+            case .pending: "Build Pending"
+            case .lowball: "Ice in the Lowball"
+            }
+        }
+    }
+
+    var track = Track(rawValue: UserDefaults.standard.string(forKey: "loungeMusicTrack") ?? "") ?? .veranda {
+        didSet {
+            UserDefaults.standard.set(track.rawValue, forKey: "loungeMusicTrack")
+            updateAmbience()
+        }
+    }
+
+    enum Room: String {
+        case lounge, floor = "slotRoom", felt = "cardRoom", marbles = "marbleRoom", ballot = "ballotRoom"
+    }
+    enum Effect: String, CaseIterable { case lever, reel, card, win, bigWin, jackpot, hit, stand, chips, bust, natural, collect, push }
+
+    private var visible = false
+    private var room = Room.lounge
+    private var since = Date()
+    private var reelsTurning = 0
+    private var players: [String: AVAudioPlayer] = [:]
+    private var fadeTask: Task<Void, Never>?
+
+    func enter(_ next: Room) {
+        since = .now
+        stopEffects()
+        room = next
+        updateAmbience()
+    }
 
     func setVisible(_ value: Bool) {
         visible = value
-        reset()
+        refreshPlayback()
     }
 
-    func reset() {
+    private func refreshPlayback() {
         since = .now
-        for sound in sounds.values { sound.stop() }
+        if !enabled || !visible {
+            fadeTask?.cancel()
+            for player in players.values { player.stop() }
+        }
+        updateAmbience()
+        updateMotor()
     }
 
-    func play(_ effect: Effect, at time: Date?) {
-        guard enabled, visible, let time, time >= since,
-              Date().timeIntervalSince(time) < 0.15 else { return }
-        if sounds[effect] == nil,
-           let url = Bundle.module.url(forResource: effect.rawValue, withExtension: "wav", subdirectory: "Sounds") {
-            sounds[effect] = NSSound(contentsOf: url, byReference: false)
+    private func stopEffects() {
+        for effect in Effect.allCases { players[effect.rawValue]?.stop() }
+        setReelsTurning(0)
+    }
+
+    private func player(_ name: String, extension ext: String = "wav") -> AVAudioPlayer? {
+        if let existing = players[name] { return existing }
+        guard let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Sounds"),
+              let player = try? AVAudioPlayer(contentsOf: url) else { return nil }
+        players[name] = player
+        return player
+    }
+
+    private func updateAmbience() {
+        fadeTask?.cancel()
+        let audible = enabled && visible && backgroundEnabled
+        let music = "bgm" + track.rawValue
+        var levels: [String: Float] = [:]
+        if audible {
+            levels[music] = room == .lounge ? 1 : 0.75
+            if room != .lounge { levels[room.rawValue] = 1 }
         }
-        sounds[effect]?.stop()
-        sounds[effect]?.play()
+        let retiring = players.filter { name, sound in
+            sound.numberOfLoops == -1 && name != "motor" && levels[name] == nil && sound.isPlaying
+        }.map(\.value)
+        for old in retiring {
+            if audible { old.setVolume(0, fadeDuration: 0.35) } else { old.stop() }
+        }
+        for (name, level) in levels {
+            guard let loop = player(name, extension: "m4a") else { continue }
+            if !loop.isPlaying {
+                loop.currentTime = 0
+                loop.numberOfLoops = -1
+                loop.volume = 0
+                loop.play()
+            }
+            loop.setVolume(level, fadeDuration: 0.35)
+        }
+        guard audible, !retiring.isEmpty else { return }
+        fadeTask = Task {
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            for old in retiring { old.stop() }
+        }
+    }
+
+    func setReelsTurning(_ count: Int) {
+        reelsTurning = count
+        updateMotor()
+    }
+
+    private func updateMotor() {
+        guard enabled, visible, room == .floor, reelsTurning > 0 else {
+            players["motor"]?.stop()
+            return
+        }
+        guard let motor = player("motor") else { return }
+        if !motor.isPlaying {
+            motor.currentTime = 0
+            motor.numberOfLoops = -1
+            motor.volume = 0
+            motor.play()
+        }
+        motor.setVolume(Float(reelsTurning) / 3, fadeDuration: 0.09)
+    }
+
+    func play(_ effect: Effect, at time: Date?, volume: Float = 1) {
+        guard enabled, visible, let time, time >= since,
+              Date().timeIntervalSince(time) < 0.2, let sound = player(effect.rawValue) else { return }
+        sound.currentTime = 0
+        sound.volume = volume
+        sound.play()
     }
 }
 
@@ -48,7 +155,7 @@ struct GameSoundButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(audio.enabled ? Theme.cream : Theme.muted)
-        .accessibilityLabel(audio.enabled ? "효과음 끄기" : "효과음 켜기")
-        .help(audio.enabled ? "효과음 끄기" : "효과음 켜기")
+        .accessibilityLabel(audio.enabled ? "게임 소리 끄기" : "게임 소리 켜기")
+        .help(audio.enabled ? "게임 소리 끄기" : "게임 소리 켜기")
     }
 }
