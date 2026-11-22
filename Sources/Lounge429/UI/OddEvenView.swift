@@ -56,6 +56,7 @@ struct OddEvenView: View {
                 Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
             }
             .buttonStyle(.plain)
+            GameSoundButton()
             Spacer()
             Text("구슬 홀짝").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
             Spacer()

@@ -18,7 +18,7 @@ let package = Package(
         .executableTarget(
             name: "Lounge429",
             dependencies: ["LoungeCore", "LoungeNet"],
-            resources: [.copy("Resources/Fonts")]
+            resources: [.copy("Resources/Fonts"), .copy("Resources/Sounds")]
         ),
         // 토큰 로그 파싱, 칩 경제 등 UI와 무관한 로직
         .target(name: "LoungeCore"),

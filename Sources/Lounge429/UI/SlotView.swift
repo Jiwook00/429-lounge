@@ -29,6 +29,15 @@ struct SlotView: View {
                 spinButton(t)
                 bottomBar
             }
+            .onChange(of: (0..<3).compactMap(machine.stopTime).last { $0 <= t }) { _, stop in
+                GameAudio.shared.play(.reel, at: stop)
+            }
+            .onChange(of: machine.finishAt.flatMap { $0 <= t ? $0 : nil }) { _, end in
+                if !machine.glitched.isEmpty { GameAudio.shared.play(.reel, at: end) }
+                if let tier = machine.tier {
+                    GameAudio.shared.play(tier == .jackpot ? .jackpot : .win, at: end)
+                }
+            }
             .padding(14)
             .frame(width: LoungeView.width)
             .background(Theme.bg)
@@ -62,6 +71,7 @@ struct SlotView: View {
                 Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
             }
             .buttonStyle(.plain)
+            GameSoundButton()
             Spacer()
             Text("429 슬롯").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
             Spacer()

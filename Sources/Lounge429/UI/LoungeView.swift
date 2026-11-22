@@ -27,6 +27,7 @@ struct LoungeView: View {
     /// 새 버전 안내 (ADR-0010). required면 게임 대신 업데이트 카드
     var appUpdate: AppUpdate?
     /// 스냅샷용: 업데이트 카드를 펼친 상태로
+    var showSettings = false
     var showUpdate = false
     var onOddEven: () -> Void = {}
     var onSlot: () -> Void = {}
@@ -50,7 +51,49 @@ struct LoungeView: View {
     @State private var renaming = false
     @State private var updating = false
 
-    var body: some View {
+    @State private var settingsOpen = false
+    @Bindable private var audio = GameAudio.shared
+
+    @ViewBuilder var body: some View {
+        if settingsOpen || showSettings {
+            VStack(alignment: .leading, spacing: 14) {
+                Button("‹ 라운지") { settingsOpen = false }
+                    .font(Fonts.small()).foregroundStyle(Theme.muted)
+                Text("설정").font(Fonts.bold()).foregroundStyle(Theme.neon)
+                settingRow("게임 효과음", enabled: audio.enabled) { audio.enabled.toggle() }
+                settingRow("다른 회원의 잭팟 알림", enabled: notify, action: onNotify)
+                    .disabled(!online)
+                if online, let name {
+                    HStack {
+                        Text(name)
+                        Spacer()
+                        Button("이름 바꾸기") { settingsOpen = false; renaming = true }
+                    }
+                }
+            }
+            .font(Fonts.body()).buttonStyle(.plain)
+            .padding(14).frame(width: Self.width).background(Theme.bg).foregroundStyle(Theme.cream)
+        } else {
+            lobby
+        }
+    }
+
+    private func settingRow(_ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(label)
+                Spacer()
+                Text(enabled ? "켬" : "끔")
+                    .frame(width: 42, height: 24)
+                    .pixelBox(fill: Theme.panel, border: enabled ? Theme.green : Theme.line)
+            }
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+        .accessibilityValue(enabled ? "켬" : "끔")
+    }
+
+    private var lobby: some View {
         // 0.1초 틱: 네온 깜빡임과 전구 띠용. 팝오버가 열려 있을 때만 그려진다.
         TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let lock = snapshot.activeLock(at: context.date)
@@ -250,17 +293,9 @@ struct LoungeView: View {
             Text(online ? (name ?? "라운지 연결됨") : "오프라인")
                 .foregroundStyle(online && name != nil ? Theme.cream : Theme.muted)
             Spacer()
-            if online, name != nil, !renaming {
-                Button("이름 바꾸기") { renaming = true }.padding(.trailing, 6)
-            }
-            if online {
-                Button(notify ? "알림 켬" : "알림 끔", action: onNotify)
-                    .foregroundStyle(notify ? Theme.cream : Theme.muted)
-                    .help("다른 회원이 잭팟을 터뜨리면 알려 줘요")
-                    .padding(.trailing, 6)
-            }
             Button("의견") { openURL(AppInfo.feedbackURL) }.padding(.trailing, 6)
             Button("새로고침", action: onRefresh).padding(.trailing, 6)
+            Button("설정") { settingsOpen = true }.padding(.trailing, 6)
             Button("종료", action: onQuit)
         }
         .font(Fonts.small())

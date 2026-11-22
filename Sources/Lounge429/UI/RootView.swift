@@ -74,7 +74,7 @@ struct RootView: View {
             }
         }
         // 팝오버가 실제로 화면에 보이는지 → "보는 중"
-        .background(WindowVisibility { store.viewing = $0 })
+        .background(WindowVisibility { store.viewing = $0; GameAudio.shared.setVisible($0) })
         // 최소 버전에 못 미치면 테이블에서 일으켜 세운다 (ADR-0010)
         .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
             guard blocked else { return }
@@ -88,6 +88,7 @@ struct RootView: View {
     }
 
     private func go(_ next: Screen) {
+        GameAudio.shared.reset()
         screen = next
         switch next {
         case .lounge:

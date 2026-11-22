@@ -69,6 +69,7 @@ struct MinorityResultView: View {
                 Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
             }
             .buttonStyle(.plain)
+            GameSoundButton()
             Spacer()
             Text("소수결 결과").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
             Spacer()

@@ -42,6 +42,9 @@ struct BlackjackView: View {
                 bottomArea(now).frame(height: 76, alignment: .top)
                 walletBar
             }
+            .onChange(of: table.arrivals.values.filter { $0 <= now }.max()) { _, arrival in
+                GameAudio.shared.play(.card, at: arrival)
+            }
             .padding(14)
             .frame(width: LoungeView.width)
             .background(Theme.bg)
@@ -95,6 +98,7 @@ struct BlackjackView: View {
                 Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
             }
             .buttonStyle(.plain)
+            GameSoundButton()
             Spacer()
             Text("블랙잭").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
             Spacer()

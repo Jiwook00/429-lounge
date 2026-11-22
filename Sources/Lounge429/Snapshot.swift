@@ -18,7 +18,10 @@ enum Snapshot {
         store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
 
         let content: AnyView
-        if table == "readme" {
+        if table == "settings" {
+            content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips,
+                                         online: true, name: "새벽코더", showSettings: true))
+        } else if table == "readme" {
             // README 대표 이미지: 라운지 · 홀짝 · 슬롯을 나란히 (--locked와 같이 쓰면 VIP HOUR)
             content = AnyView(HStack(alignment: .top, spacing: 20) {
                 LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
