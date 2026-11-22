@@ -149,7 +149,7 @@ struct RouletteView: View {
         .frame(width: 120, height: 120, alignment: .topLeading)
     }
 
-    /// 공이 있는 휠 칸. 회전 중엔 직전 칸에서 출발해 세 바퀴 넘게 돌다 결과 칸에서 멈춘다 (점점 느리게, 칸 단위로)
+    /// 공이 있는 휠 칸. 회전 중엔 RouletteSpin.Plan을 따라 직전 칸에서 출발해 결과 칸에서 멈춘다 (컷과 같은 칸)
     private func ballIndex(_ phase: RouletteTable.Phase) -> Int {
         let wheel = Roulette.wheel
         func index(_ n: Int) -> Int { wheel.firstIndex(of: n) ?? 0 }
@@ -162,18 +162,16 @@ struct RouletteView: View {
             let start = index(table.state?.lastResult ?? 0)
             guard !reduceMotion else { return start }
             // 결과가 아직 안 왔으면 일정한 속도로 (보통 마감 0.2초 안에 온다)
-            guard let target = result.map(index) else { return (start + Int(e * 8)) % wheel.count }
-            func at(_ offset: Int) -> Int { ((target + offset) % wheel.count + wheel.count) % wheel.count }
-            if e >= RouletteSpin.fastEnd {
-                // 클로즈업 구간: 컷 띠와 같은 칸 (칸막이 위면 앞 칸)
-                return at(Int(RouletteSpin.position(at: e).rounded(.down)))
-            }
-            // 큰 휠에서 두 바퀴 넘게 빠르게 돌다 결과 4칸 앞에서 컷으로 넘긴다
-            let total = 2 * wheel.count + ((at(-4) - start) % wheel.count + wheel.count) % wheel.count
-            let x = min(1, max(0, e / RouletteSpin.fastEnd))
-            let eased = 1 - pow(1 - x, 3)
-            return (start + Int((Double(total) * eased).rounded(.down))) % wheel.count
+            guard let target = result.map(index) else { return (start + Int(e * 13)) % wheel.count }
+            let pocket = spinPlan(target: target).pocket(at: e)
+            return ((target + pocket) % wheel.count + wheel.count) % wheel.count
         }
+    }
+
+    /// 직전 결과 칸에서 출발해 이번 결과 칸에 멈추는 공 경로 (큰 휠과 컷이 같이 쓴다)
+    private func spinPlan(target: Int) -> RouletteSpin.Plan {
+        let start = Roulette.wheel.firstIndex(of: table.state?.lastResult ?? 0) ?? 0
+        return RouletteSpin.Plan(start: start, target: target)
     }
 
     /// 마지막 5칸 클로즈업 컷 (베팅 판 자리를 덮는다). 동작 줄이기면 없음
@@ -182,7 +180,8 @@ struct RouletteView: View {
         if !reduceMotion, let r = table.round, let n = r.result {
             let e = now.timeIntervalSince(table.local(r.betClosesAt))
             if RouletteSpin.reveal(at: e) > 0 {
-                RouletteCloseUp(result: n, elapsed: e, marks: table.marks())
+                RouletteCloseUp(result: n, plan: spinPlan(target: Roulette.wheel.firstIndex(of: n) ?? 0),
+                                elapsed: e, marks: table.marks())
             }
         }
     }

@@ -4,35 +4,56 @@ import SwiftUI
 /// 공이 멈추기 직전 마지막 5칸을 크게 보여주는 클로즈업 컷 (DESIGN.md §9 미니 룰렛, 시안 R3c~R3e).
 /// 결과는 마감 직후 이미 와 있지만 화면은 공을 따라가기만 한다: 띠는 공이 있는 칸을 가운데 두고 한 칸씩 밀려온다.
 enum RouletteSpin {
-    /// 큰 휠에서 빠르게 돌다 결과 4칸 앞에 닿는 시각 (마감부터)
-    static let fastEnd: TimeInterval = 3.3
-    /// 컷이 열리고 닫히는 시각. 결과(6초) 뒤 0.8초 동안 번쩍인 다음 접힌다
-    static let cutOpen: TimeInterval = 3.05
+    /// 결과 8칸 앞부터 칸마다 걸리는 시간 (-7, -6, … -1, 칸막이 위, 결과). 앞쪽은 이 첫 간격과 비슷한 빠르기로 일정하게
+    static let tail: [TimeInterval] = [0.10, 0.13, 0.17, 0.23, 0.32, 0.45, 0.65, 0.90, 0.40]
+    static let tailPositions: [Double] = [-7, -6, -5, -4, -3, -2, -1, -0.5, 0]
+    /// 결과 8칸 앞에 닿는 시각 (마감부터). 컷도 이때 열린다
+    static let tailStart: TimeInterval = Roulette.spin - tail.reduce(0, +)
+    static let cutOpen: TimeInterval = tailStart
+    /// 결과(6초) 뒤 0.8초 동안 번쩍인 다음 접힌다
     static let cutClose: TimeInterval = Roulette.spin + 0.8
     /// 한 단계 = 1/12초 (블랙잭 확대와 같은 리듬)
     static let frame: TimeInterval = 1.0 / 12
-    /// 한 칸 미끄러지는 시간
-    static let slide: TimeInterval = 0.12
 
-    /// (도착 시각, 결과 칸 기준 위치). -1 = 결과 한 칸 앞, -0.5 = 그 사이 칸막이 위(머뭇거림)
-    static let stops: [(TimeInterval, Double)] = [
-        (fastEnd, -4), (3.6, -3), (4.05, -2), (4.7, -1), (5.6, -0.5), (Roulette.spin, 0),
-    ]
+    /// 한 판의 공 경로. 큰 휠과 클로즈업 띠가 같은 값을 읽어 늘 같은 칸에 있다
+    struct Plan {
+        /// (도착 시각, 결과 칸 기준 위치). 0 = 결과 칸, -0.5 = 결과 앞 칸막이 위
+        let stops: [(TimeInterval, Double)]
 
-    /// 결과 칸 기준 공 위치 (컷 띠와 큰 휠이 함께 쓴다)
-    static func position(at e: TimeInterval) -> Double {
-        guard e > stops[0].0 - slide else { return stops[0].1 }
-        var prev = stops[0]
-        for stop in stops.dropFirst() {
-            if e < stop.0 - slide { return prev.1 }
-            if e < stop.0 {
-                let p = (e - (stop.0 - slide)) / slide
-                // 정수 pt로 끊기는 건 뷰에서 반올림한다
-                return prev.1 + (stop.1 - prev.1) * (1 - (1 - p) * (1 - p))
+        /// start·target: 휠 칸 번호(Roulette.wheel 인덱스)
+        init(start: Int, target: Int) {
+            let n = Roulette.wheel.count
+            let need = ((target - start) % n + n) % n
+            // 앞쪽 칸 수: 출발 칸에서 결과까지 맞으면서 간격이 0.063~0.088초가 되게 (30~42칸 중 하나)
+            let front = (30...42).first { ($0 + 8) % n == need } ?? 30
+            let gap = RouletteSpin.tailStart / Double(front)
+            var stops: [(TimeInterval, Double)] = [(0, -Double(front + 8))]
+            for k in 1...front { stops.append((Double(k) * gap, -Double(front + 8 - k))) }
+            var t = RouletteSpin.tailStart
+            for (dt, pos) in zip(RouletteSpin.tail, RouletteSpin.tailPositions) {
+                t += dt
+                stops.append((t, pos))
             }
-            prev = stop
+            self.stops = stops
         }
-        return 0
+
+        /// 결과 칸 기준 연속 위치. 칸 사이는 간격의 80%(최대 0.12초) 동안 미끄러진다
+        func position(at e: TimeInterval) -> Double {
+            guard e > 0 else { return stops[0].1 }
+            for i in 1..<stops.count {
+                let (t, pos) = stops[i]
+                guard e < t else { continue }
+                let prev = stops[i - 1]
+                let slide = min(0.12, (t - prev.0) * 0.8)
+                if e < t - slide { return prev.1 }
+                let p = (e - (t - slide)) / slide
+                return prev.1 + (pos - prev.1) * (1 - (1 - p) * (1 - p))
+            }
+            return 0
+        }
+
+        /// 큰 휠에 그릴 칸 (결과 기준). 미끄러지는 중간을 넘으면 다음 칸, 칸막이 위면 앞 칸
+        func pocket(at e: TimeInterval) -> Int { Int((position(at: e) - 0.5).rounded(.up)) }
     }
 
     /// 컷이 보이는 정도: 0 없음, 1/3, 2/3, 1 (12fps 세 단계)
@@ -49,6 +70,7 @@ enum RouletteSpin {
 
 struct RouletteCloseUp: View {
     let result: Int
+    let plan: RouletteSpin.Plan
     /// 마감부터 지난 시간
     let elapsed: TimeInterval
     let marks: [Roulette.Spot: RouletteTable.Mark]
@@ -72,7 +94,7 @@ struct RouletteCloseUp: View {
     }
 
     private var cut: some View {
-        let pos = RouletteSpin.position(at: elapsed)
+        let pos = plan.position(at: elapsed)
         let wheel = Roulette.wheel
         let target = wheel.firstIndex(of: result) ?? 0
         let base = Int(pos.rounded(.down))
