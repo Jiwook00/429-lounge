@@ -64,6 +64,13 @@ struct LoungeView: View {
                 settingRow("배경음", enabled: audio.backgroundEnabled) { audio.backgroundEnabled.toggle() }
                     .disabled(!audio.enabled)
                 VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("음악 음량")
+                        musicVolumeSlider
+                        Text(audio.musicVolume.formatted(.percent.precision(.fractionLength(0))))
+                            .frame(width: 38, alignment: .trailing)
+                    }
+                    .font(Fonts.small())
                     Text("배경 음악").font(Fonts.small()).foregroundStyle(Theme.muted)
                     ForEach(GameAudio.Track.allCases, id: \.self) { track in
                         Button {
@@ -99,6 +106,27 @@ struct LoungeView: View {
         } else {
             lobby
         }
+    }
+
+    private var musicVolumeSlider: some View {
+        Slider(value: $audio.musicVolume, in: 0...1, step: 0.05)
+            .accessibilityLabel("배경 음악 음량")
+            .frame(height: 22)
+            .overlay {
+                GeometryReader { geometry in
+                    let travel = max(0, geometry.size.width - 16)
+                    let position = travel * audio.musicVolume
+                    ZStack(alignment: .leading) {
+                        Theme.panel
+                        Rectangle().fill(Theme.line).frame(height: 4)
+                        Rectangle().fill(Theme.green).frame(width: position + 8, height: 4)
+                        Rectangle().fill(Theme.cream).frame(width: 8, height: 12)
+                            .offset(x: position + 4)
+                    }
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
     }
 
     private func settingRow(_ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {

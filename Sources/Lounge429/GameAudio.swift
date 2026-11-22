@@ -17,6 +17,17 @@ final class GameAudio {
         }
     }
 
+    var musicVolume = min(1, max(0, UserDefaults.standard.object(forKey: "loungeMusicVolume") as? Double ?? 1)) {
+        didSet {
+            UserDefaults.standard.set(musicVolume, forKey: "loungeMusicVolume")
+            guard enabled, visible, backgroundEnabled else { return }
+            players[musicName]?.setVolume(musicLevel, fadeDuration: 0.04)
+        }
+    }
+
+    private var musicName: String { "bgm" + track.rawValue }
+    private var musicLevel: Float { Float(musicVolume) * (room == .lounge ? 1 : 0.75) }
+
     enum Track: String, CaseIterable {
         case veranda = "21", pixel = "24", pending = "27", lowball = "22"
 
@@ -87,10 +98,9 @@ final class GameAudio {
     private func updateAmbience() {
         fadeTask?.cancel()
         let audible = enabled && visible && backgroundEnabled
-        let music = "bgm" + track.rawValue
         var levels: [String: Float] = [:]
         if audible {
-            levels[music] = room == .lounge ? 1 : 0.75
+            levels[musicName] = musicLevel
             if room != .lounge { levels[room.rawValue] = 1 }
         }
         let retiring = players.filter { name, sound in
