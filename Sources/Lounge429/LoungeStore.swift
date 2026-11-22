@@ -179,7 +179,7 @@ final class LoungeStore {
         if let w = m.winnerLabel {
             text = m.net > 0 ? "\(w) 승 · 나 +\(m.net.formatted(.number))칩" : "\(w) 승 · 나 -\((-m.net).formatted(.number))칩"
         } else {
-            text = "무효 · 500칩 돌려받았어요"
+            text = "무효 · 200칩 돌려받았어요"
         }
         showToast("소수결 \(text)", golden: m.net > 0)
         if notify { Notifier.minority(text, question: m.question) }

@@ -407,7 +407,7 @@ enum Snapshot {
         switch mode {
         case "minority-result-lose":
             return MinorityResult(question: "금요일 오후 배포", options: ("한다", "안 한다"),
-                                  picks: [p("나", 0), p("예린", 0), p("민수", 0), p("지호", 1)], winner: 1, net: -500)
+                                  picks: [p("나", 0), p("예린", 0), p("민수", 0), p("지호", 1)], winner: 1, net: -200)
         case "minority-result-void":
             return MinorityResult(question: "아침 첫 잔", options: ("아아", "뜨아"),
                                   picks: [p("나", 0), p("예린", 0), p("지호", 0)], winner: nil, net: 0)

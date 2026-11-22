@@ -153,7 +153,7 @@ public final class LoungeClient: Sendable {
         try await supabase.rpc("minority_tick").execute().value
     }
 
-    /// 소수결: 500칩 걸고 고르기 (0 / 1)
+    /// 소수결: 200칩 걸고 고르기 (0 / 1)
     public func minorityPick(_ choice: Int) async throws -> MinorityState {
         do {
             return try await supabase.rpc("minority_pick", params: ["p_choice": choice]).execute().value

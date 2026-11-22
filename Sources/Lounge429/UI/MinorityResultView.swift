@@ -159,7 +159,7 @@ struct MinorityResultView: View {
     private var mine: some View {
         let net = result.net
         let figure = net > 0 ? "+\(net.formatted(.number))" : net < 0 ? "-\((-net).formatted(.number))" : "±0"
-        let note = result.winner == nil ? "500칩 돌려받았어요" : net > 0 ? "소수파였어요" : "다수파였어요"
+        let note = result.winner == nil ? "200칩 돌려받았어요" : net > 0 ? "소수파였어요" : "다수파였어요"
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("나").font(Fonts.bold()).foregroundStyle(Theme.muted)
             Text(figure).font(Fonts.mono(2))

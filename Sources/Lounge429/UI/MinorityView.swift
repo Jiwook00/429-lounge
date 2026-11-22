@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 소수결 화면에 그릴 값 (DESIGN.md §9 소수결)
-/// 평일 8·11·14시에 열리고 3시간 뒤 정산. 둘 중 하나를 500칩 걸고 고르면, 적게 고른 쪽이 이긴다
+/// 평일 8·11·14시에 열리고 3시간 뒤 정산. 둘 중 하나를 200칩 걸고 고르면, 적게 고른 쪽이 이긴다
 struct MinorityScreen {
     struct Round {
         let question: String
@@ -26,7 +26,7 @@ struct MinorityScreen {
     var nextOpensAt: Date?
     var mine: Mine?
 
-    static let stake: Int64 = 500
+    static let stake: Int64 = 200
 }
 
 struct MinorityView: View {
@@ -77,7 +77,7 @@ struct MinorityView: View {
             if let message {
                 Text(message).font(Fonts.small()).foregroundStyle(Theme.neon)
             } else {
-                Text("한 판 500칩").font(Fonts.small()).foregroundStyle(Theme.muted)
+                Text("한 판 200칩").font(Fonts.small()).foregroundStyle(Theme.muted)
             }
         }
     }
@@ -132,7 +132,7 @@ struct MinorityView: View {
     }
 
     static func mineLine(_ m: MinorityScreen.Mine) -> String {
-        guard let w = m.winner else { return "지난 판 「\(m.question)」 무효 · 500 돌려받음" }
+        guard let w = m.winner else { return "지난 판 「\(m.question)」 무효 · 200 돌려받음" }
         let me = m.net > 0 ? "나 +\(m.net.formatted(.number))" : "나 -\((-m.net).formatted(.number))"
         return "지난 판 「\(m.question)」 \(w) 승 · \(me)"
     }
@@ -142,12 +142,12 @@ struct MinorityView: View {
     @ViewBuilder private var controls: some View {
         if let r = screen.round {
             if let pick = r.myPick {
-                Text("\(pick == 0 ? r.options.0 : r.options.1) 쪽에 500 걸었어요 · \(Self.hour(r.closesAt)) 공개")
+                Text("\(pick == 0 ? r.options.0 : r.options.1) 쪽에 200 걸었어요 · \(Self.hour(r.closesAt)) 공개")
                     .font(Fonts.small()).foregroundStyle(Theme.gold)
                     .frame(maxWidth: .infinity, minHeight: 38)
                     .pixelBox(fill: Theme.goldBg, border: Theme.gold)
             } else {
-                let enabled = chips >= 500 && !picking
+                let enabled = chips >= 200 && !picking
                 HStack(spacing: 8) {
                     optionButton(r.options.0, index: 0, enabled: enabled)
                     optionButton(r.options.1, index: 1, enabled: enabled)
