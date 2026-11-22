@@ -9,19 +9,24 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     public let goldenUntil: Date?
     /// 직접 정한 닉네임이면 true. false면 서버가 붙인 "손님 XXXXXX"
     public let named: Bool
+    /// 마지막으로 오늘의 칩을 받은 날짜 (한국 시간, YYYY-MM-DD)
+    public let lastDaily: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, chips, named
         case goldenChips = "golden_chips", goldenUntil = "golden_until"
+        case lastDaily = "last_daily"
     }
 
-    public init(id: UUID, name: String, chips: Int64, goldenChips: Int = 0, goldenUntil: Date? = nil, named: Bool = true) {
+    public init(id: UUID, name: String, chips: Int64, goldenChips: Int = 0, goldenUntil: Date? = nil,
+                named: Bool = true, lastDaily: String? = nil) {
         self.id = id
         self.name = name
         self.chips = chips
         self.goldenChips = goldenChips
         self.goldenUntil = goldenUntil
         self.named = named
+        self.lastDaily = lastDaily
     }
 
     public init(from decoder: any Decoder) throws {
@@ -32,6 +37,7 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
         goldenChips = try c.decodeIfPresent(Int.self, forKey: .goldenChips) ?? 0
         goldenUntil = try c.decodeIfPresent(Date.self, forKey: .goldenUntil)
         named = try c.decodeIfPresent(Bool.self, forKey: .named) ?? true
+        lastDaily = try c.decodeIfPresent(String.self, forKey: .lastDaily)
     }
 
     /// 지금 쓸 수 있는 황금 칩 개수 (만료됐으면 0)
@@ -213,13 +219,15 @@ public struct MinorityState: Decodable, Sendable, Equatable {
         public let optionA: String
         public let optionB: String
         public let closesAt: Date
+        /// 판이 열릴 때 정한 참가비. 예전 서버에는 필드가 없다
+        public let stake: Int64?
         /// 참가 인원 (누가 뭘 골랐는지는 정산 뒤에)
         public let participants: Int
         /// 0 / 1. 안 골랐으면 nil
         public let myPick: Int?
 
         enum CodingKeys: String, CodingKey {
-            case id, question, participants
+            case id, question, participants, stake
             case optionA = "option_a", optionB = "option_b", closesAt = "closes_at", myPick = "my_pick"
         }
     }
@@ -234,6 +242,8 @@ public struct MinorityState: Decodable, Sendable, Equatable {
         public let aCount: Int
         public let bCount: Int
         public let choice: Int
+        /// 내가 실제로 낸 참가비
+        public let amount: Int64?
         /// 손익 (무효면 0)
         public let net: Int64
         /// 누가 뭘 골랐는지 (정산 뒤라 공개)
@@ -246,7 +256,7 @@ public struct MinorityState: Decodable, Sendable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case id, question, winner, choice, net, picks
+            case id, question, winner, choice, amount, net, picks
             case optionA = "option_a", optionB = "option_b", aCount = "a_count", bCount = "b_count"
         }
 

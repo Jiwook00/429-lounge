@@ -52,11 +52,14 @@ enum Snapshot {
         } else if let table, table.hasPrefix("lobby-") {
             // lobby-busy | lobby-quiet | lobby-ticker: 접속 현황 (가짜 회원)
             // lobby-board | lobby-board-me | lobby-board-empty: 카드 뒷면 큰손 / lobby-flip: 뒤집는 중(반쯤)
+            // lobby-daily: 지갑의 오늘의 칩 버튼
             let crowd = fakeCrowd(me: me, mode: table)
             let back = table.hasPrefix("lobby-board")
+            let daily = table == "lobby-daily"
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, crowd: crowd, board: fakeBoard(table),
-                                         lastWeekRank: table.hasPrefix("lobby-board-10") ? 3 : nil,
+                                         lastWeekRank: table.hasPrefix("lobby-board-10") || daily ? 3 : nil,
+                                         dailyChipsAvailableAt: daily ? store.dailyChipsAvailableAt : nil,
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
                                          minority: .open(closesAt: Self.kst(hour: 17), picked: false)))
@@ -407,20 +410,20 @@ enum Snapshot {
         switch mode {
         case "minority-result-lose":
             return MinorityResult(question: "금요일 오후 배포", options: ("한다", "안 한다"),
-                                  picks: [p("나", 0), p("예린", 0), p("민수", 0), p("지호", 1)], winner: 1, net: -200)
+                                  picks: [p("나", 0), p("예린", 0), p("민수", 0), p("지호", 1)], winner: 1, amount: 50, net: -50)
         case "minority-result-void":
             return MinorityResult(question: "아침 첫 잔", options: ("아아", "뜨아"),
-                                  picks: [p("나", 0), p("예린", 0), p("지호", 0)], winner: nil, net: 0)
+                                  picks: [p("나", 0), p("예린", 0), p("지호", 0)], winner: nil, amount: 50, net: 0)
         default:
             return MinorityResult(question: "금요일 오후 배포", options: ("한다", "안 한다"),
                                   picks: [p("나", 1), p("예린", 0), p("민수", 0), p("철수", 0), p("영희", 0)],
-                                  winner: 1, net: 2_000)
+                                  winner: 1, amount: 50, net: 200)
         }
     }
 
     private static func fakeMinority(_ mode: String) -> MinorityScreen {
         let deploy = MinorityScreen.Round(question: "금요일 오후 배포", options: ("한다", "안 한다"),
-                                          closesAt: kst(hour: 17), participants: 4)
+                                          closesAt: kst(hour: 17), stake: 50, participants: 4)
         switch mode {
         case "minority-picked":
             var r = deploy
@@ -429,7 +432,7 @@ enum Snapshot {
         case "minority-closed":
             // 금요일 17시 정산 뒤: 다음 판은 월요일 8시
             return MinorityScreen(round: nil, nextOpensAt: kst(hour: 8, weekday: 2),
-                                  mine: .init(question: "금요일 오후 배포", winner: "안 한다", net: 1_000))
+                                  mine: .init(question: "금요일 오후 배포", winner: "안 한다", amount: 50, net: 200))
         default:
             return MinorityScreen(round: deploy)
         }

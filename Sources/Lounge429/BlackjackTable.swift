@@ -23,7 +23,7 @@ final class BlackjackTable {
     private(set) var acceptedAction: BJSeat.Action?
     private(set) var actionRequestedAt: Date?
     private(set) var resultReceivedAt: Date?
-    var stake: Int64 = 100
+    var stake: Int64 = 30
     var useGolden = false
 
     /// 서버 시각 - 로컬 시각

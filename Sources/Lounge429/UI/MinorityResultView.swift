@@ -14,6 +14,7 @@ struct MinorityResult {
     let picks: [Pick]
     /// 이긴 쪽 0 / 1. nil = 무효
     let winner: Int?
+    let amount: Int64?
     let net: Int64
 
     var counts: (Int, Int) { (picks.filter { $0.choice == 0 }.count, picks.filter { $0.choice == 1 }.count) }
@@ -57,7 +58,7 @@ struct MinorityResultView: View {
         .foregroundStyle(Theme.cream)
         .overlay {
             // 이긴 판: 슬롯·홀짝과 같은 금화 연출
-            if result.net > 0, let tier = WinTier(payout: result.net + MinorityScreen.stake) {
+            if result.net > 0, let tier = WinTier(payout: result.net + (result.amount ?? 200)) {
                 WinBurst(tier: tier, amount: result.net, start: shownAt ?? appeared, origin: UnitPoint(x: 0.5, y: 0.25))
             }
         }
@@ -159,7 +160,8 @@ struct MinorityResultView: View {
     private var mine: some View {
         let net = result.net
         let figure = net > 0 ? "+\(net.formatted(.number))" : net < 0 ? "-\((-net).formatted(.number))" : "±0"
-        let note = result.winner == nil ? "200칩 돌려받았어요" : net > 0 ? "소수파였어요" : "다수파였어요"
+        let refunded = result.amount.map { "\($0.formatted(.number))칩" } ?? "건 칩을"
+        let note = result.winner == nil ? "\(refunded) 돌려받았어요" : net > 0 ? "소수파였어요" : "다수파였어요"
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("나").font(Fonts.bold()).foregroundStyle(Theme.muted)
             Text(figure).font(Fonts.mono(2))

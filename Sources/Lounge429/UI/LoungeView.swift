@@ -16,6 +16,9 @@ struct LoungeView: View {
     var board: [BoardRow]?
     /// 지난주 내 순위 (칩 화면). 기록이 없으면 nil
     var lastWeekRank: Int?
+    var dailyChipsAvailableAt: Date?
+    var claimingDailyChips = false
+    var onClaimDailyChips: () -> Void = {}
     /// 팝오버가 화면에 보이는지. 닫히면 라운지 카드가 앞면으로 돌아온다
     var visible = true
     /// 스냅샷용: 라운지 카드 면과 뒤집는 중간 프레임
@@ -158,7 +161,7 @@ struct LoungeView: View {
                 if !crowd.events.isEmpty {
                     EventTicker(events: crowd.events, now: context.date, still: reduceMotion)
                 }
-                wallet
+                wallet(now: context.date)
                 if let lock { vipBanner(lock, now: context.date) }
                 if let toast { toastView(toast) }
                 if let appUpdate, appUpdate.required || updating || showUpdate {
@@ -263,21 +266,39 @@ struct LoungeView: View {
         MarqueeBulbs(count: 35, offset: offset)
     }
 
-    private var wallet: some View {
+    private func wallet(now: Date) -> some View {
         HStack(spacing: 12) {
             PixelView(sprite: Sprites.chip, scale: 3)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(chips.formatted(.number))
-                    .font(Fonts.mono(2))
-                    .foregroundStyle(Theme.gold)
-                Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok → +\((snapshot.today.fresh / 1_000).formatted(.number))칩")
-                    .font(Fonts.small())
-                    .foregroundStyle(Theme.muted)
-            }
-            Spacer(minLength: 0)
-            if let lastWeekRank {
-                Text("지난주 \(lastWeekRank)위").font(Fonts.small())
-                    .foregroundStyle(lastWeekRank == 1 ? Theme.gold : Theme.muted)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(chips.formatted(.number))
+                        .font(Fonts.mono(2))
+                        .foregroundStyle(Theme.gold)
+                        .lineLimit(1)
+                    if let dailyChipsAvailableAt, dailyChipsAvailableAt <= now {
+                        Button(action: onClaimDailyChips) {
+                            Text(claimingDailyChips ? "받는 중…" : "오늘의 칩 받기")
+                                .font(Fonts.small())
+                                .foregroundStyle(Theme.gold)
+                                .fixedSize()
+                                .padding(.horizontal, 7)
+                                .frame(minHeight: 26)
+                                .pixelBox(fill: Theme.goldBg, border: Theme.gold)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(claimingDailyChips)
+                    }
+                }
+                HStack(spacing: 6) {
+                    Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok → +\((snapshot.today.fresh / 1_000).formatted(.number))칩")
+                        .foregroundStyle(Theme.muted)
+                    Spacer(minLength: 0)
+                    if let lastWeekRank {
+                        Text("지난주 \(lastWeekRank)위").fixedSize()
+                            .foregroundStyle(lastWeekRank == 1 ? Theme.gold : Theme.muted)
+                    }
+                }
+                .font(Fonts.small())
             }
             if golden > 0 {
                 VStack(spacing: 2) {

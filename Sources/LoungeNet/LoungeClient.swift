@@ -153,7 +153,7 @@ public final class LoungeClient: Sendable {
         try await supabase.rpc("minority_tick").execute().value
     }
 
-    /// 소수결: 200칩 걸고 고르기 (0 / 1)
+    /// 소수결: 열린 판의 참가비를 걸고 고르기 (0 / 1)
     public func minorityPick(_ choice: Int) async throws -> MinorityState {
         do {
             return try await supabase.rpc("minority_pick", params: ["p_choice": choice]).execute().value
@@ -269,7 +269,7 @@ public final class LoungeClient: Sendable {
 
     // MARK: - 칩 경제 (docs/chip-economy.md)
 
-    /// 하루 한 번 출근 도장 (+100, 잔액 100 미만이면 +300)
+    /// 오늘의 칩 수령 (+100, 누를 때 잔액 100 미만이면 +300)
     public func dailyBonus() async throws -> Grant {
         try await supabase.rpc("daily_bonus").execute().value
     }

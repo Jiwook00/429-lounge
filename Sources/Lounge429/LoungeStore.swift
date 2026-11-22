@@ -19,6 +19,15 @@ final class LoungeStore {
     private(set) var netError: String?
     /// 칩이 들어왔을 때 잠깐 보여주는 알림
     private(set) var toast: Toast?
+    private(set) var claimingDailyChips = false
+
+    private static let dailyChipsCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        return calendar
+    }()
+    private static let dailyChipsDate = Date.ISO8601FormatStyle(timeZone: dailyChipsCalendar.timeZone)
+        .year().month().day().dateSeparator(.dash)
 
     // MARK: 업데이트 (ADR-0010)
 
@@ -132,6 +141,24 @@ final class LoungeStore {
     var chips: Int { Int(me?.chips ?? 0) }
     func golden(at now: Date = .now) -> Int { me?.golden(at: now) ?? 0 }
 
+    var dailyChipsAvailableAt: Date? {
+        guard let me else { return nil }
+        guard let day = me.lastDaily, let receivedAt = try? Self.dailyChipsDate.parse(day) else { return .distantPast }
+        return Self.dailyChipsCalendar.date(byAdding: .day, value: 1, to: receivedAt)
+    }
+
+    func claimDailyChips() async {
+        guard !claimingDailyChips, let dailyChipsAvailableAt, dailyChipsAvailableAt <= .now else { return }
+        claimingDailyChips = true
+        defer { claimingDailyChips = false }
+        do {
+            let grant = try await net.dailyBonus()
+            apply(grant, "오늘의 칩 +\(grant.granted.formatted(.number))칩")
+        } catch {
+            showToast("오늘의 칩을 못 받았어요 · 다시 시도해 주세요")
+        }
+    }
+
     func refresh() async {
         let scanner = self.scanner
         var s = await Task.detached(priority: .utility) { scanner.scan() }.value
@@ -178,8 +205,10 @@ final class LoungeStore {
         let text: String
         if let w = m.winnerLabel {
             text = m.net > 0 ? "\(w) 승 · 나 +\(m.net.formatted(.number))칩" : "\(w) 승 · 나 -\((-m.net).formatted(.number))칩"
+        } else if let amount = m.amount {
+            text = "무효 · \(amount.formatted(.number))칩 돌려받았어요"
         } else {
-            text = "무효 · 200칩 돌려받았어요"
+            text = "무효 · 건 칩을 돌려받았어요"
         }
         showToast("소수결 \(text)", golden: m.net > 0)
         if notify { Notifier.minority(text, question: m.question) }
@@ -191,7 +220,7 @@ final class LoungeStore {
         guard let m = minority?.mine, m.id > minoritySeen else { return nil }
         return MinorityResult(question: m.question, options: (m.optionA, m.optionB),
                               picks: m.picks.map { .init(name: $0.name, choice: $0.choice, me: $0.me) },
-                              winner: m.winner, net: m.net)
+                              winner: m.winner, amount: m.amount, net: m.net)
     }
 
     func ackMinorityResult() {
@@ -209,9 +238,11 @@ final class LoungeStore {
     var minorityScreen: MinorityScreen {
         let r = minority?.round.map {
             MinorityScreen.Round(question: $0.question, options: ($0.optionA, $0.optionB), closesAt: $0.closesAt,
-                                 participants: $0.participants, myPick: $0.myPick)
+                                 stake: $0.stake ?? 200, participants: $0.participants, myPick: $0.myPick)
         }
-        let mine = minority?.mine.map { MinorityScreen.Mine(question: $0.question, winner: $0.winnerLabel, net: $0.net) }
+        let mine = minority?.mine.map {
+            MinorityScreen.Mine(question: $0.question, winner: $0.winnerLabel, amount: $0.amount, net: $0.net)
+        }
         return MinorityScreen(round: r, nextOpensAt: minority?.nextOpensAt, mine: mine)
     }
 
@@ -233,7 +264,8 @@ final class LoungeStore {
 
     func connect() async {
         do {
-            me = try await net.signIn()
+            let player = try await net.signIn()
+            if me?.id == player.id { update(player) } else { me = player }
             netError = nil
         } catch {
             netError = "라운지 서버에 연결할 수 없어요"
@@ -241,9 +273,6 @@ final class LoungeStore {
         }
         joinLounge()
         await keepRoster()
-        if let g = try? await net.dailyBonus() {
-            apply(g, g.granted >= 300 ? "파산 구제 +\(g.granted)칩" : "출근 도장 +\(g.granted)칩")
-        }
         await claim()
     }
 
@@ -262,7 +291,7 @@ final class LoungeStore {
     }
 
     private func apply(_ grant: Grant, _ message: String, golden: Bool = false) {
-        me = grant.player
+        update(grant.player)
         guard grant.granted > 0 else { return }
         showToast(message, golden: golden)
     }
@@ -279,7 +308,7 @@ final class LoungeStore {
     /// 닉네임 저장. 실패하면 보여줄 문구
     func rename(_ name: String) async -> String? {
         do {
-            me = try await net.setNickname(name)
+            update(try await net.setNickname(name))
             pushPresence()
             return nil
         } catch {
@@ -289,11 +318,14 @@ final class LoungeStore {
 
     func refreshMe() async {
         guard me != nil, let fresh = try? await net.me() else { return }
-        me = fresh
+        update(fresh)
     }
 
     func update(_ player: Player) {
-        if player.id == me?.id { me = player }
+        guard let me, player.id == me.id else { return }
+        // 먼저 보낸 지갑 요청이 늦게 와도 오늘의 칩 수령 기록은 되돌리지 않는다.
+        guard (player.lastDaily ?? "") >= (me.lastDaily ?? "") else { return }
+        self.me = player
     }
 
     // MARK: - 라운지 접속

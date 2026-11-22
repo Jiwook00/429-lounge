@@ -8,7 +8,7 @@ struct StakePicker: View {
     let golden: Int
     var disabled = false
 
-    static let stakes: [Int64] = [10, 50, 100, 500]
+    static let stakes: [Int64] = [10, 50, 100, 200]
 
     private var goldenSelected: Bool { useGolden && golden > 0 }
 

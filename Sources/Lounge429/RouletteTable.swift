@@ -24,7 +24,7 @@ final class RouletteTable {
     private(set) var closedAt: Date?
     private(set) var busy = false
     private(set) var betAcceptedAt: Date?
-    var stake: Int64 = 50
+    var stake: Int64 = 10
     var useGolden = false
 
     /// 서버 시각 - 로컬 시각
