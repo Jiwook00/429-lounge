@@ -17,3 +17,4 @@
 | [0010](0010-update-notice-min-version.md)        | 업데이트: 자동 설치 대신 앱 안 안내 + 서버 최소 버전                            | accepted |
 | [0011](0011-lounge-roster-offline.md)            | 라운지 명부: 접속 중이 아닌 회원도 "오프라인 · 3시간 전"으로                    | accepted |
 | [0014](0014-blackjack-comic-table.md)            | 블랙잭: 만화 5컷 테이블, 좌석별 순차 턴, 빈 자리는 AI, 무한 덱 + 홀 카드 없음   | accepted |
+| [0015](0015-mini-roulette-replaces-oddeven.md)   | 미니 룰렛 0~12: 0은 무효 판, 칸을 누르면 바로 걸림, 홀짝은 은퇴                 | accepted |

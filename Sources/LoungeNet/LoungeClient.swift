@@ -49,6 +49,9 @@ public enum LoungeError: LocalizedError {
         case .server("cannot_double"): "지금은 더블할 수 없어요"
         case .server("not_alone"): "다른 회원도 앉아 있어요"
         case .server("not_seated"): "먼저 걸어 주세요"
+        case .server("golden_outside_only"): "황금 칩은 바깥 칸에만 놓여요"
+        case .server("invalid_spot"): "걸 수 없는 칸이에요"
+        case .server("game_retired"): "홀짝은 문을 닫았어요 · 룰렛으로"
         case .server(let m): m
         }
     }
@@ -196,12 +199,48 @@ public final class LoungeClient: Sendable {
     /// 블랙잭 테이블이 바뀌었다는 신호 (라운드·좌석). 받으면 bjTick으로 다시 읽는다.
     /// 재연결 뒤에도 한 번 보낸다 (그 사이 놓친 변경이 있을 수 있어서)
     public func bjChanges(room: String) -> AsyncStream<Void> {
+        changes(channel: "bj:\(room)", tables: ["bj_rounds", "bj_seats"], room: room)
+    }
+
+    // MARK: - 미니 룰렛 (ADR-0015)
+
+    /// 마감이 지난 판을 정산하고 지금 판 전부를 받는다
+    public func rouletteTick(room: String) async throws -> RouletteState {
+        try await supabase.rpc("roulette_tick", params: ["p_room": room]).execute().value
+    }
+
+    /// 칸에 칩을 놓는다 (바로 걸림). 판이 없으면 12초 베팅 창이 열린다
+    public func rouletteBet(room: String, spot: Roulette.Spot, amount: Int64, golden: Bool = false) async throws -> RouletteState {
+        struct Params: Encodable { let p_room: String; let p_spot: String; let p_amount: Int64; let p_golden: Bool }
+        do {
+            return try await supabase.rpc("roulette_bet", params: Params(p_room: room, p_spot: spot.rawValue, p_amount: amount, p_golden: golden))
+                .execute().value
+        } catch {
+            throw LoungeError.wrap(error)
+        }
+    }
+
+    /// 혼자 걸었으면 바로 돌린다
+    public func rouletteSpin(room: String) async throws -> RouletteState {
+        do {
+            return try await supabase.rpc("roulette_spin", params: ["p_room": room]).execute().value
+        } catch {
+            throw LoungeError.wrap(error)
+        }
+    }
+
+    /// 룰렛 테이블이 바뀌었다는 신호 (라운드·베팅). 받으면 rouletteTick으로 다시 읽는다
+    public func rouletteChanges(room: String) -> AsyncStream<Void> {
+        changes(channel: "roulette:\(room)", tables: ["roulette_rounds", "roulette_bets"], room: room)
+    }
+
+    /// 테이블들의 room_code 변경을 "바뀌었다" 신호 하나로. 재연결 뒤에도 한 번 보낸다 (놓친 변경이 있을 수 있어서)
+    private func changes(channel name: String, tables: [String], room: String) -> AsyncStream<Void> {
         let supabase = self.supabase
         return AsyncStream { continuation in
             let task = Task {
-                let channel = supabase.channel("bj:\(room)")
-                let rounds = channel.postgresChange(AnyAction.self, table: "bj_rounds", filter: .eq("room_code", value: room))
-                let seats = channel.postgresChange(AnyAction.self, table: "bj_seats", filter: .eq("room_code", value: room))
+                let channel = supabase.channel(name)
+                let streams = tables.map { channel.postgresChange(AnyAction.self, table: $0, filter: .eq("room_code", value: room)) }
                 let statuses = channel.statusChange
                 do {
                     try await channel.subscribeWithError()
@@ -211,8 +250,9 @@ public final class LoungeClient: Sendable {
                 }
                 await withTaskGroup(of: Void.self) { group in
                     group.addTask { for await _ in statuses.resubscribed() { continuation.yield() } }
-                    group.addTask { for await _ in rounds { continuation.yield() } }
-                    group.addTask { for await _ in seats { continuation.yield() } }
+                    for stream in streams {
+                        group.addTask { for await _ in stream { continuation.yield() } }
+                    }
                 }
                 await supabase.removeChannel(channel)
                 continuation.finish()
@@ -252,36 +292,6 @@ public final class LoungeClient: Sendable {
         } catch { throw LoungeError.wrap(error) }
     }
 
-    // MARK: - 홀짝
-
-    public func tick(room: String) async throws -> Round {
-        do {
-            return try await supabase.rpc("oddeven_tick", params: ["p_room": room]).execute().value
-        } catch { throw LoungeError.wrap(error) }
-    }
-
-    public func bet(room: String, side: Side, amount: Int64, golden: Bool = false) async throws -> Bet {
-        struct Params: Encodable { let p_room: String; let p_side: String; let p_amount: Int64; let p_golden: Bool }
-        do {
-            return try await supabase
-                .rpc("oddeven_bet", params: Params(p_room: room, p_side: side.rawValue, p_amount: amount, p_golden: golden))
-                .execute().value
-        } catch { throw LoungeError.wrap(error) }
-    }
-
-    public func bets(roundID: Int64) async throws -> [Bet] {
-        try await supabase.from("oddeven_bets").select().eq("round_id", value: Int(roundID))
-            .order("created_at").execute().value
-    }
-
-    /// 방의 가장 최근 정산된 라운드
-    public func lastSettled(room: String) async throws -> Round? {
-        let rows: [Round] = try await supabase.from("oddeven_rounds").select()
-            .eq("room_code", value: room).not("settled_at", operator: .is, value: "null")
-            .order("id", ascending: false).limit(1).execute().value
-        return rows.first
-    }
-
     // MARK: - 라운지 접속 / 전광판 (ADR-0008)
 
     /// 최근 `within`초 안의 전광판 이벤트 (오래된 것부터)
@@ -297,81 +307,6 @@ public final class LoungeClient: Sendable {
     /// 상태가 바뀌면 `LoungeLink.update`로 다시 알린다.
     public func joinLounge(as me: Member) -> LoungeLink {
         LoungeLink(supabase: supabase, me: me)
-    }
-
-    /// 테이블 실시간 이벤트: 라운드/베팅 변경, 칩 변동, 착석자(Presence).
-    /// 스트림을 끝내면(구독 Task 취소) 채널도 정리된다.
-    public func tableEvents(room: String, seat: Seat) -> AsyncStream<TableEvent> {
-        let supabase = self.supabase
-        return AsyncStream { continuation in
-            let task = Task {
-                let channel = supabase.channel("oddeven:\(room)") { $0.presence.key = seat.id.uuidString }
-                let rounds = channel.postgresChange(AnyAction.self, table: "oddeven_rounds", filter: .eq("room_code", value: room))
-                let bets = channel.postgresChange(AnyAction.self, table: "oddeven_bets", filter: .eq("room_code", value: room))
-                let players = channel.postgresChange(UpdateAction.self, table: "players")
-                let presence = channel.presenceChange()
-                let statuses = channel.statusChange
-
-                do {
-                    try await channel.subscribeWithError()
-                    try await channel.track(seat)
-                } catch {
-                    continuation.finish()
-                    return
-                }
-
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask {
-                        // 재연결 뒤 착석 다시 알리기 (라운지 채널과 같은 이유)
-                        for await _ in statuses.resubscribed() {
-                            try? await channel.track(seat)
-                        }
-                    }
-                    group.addTask {
-                        for await action in rounds {
-                            if let r: Round = action.decoded() { continuation.yield(.round(r)) }
-                        }
-                    }
-                    group.addTask {
-                        for await action in bets {
-                            if let b: Bet = action.decoded() { continuation.yield(.bet(b)) }
-                        }
-                    }
-                    group.addTask {
-                        for await action in players {
-                            if let p = try? action.decodeRecord(as: Player.self, decoder: AnyJSON.decoder) {
-                                continuation.yield(.player(p))
-                            }
-                        }
-                    }
-                    group.addTask {
-                        var seats: [String: Seat] = [:]
-                        for await action in presence {
-                            if action.isFullState { seats = [:] }
-                            // 상태 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리
-                            for key in action.leaves.keys { seats[key] = nil }
-                            for (key, p) in action.joins {
-                                if let s = try? p.decodeState(as: Seat.self) { seats[key] = s }
-                            }
-                            continuation.yield(.seats(seats.values.sorted { $0.name < $1.name }))
-                        }
-                    }
-                }
-                await supabase.removeChannel(channel)
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-    }
-}
-
-private extension AnyAction {
-    func decoded<T: Decodable>() -> T? {
-        switch self {
-        case .insert(let a): try? a.decodeRecord(as: T.self, decoder: AnyJSON.decoder)
-        case .update(let a): try? a.decodeRecord(as: T.self, decoder: AnyJSON.decoder)
-        case .delete: nil
-        }
     }
 }
 

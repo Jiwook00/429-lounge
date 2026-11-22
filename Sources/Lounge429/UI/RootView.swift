@@ -4,7 +4,7 @@ import SwiftUI
 struct RootView: View {
     enum Screen {
         case lounge
-        case oddEven(OddEvenTable)
+        case roulette(RouletteTable)
         case slot(SlotMachine)
         case blackjack(BlackjackTable)
         case minority
@@ -30,7 +30,7 @@ struct RootView: View {
                     name: store.me.flatMap { $0.named ? $0.name : nil },
                     onRename: { await store.rename($0) },
                     appUpdate: store.appUpdate,
-                    onOddEven: { go(.oddEven(OddEvenTable(store: store))) },
+                    onRoulette: { go(.roulette(RouletteTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
                     blackjackSeated: store.blackjackSeated,
                     onBlackjack: { go(.blackjack(BlackjackTable(store: store))) },
@@ -42,8 +42,8 @@ struct RootView: View {
                     onRefresh: { Task { await store.refresh() } },
                     onQuit: { NSApp.terminate(nil) }
                 )
-            case .oddEven(let table):
-                OddEvenView(table: table, chips: store.chips, golden: store.golden()) {
+            case .roulette(let table):
+                RouletteView(table: table, chips: store.chips, golden: store.golden()) {
                     table.leave()
                     go(.lounge)
                 }
@@ -84,7 +84,7 @@ struct RootView: View {
         // 최소 버전에 못 미치면 테이블에서 일으켜 세운다 (ADR-0010)
         .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
             guard blocked else { return }
-            if case .oddEven(let table) = screen { table.leave() }
+            if case .roulette(let table) = screen { table.leave() }
             if case .blackjack(let table) = screen { table.leave() }
             go(.lounge)
         }
@@ -97,7 +97,7 @@ struct RootView: View {
         switch next {
         case .slot: GameAudio.shared.enter(.floor)
         case .blackjack: GameAudio.shared.enter(.felt)
-        case .oddEven: GameAudio.shared.enter(.marbles)
+        case .roulette: GameAudio.shared.enter(.marbles)
         case .minority: GameAudio.shared.enter(.ballot)
         case .lounge: GameAudio.shared.enter(.lounge)
         }
@@ -106,7 +106,8 @@ struct RootView: View {
         case .lounge:
             store.place = .lounge
             Task { await store.countBlackjack() }
-        case .oddEven: store.place = .oddeven
+        // 룰렛은 홀짝 자리를 이어받아 Presence 값도 같다 (Member.Place.roulette = "oddeven")
+        case .roulette: store.place = .roulette
         case .slot: store.place = .slot
         // 옛 앱이 모르는 위치 값을 보내면 회원 목록이 깨진다 → 소수결은 라운지로
         case .minority: store.place = .lounge

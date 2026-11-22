@@ -1,11 +1,5 @@
 import Foundation
 
-public enum Side: String, Codable, Sendable, CaseIterable {
-    case odd, even
-
-    public var label: String { self == .odd ? "홀" : "짝" }
-}
-
 public struct Player: Codable, Sendable, Identifiable, Equatable {
     public let id: UUID
     public let name: String
@@ -96,98 +90,14 @@ public struct Grant: Codable, Sendable {
     public let player: Player
 }
 
-public struct Round: Codable, Sendable, Identifiable, Equatable {
-    public let id: Int64
-    public let roomCode: String
-    public let opensAt: Date
-    public let closesAt: Date
-    /// 정산 전엔 nil. 서버만 정한다.
-    public let marbles: Int?
-    public let settledAt: Date?
-
-    public var result: Side? { marbles.map { $0 % 2 == 1 ? .odd : .even } }
-
-    enum CodingKeys: String, CodingKey {
-        case id, marbles
-        case roomCode = "room_code", opensAt = "opens_at", closesAt = "closes_at", settledAt = "settled_at"
-    }
-
-    public init(id: Int64, roomCode: String, opensAt: Date, closesAt: Date, marbles: Int?, settledAt: Date?) {
-        self.id = id
-        self.roomCode = roomCode
-        self.opensAt = opensAt
-        self.closesAt = closesAt
-        self.marbles = marbles
-        self.settledAt = settledAt
-    }
-}
-
-public struct Bet: Codable, Sendable, Equatable {
-    public let roundId: Int64
-    public let roomCode: String
-    public let playerId: UUID
-    public let side: Side
-    public let amount: Int64
-    /// 정산 후 채워짐. 0이면 짐.
-    public let payout: Int64?
-    /// 황금 칩(공짜 100칩) 베팅
-    public let golden: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case side, amount, payout, golden
-        case roundId = "round_id", roomCode = "room_code", playerId = "player_id"
-    }
-
-    public init(roundId: Int64, roomCode: String, playerId: UUID, side: Side, amount: Int64, payout: Int64?, golden: Bool = false) {
-        self.roundId = roundId
-        self.roomCode = roomCode
-        self.playerId = playerId
-        self.side = side
-        self.amount = amount
-        self.payout = payout
-        self.golden = golden
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        roundId = try c.decode(Int64.self, forKey: .roundId)
-        roomCode = try c.decode(String.self, forKey: .roomCode)
-        playerId = try c.decode(UUID.self, forKey: .playerId)
-        side = try c.decode(Side.self, forKey: .side)
-        amount = try c.decode(Int64.self, forKey: .amount)
-        payout = try c.decodeIfPresent(Int64.self, forKey: .payout)
-        golden = try c.decodeIfPresent(Bool.self, forKey: .golden) ?? false
-    }
-
-    /// 실제로 잃은 칩 (황금 칩 베팅은 0)
-    public var cost: Int64 { golden ? 0 : amount }
-}
-
-/// 테이블에 앉아 있는 사람 (Realtime Presence)
-public struct Seat: Codable, Sendable, Hashable, Identifiable {
-    public let id: UUID
-    public let name: String
-
-    public init(id: UUID, name: String) {
-        self.id = id
-        self.name = name
-    }
-}
-
-public enum TableEvent: Sendable {
-    case round(Round)
-    case bet(Bet)
-    case player(Player)
-    case seats([Seat])
-}
-
 // MARK: - 라운지 접속 (ADR-0008)
 
 /// 라운지에 있는 회원 한 명의 상태. Realtime Presence로 주고받는다.
 /// 프로젝트 이름, 토큰 양 같은 건 절대 담지 않는다. 대략적인 상태만.
 public struct Member: Codable, Sendable, Hashable, Identifiable {
     public enum Place: String, Codable, Sendable {
-        case lounge, oddeven, slot
+        /// 룰렛은 홀짝 자리를 이어받았다. 옛 앱이 아는 값("oddeven")을 그대로 보낸다 (모르는 값이면 회원 목록이 깨짐)
+        case lounge, roulette = "oddeven", slot
     }
 
     /// 로컬 Claude Code 로그에서 계산한 대략적인 상태
@@ -242,7 +152,7 @@ public struct LoungeEvent: Codable, Sendable, Identifiable, Equatable {
     public let id: Int64
     /// jackpot | bigwin
     public let kind: String
-    /// slot | oddeven
+    /// slot | oddeven | blackjack | roulette
     public let game: String
     public let name: String
     public let amount: Int64
@@ -485,6 +395,164 @@ public struct BJSeat: Decodable, Sendable, Equatable, Identifiable {
         self.state = state
         self.lastAction = lastAction
         self.result = result
+        self.payout = payout
+    }
+}
+
+// MARK: - 미니 룰렛 (ADR-0015)
+
+/// 미니 룰렛 0~12. 빨강 1 4 5 8 9 12, 0은 무효 판
+public enum Roulette {
+    public static let red: Set<Int> = [1, 4, 5, 8, 9, 12]
+    /// 휠 칸 순서: 0이 맨 위, 시계 방향. 빨강과 검정이 번갈아 온다
+    public static let wheel = [0, 12, 7, 1, 10, 5, 2, 9, 6, 4, 11, 8, 3]
+    /// 한 판 시간: 베팅 12초 → 회전 6초 → 결과 4초
+    public static let spin: TimeInterval = 6
+    public static let reveal: TimeInterval = 4
+
+    /// 걸 수 있는 칸. 숫자 하나 ×12, 나머지 ×2 (지급액은 건 칩 포함)
+    public enum Spot: Hashable, Sendable, Codable, RawRepresentable {
+        case number(Int)
+        case red, black, odd, even, low, high
+
+        public static let outside: [Spot] = [.low, .even, .red, .black, .odd, .high]
+
+        public init?(rawValue: String) {
+            switch rawValue {
+            case "red": self = .red
+            case "black": self = .black
+            case "odd": self = .odd
+            case "even": self = .even
+            case "low": self = .low
+            case "high": self = .high
+            default:
+                guard rawValue.hasPrefix("n"), let n = Int(rawValue.dropFirst()), (1...12).contains(n) else { return nil }
+                self = .number(n)
+            }
+        }
+
+        public var rawValue: String {
+            switch self {
+            case .number(let n): "n\(n)"
+            case .red: "red"
+            case .black: "black"
+            case .odd: "odd"
+            case .even: "even"
+            case .low: "low"
+            case .high: "high"
+            }
+        }
+
+        public var label: String {
+            switch self {
+            case .number(let n): "\(n)"
+            case .red: "빨강"
+            case .black: "검정"
+            case .odd: "홀"
+            case .even: "짝"
+            case .low: "1–6"
+            case .high: "7–12"
+            }
+        }
+
+        /// 황금 칩은 ×2 칸에만
+        public var outside: Bool { if case .number = self { false } else { true } }
+
+        /// 지급 배수 (건 칩 포함). 0은 무효 판이라 ×1
+        public func multiplier(_ result: Int) -> Int {
+            if result == 0 { return 1 }
+            switch self {
+            case .number(let n): return n == result ? 12 : 0
+            case .red: return Roulette.red.contains(result) ? 2 : 0
+            case .black: return Roulette.red.contains(result) ? 0 : 2
+            case .odd: return result % 2 == 1 ? 2 : 0
+            case .even: return result % 2 == 0 ? 2 : 0
+            case .low: return result <= 6 ? 2 : 0
+            case .high: return result >= 7 ? 2 : 0
+            }
+        }
+
+        /// 이 결과에서 이긴 칸인지 (0이면 아무 칸도 아님)
+        public func wins(_ result: Int) -> Bool { result != 0 && multiplier(result) > 1 }
+    }
+
+    /// 결과 한 줄: "7 · 검정 · 홀 · 7–12"
+    public static func describe(_ result: Int) -> [String] {
+        guard result != 0 else { return ["0"] }
+        return ["\(result)", red.contains(result) ? "빨강" : "검정", result % 2 == 1 ? "홀" : "짝", result <= 6 ? "1–6" : "7–12"]
+    }
+}
+
+/// roulette_tick / roulette_bet / roulette_spin 결과: 지금 판 전부
+public struct RouletteState: Decodable, Sendable, Equatable {
+    /// 서버 시각 (시계 차이 보정용)
+    public let now: Date
+    public let round: RouletteRound?
+    public let bets: [RouletteBet]
+    /// 지금 판 바로 앞 판의 결과
+    public let lastResult: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case now, round, bets
+        case lastResult = "last_result"
+    }
+
+    public init(now: Date, round: RouletteRound?, bets: [RouletteBet], lastResult: Int? = nil) {
+        self.now = now
+        self.round = round
+        self.bets = bets
+        self.lastResult = lastResult
+    }
+}
+
+public struct RouletteRound: Decodable, Sendable, Equatable {
+    public let id: Int64
+    public let betClosesAt: Date
+    /// 정산 전엔 nil
+    public let result: Int?
+    public let settledAt: Date?
+    /// 결과 연출이 끝나는 시각 (= 마감 + 10초)
+    public let nextAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, result
+        case betClosesAt = "bet_closes_at", settledAt = "settled_at", nextAt = "next_at"
+    }
+
+    public init(id: Int64, betClosesAt: Date, result: Int? = nil, settledAt: Date? = nil, nextAt: Date? = nil) {
+        self.id = id
+        self.betClosesAt = betClosesAt
+        self.result = result
+        self.settledAt = settledAt
+        self.nextAt = nextAt ?? betClosesAt.addingTimeInterval(Roulette.spin + Roulette.reveal)
+    }
+}
+
+/// 한 회원이 한 칸에 건 칩 (같은 칸에 또 걸면 서버가 더한다)
+public struct RouletteBet: Decodable, Sendable, Equatable {
+    public let playerId: UUID
+    public let name: String
+    public let spot: Roulette.Spot
+    public let amount: Int64
+    /// 황금 칩이면 amount = 100 × 개수
+    public let golden: Bool
+    /// 지급액 (건 칩 포함). 정산 전엔 nil
+    public let payout: Int64?
+
+    /// 실제로 건 칩 (황금 칩은 0)
+    public var staked: Int64 { golden ? 0 : amount }
+
+    enum CodingKeys: String, CodingKey {
+        case name, spot, amount, golden, payout
+        case playerId = "player_id"
+    }
+
+    public init(playerId: UUID, name: String, spot: Roulette.Spot, amount: Int64, golden: Bool = false, payout: Int64? = nil) {
+        self.playerId = playerId
+        self.name = name
+        self.spot = spot
+        self.amount = amount
+        self.golden = golden
         self.payout = payout
     }
 }

@@ -387,8 +387,8 @@ final class LoungeStore {
         return LoungeCrowd(members: list, roster: roster, me: me?.id, events: events.filter { now.timeIntervalSince($0.createdAt) < Self.tickerWindow })
     }
 
-    /// 메뉴바 점: 다른 회원이 홀짝 테이블에 앉아 있다
-    var tableBusy: Bool { crowd().oddEven > 0 }
+    /// 메뉴바 점: 다른 회원이 룰렛 테이블에 앉아 있다
+    var tableBusy: Bool { crowd().roulette > 0 }
     /// 429에 걸려 리셋 전인지 (메뉴바 아이콘이 VIP로 바뀐다)
     var vip: Bool { snapshot.activeLock() != nil }
 
@@ -424,8 +424,8 @@ struct LoungeCrowd {
     let viewing: Int
     /// 나를 뺀 보는 중
     let othersViewing: Int
-    /// 홀짝 테이블에 앉아 있는 다른 회원
-    let oddEven: Int
+    /// 룰렛 테이블에 앉아 있는 다른 회원
+    let roulette: Int
     /// 슬롯을 돌리고 있는 다른 회원
     let slot: Int
     /// 접속 중이 아닌 명부 회원 (나 빼고), 최근에 본 순
@@ -452,7 +452,7 @@ struct LoungeCrowd {
         total = max(members.count, me == nil ? 0 : 1)
         viewing = members.filter(\.viewing).count
         othersViewing = others.filter(\.viewing).count
-        oddEven = others.filter { $0.viewing && $0.place == .oddeven }.count
+        roulette = others.filter { $0.viewing && $0.place == .roulette }.count
         slot = others.filter { $0.viewing && $0.place == .slot }.count
         let online = Set(members.map(\.id))
         offline = roster
