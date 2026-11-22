@@ -69,7 +69,7 @@ enum Snapshot {
             content = AnyView(BlackjackView(table: fakeBlackjack(store: store, me: me, mode: table == "bj-help" ? "bj-myturn" : table),
                                             chips: store.chips, golden: store.golden(), showHelp: table == "bj-help"))
         } else if let table, table.hasPrefix("roulette-") {
-            // roulette-idle | -betting | -golden | -alone | -spin | -closed | -win | -void | -help(베팅 판 위)
+            // roulette-idle | -betting | -golden | -alone | -spin | -cut-near | -cut-edge | -cut-land | -closed | -win | -void | -help
             content = AnyView(RouletteView(table: fakeRoulette(store: store, me: me, mode: table == "roulette-help" ? "roulette-betting" : table),
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
@@ -211,6 +211,11 @@ enum Snapshot {
             table.apply(RouletteState(now: now, round: round(closesIn: -Roulette.spin - 0.8, result: 7), bets: crowd(mine, result: 7), lastResult: 9))
         case "roulette-void":
             table.apply(RouletteState(now: now, round: round(closesIn: -Roulette.spin - 0.8, result: 0), bets: crowd(mine, result: 0), lastResult: 9))
+        case "roulette-cut-near", "roulette-cut-edge", "roulette-cut-land":
+            // 클로즈업 컷: 결과 6. 나 6에 10 + 빨강 50 (9에서 다음 칸을 기다림 / 칸막이 위 / 6에 멈춤)
+            let e: TimeInterval = mode == "roulette-cut-near" ? 5.0 : mode == "roulette-cut-edge" ? 5.8 : 6.3
+            table.apply(RouletteState(now: now, round: round(closesIn: -e, result: 6),
+                                      bets: crowd([(.number(6), 10, false), (.red, 50, false)], result: 6), lastResult: 9))
         default: // roulette-betting
             table.apply(RouletteState(now: now, round: round(closesIn: 8.6), bets: crowd(mine), lastResult: 9))
         }

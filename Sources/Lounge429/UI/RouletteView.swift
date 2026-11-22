@@ -129,6 +129,7 @@ struct RouletteView: View {
             }
             .frame(height: 120)
             board(phase)
+                .overlay { closeUp(now) }
         }
         .padding(5)
         .pixelBox(fill: Theme.felt, border: Theme.gold)
@@ -160,11 +161,29 @@ struct RouletteView: View {
         case .spinning(let e):
             let start = index(table.state?.lastResult ?? 0)
             guard !reduceMotion else { return start }
-            let target = result.map(index) ?? start
-            let total = 3 * wheel.count + ((target - start) % wheel.count + wheel.count) % wheel.count
-            let x = min(1, max(0, e / Roulette.spin))
+            // 결과가 아직 안 왔으면 일정한 속도로 (보통 마감 0.2초 안에 온다)
+            guard let target = result.map(index) else { return (start + Int(e * 8)) % wheel.count }
+            func at(_ offset: Int) -> Int { ((target + offset) % wheel.count + wheel.count) % wheel.count }
+            if e >= RouletteSpin.fastEnd {
+                // 클로즈업 구간: 컷 띠와 같은 칸 (칸막이 위면 앞 칸)
+                return at(Int(RouletteSpin.position(at: e).rounded(.down)))
+            }
+            // 큰 휠에서 두 바퀴 넘게 빠르게 돌다 결과 4칸 앞에서 컷으로 넘긴다
+            let total = 2 * wheel.count + ((at(-4) - start) % wheel.count + wheel.count) % wheel.count
+            let x = min(1, max(0, e / RouletteSpin.fastEnd))
             let eased = 1 - pow(1 - x, 3)
             return (start + Int((Double(total) * eased).rounded(.down))) % wheel.count
+        }
+    }
+
+    /// 마지막 5칸 클로즈업 컷 (베팅 판 자리를 덮는다). 동작 줄이기면 없음
+    @ViewBuilder
+    private func closeUp(_ now: Date) -> some View {
+        if !reduceMotion, let r = table.round, let n = r.result {
+            let e = now.timeIntervalSince(table.local(r.betClosesAt))
+            if RouletteSpin.reveal(at: e) > 0 {
+                RouletteCloseUp(result: n, elapsed: e, marks: table.marks())
+            }
         }
     }
 
