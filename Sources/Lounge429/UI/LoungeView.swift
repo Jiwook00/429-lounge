@@ -29,7 +29,7 @@ struct LoungeView: View {
     /// 스냅샷용: 업데이트 카드를 펼친 상태로
     var showSettings = false
     var showUpdate = false
-    var onOddEven: () -> Void = {}
+    var onRoulette: () -> Void = {}
     var onSlot: () -> Void = {}
     /// 블랙잭에 앉은 회원 수 (AI 제외)
     var blackjackSeated = 0
@@ -303,6 +303,14 @@ struct LoungeView: View {
 
     private var games: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            Button(action: onRoulette) {
+                // 홀짝 자리(첫 칸). 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
+                GameTile(sprite: Sprites.roulette, title: "미니 룰렛",
+                         mode: !online ? "TABLE" : crowd.roulette > 0 ? "TABLE · \(crowd.roulette)명 앉음" : "TABLE · 비어 있음",
+                         soon: !online, live: online, hot: crowd.roulette > 0)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
             Button(action: onSlot) {
                 GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO", soon: !online, live: online,
                          badge: crowd.slot > 0 ? "\(crowd.slot)명" : nil)
@@ -317,15 +325,7 @@ struct LoungeView: View {
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onOddEven) {
-                // 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
-                GameTile(sprite: Sprites.dice, title: "구슬 홀짝",
-                         mode: !online ? "TABLE" : crowd.oddEven > 0 ? "TABLE · \(crowd.oddEven)명 앉음" : "TABLE · 비어 있음",
-                         soon: !online, live: online, hot: crowd.oddEven > 0)
-            }
-            .buttonStyle(.plain)
-            .disabled(!online)
-            GameTile(sprite: Sprites.roulette, title: "룰렛", mode: "TABLE")
+            GameTile(sprite: Sprites.dice, title: "준비 중", mode: "SOON", soon: false, secret: true)
             Button(action: onMinority) {
                 GameTile(sprite: Sprites.ox, title: "소수결",
                          mode: !online ? "평일 3번" : minority?.line(now: .now) ?? "평일 3번",

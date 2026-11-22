@@ -40,8 +40,8 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 | `Lounge429`                 | SwiftUI 메뉴바 앱 (`MenuBarExtra` window 스타일)                                         | Core, Net      |
 | `lounge-bot`, `lounge-scan` | 개발용 CLI                                                                               | Net / Core     |
 
-- 화면 상태: `LoungeStore`(지갑, 사용량, 칩 지급), `OddEvenTable`(테이블 동기화). 둘 다 `@MainActor @Observable`
-- 뷰는 값을 받는다 (`LoungeView`, `OddEvenView`). 스냅샷 렌더링에 그대로 쓰기 위해서
+- 화면 상태: `LoungeStore`(지갑, 사용량, 칩 지급), `RouletteTable`·`BlackjackTable`(테이블 동기화). 모두 `@MainActor @Observable`
+- 뷰는 값을 받는다 (`LoungeView`, `RouletteView`). 스냅샷 렌더링에 그대로 쓰기 위해서
 - 서버 로직은 `supabase/migrations/*.sql`의 Postgres 함수에 있다
 
 ## 꼭 지킬 것
@@ -60,12 +60,12 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|bj-idle|bj-betting|bj-full|bj-dealing|bj-deal|bj-myturn|bj-turn|bj-dealer|bj-result|bj-help|bj-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|bj-idle|bj-betting|bj-full|bj-dealing|bj-deal|bj-myturn|bj-turn|bj-dealer|bj-result|bj-help|bj-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
 ```
 
-- `--table live`: 설정된 Supabase 서버에 접속해 8초 후 화면을 찍는다. `LOUNGE_DEBUG=1`이면 Realtime 이벤트 로그, `LOUNGE_E2E_BET=golden|chips`면 자동 베팅
+- `--table roulette-live`: 설정된 Supabase 서버의 룰렛 테이블에 앉아 25초 동안 상태 줄을 찍고 화면을 저장한다. `LOUNGE_E2E_BET=chips`면 빨강 50 + 7에 10, `golden`이면 홀에 황금 칩을 한 번 건다
 - `LOUNGE_FAKE_429=1`: 가짜 429 상태 (리셋 시각은 "2시간 뒤 정각"으로 고정이라 재실행해도 황금 칩 중복 없음)
-- 멀티플레이는 `lounge-bot` 두 개 + `--table live` 조합으로 확인
+- 멀티플레이는 `lounge-bot` 두 개(기본이 룰렛, 판마다 한두 칸) + `--table roulette-live` 조합으로 확인. 룰렛 서버 함수는 `roulette_tick`이 jsonb 하나로 판 전체를 돌려주고, 공이 도는 6초와 결과 4초는 `RouletteTable.phase`가 마감 시각으로 정한다
 - 라운지 접속은 `lounge-bot --name 철수 [--blink] [--watch]` + `--table lobby-live`(20초 동안 회원 목록 출력 후 화면). `--blink`는 7초마다 보는 중을 껐다 켜고, `--watch`는 봇 쪽에서 본 회원 목록을 찍는다 (다른 회원 화면에 내가 어떻게 보이는지)
 - 블랙잭은 `lounge-bot --name 철수 --blackjack` 두세 개 + `--table bj-live`(25초 동안 상태 줄 출력 후 화면). `LOUNGE_E2E_BET=1`이면 앱 계정도 30칩 걸고 친다. 서버 함수는 `bj_tick`이 jsonb 하나로 판 전체를 돌려주고, 카드 도착(날아오는) 시각은 `BlackjackTable.apply`가 정한다
 - 소수결은 `lounge-bot --name 철수 --minority 0|1`로 봇이 고르고, `--table lobby-live`가 끝날 때 `minority ...`로 상태를 찍는다. 정산을 보려면 로컬 DB에서 `update minority_rounds set closes_at = now() where settled_at is null`

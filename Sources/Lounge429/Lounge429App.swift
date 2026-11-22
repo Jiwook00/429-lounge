@@ -7,7 +7,7 @@ enum Entry {
     static func main() {
         Fonts.register()
         setvbuf(stdout, nil, _IOLBF, 0)
-        // 개발용: `Lounge429 --snapshot out.png [--locked | --table betting|reveal|nickname|...]` → PNG로 렌더링하고 종료
+        // 개발용: `Lounge429 --snapshot out.png [--locked | --table roulette-betting|nickname|...]` → PNG로 렌더링하고 종료
         let args = CommandLine.arguments
         // 빌드용: `Lounge429 --app-icon out.png` → 1024px 앱 아이콘 PNG
         if let i = args.firstIndex(of: "--app-icon"), i + 1 < args.count {
@@ -17,7 +17,7 @@ enum Entry {
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             let table = args.firstIndex(of: "--table").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
             MainActor.assumeIsolated {
-                if table == "live" { Snapshot.renderLive(to: args[i + 1], seconds: 8) }
+                if table == "roulette-live" { Snapshot.renderRouletteLive(to: args[i + 1], seconds: 25) }
                 if table == "lobby-live" { Snapshot.renderLobbyLive(to: args[i + 1], seconds: 20) }
                 if table == "bj-live" { Snapshot.renderBlackjackLive(to: args[i + 1], seconds: 25) }
                 if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 8) }

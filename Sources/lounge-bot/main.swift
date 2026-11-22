@@ -1,6 +1,6 @@
-// 개발용 봇: 홀짝 테이블에 앉아서 매 판 랜덤 베팅한다.
+// 개발용 봇: 미니 룰렛 테이블에 앉아서 매 판 랜덤으로 한두 칸에 건다.
 // 사용법: swift run lounge-bot [--name 봇이름] [--room LOUNGE] [--blackjack]
-// --blackjack: 홀짝 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
+// --blackjack: 룰렛 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
 import Foundation
 import LoungeNet
 
@@ -32,9 +32,9 @@ do {
         }
     }
 
-    // 라운지 접속: 홀짝 테이블을 보는 중, 코딩 중. --blink면 7초마다 보는 중을 껐다 켠다 (Presence 갱신 테스트)
+    // 라운지 접속: 룰렛 테이블을 보는 중, 코딩 중. --blink면 7초마다 보는 중을 껐다 켠다 (Presence 갱신 테스트)
     let blink = CommandLine.arguments.contains("--blink")
-    var presence = Member(id: me.id, name: me.name, viewing: true, place: .oddeven, status: .coding)
+    var presence = Member(id: me.id, name: me.name, viewing: true, place: .roulette, status: .coding)
     let link = client.joinLounge(as: presence)
     // --watch면 라운지 회원 목록이 바뀔 때마다 출력 (다른 회원 화면에 내가 어떻게 보이는지 확인용)
     let watch = CommandLine.arguments.contains("--watch")
@@ -65,41 +65,7 @@ do {
         try await playBlackjack(me: me)
     }
 
-    var current: Int64?
-    var placed = false
-    while true {
-        let round = try await client.tick(room: room)
-        if round.id != current {
-            if current != nil, let last = try await client.lastSettled(room: room), let m = last.marbles {
-                let mine = try await client.bets(roundID: last.id).first { $0.playerId == me.id }
-                let chips = try await client.me()?.chips ?? 0
-                let outcome = mine.map { ($0.payout ?? 0) > 0 ? "승 +\($0.payout!)" : "패 -\($0.amount)" } ?? "안 걸었음"
-                log("🎱 #\(last.id) 구슬 \(m)개 → \(last.result!.label) · \(outcome) · 칩 \(chips)")
-            }
-            current = round.id
-            placed = false
-        }
-
-        let now = Date()
-        if !placed, now >= round.opensAt, round.closesAt.timeIntervalSince(now) > 2 {
-            // 사람처럼 잠깐 고민하다 건다
-            try await Task.sleep(for: .seconds(Double.random(in: 1...min(6, round.closesAt.timeIntervalSince(now) - 1.5))))
-            let side = Side.allCases.randomElement()!
-            let amount = Int64([10, 20, 50, 100].randomElement()!)
-            do {
-                _ = try await client.bet(room: room, side: side, amount: amount)
-                log("🪙 #\(round.id) \(side.label)에 \(amount)")
-            } catch {
-                log("⚠️ \(error.localizedDescription)")
-            }
-            placed = true
-            continue
-        }
-
-        // 다음 깨어날 시각: 오픈 전이면 오픈 시각, 진행 중이면 마감 직후 (최대 5초마다 재동기화)
-        let target = now < round.opensAt ? round.opensAt : round.closesAt.addingTimeInterval(0.2)
-        try await Task.sleep(for: .seconds(min(5, max(0.3, target.timeIntervalSinceNow))))
-    }
+    try await playRoulette(me: me)
 } catch {
     log("💥 \(error)")
     exit(1)
@@ -158,3 +124,44 @@ func playBlackjack(me: Player) async throws -> Never {
         try await Task.sleep(for: .milliseconds(500))
     }
 }
+
+/// 룰렛: 판이 없거나 베팅 중이면 잠깐 고민하다 한두 칸에 건다. 끝난 판은 한 줄로 알린다
+func playRoulette(me: Player) async throws -> Never {
+    var placed: Int64?
+    var reported: Int64?
+    while true {
+        let s = try await client.rouletteTick(room: room)
+        let r = s.round
+        let idle = r == nil || s.now >= r!.nextAt
+        let mine = s.bets.filter { $0.playerId == me.id }
+
+        if let r, let n = r.result, !mine.isEmpty, reported != r.id, mine.allSatisfy({ $0.payout != nil }) {
+            reported = r.id
+            let staked = mine.reduce(0) { $0 + $1.staked }, paid = mine.reduce(0) { $0 + ($1.payout ?? 0) }
+            let chips = try await client.me()?.chips ?? 0
+            log("🎡 #\(r.id) \(Roulette.describe(n).joined(separator: " · ")) → \(paid - staked >= 0 ? "+" : "")\(paid - staked) · 칩 \(chips)")
+        }
+
+        let betting = r.map { s.now < $0.betClosesAt.addingTimeInterval(-1.5) } ?? false
+        if idle || (betting && placed != r?.id) {
+            try await Task.sleep(for: .seconds(Double.random(in: 1...3)))
+            let spots: [Roulette.Spot] = (0..<Int.random(in: 1...2)).map { _ in
+                Bool.random() ? Roulette.Spot.outside.randomElement()! : .number(Int.random(in: 1...12))
+            }
+            for spot in spots {
+                let amount = Int64([10, 50, 100].randomElement()!)
+                do {
+                    let after = try await client.rouletteBet(room: room, spot: spot, amount: amount)
+                    placed = after.round?.id
+                    log("🪙 #\(after.round?.id ?? -1) \(spot.label)에 \(amount)")
+                } catch {
+                    log("⚠️ \(error.localizedDescription)")
+                    break
+                }
+            }
+            continue
+        }
+        try await Task.sleep(for: .milliseconds(700))
+    }
+}
+

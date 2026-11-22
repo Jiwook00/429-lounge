@@ -4,7 +4,7 @@
 
 토큰 사용량을 칩으로 바꿔 회원들과 짧은 카지노 게임을 즐기는 macOS 메뉴바 앱.
 
-![라운지, 구슬 홀짝, 429 슬롯](docs/images/screens.png)
+![라운지, 미니 룰렛, 429 슬롯](docs/images/screens.png)
 
 - 빌드나 Claude 답변을 기다리는 **10~30초짜리 틈**에 한 판
 - 코딩하는 만큼 메뉴바의 칩이 오른다
@@ -62,9 +62,9 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 칩은 현금·실물로 바꿀 수 없고 주고받을 수도 없다. 자세한 규칙은 [docs/chip-economy.md](docs/chip-economy.md).
 
-### 구슬 홀짝
+### 미니 룰렛
 
-엎어 둔 그릇 아래 구슬이 홀인지 짝인지 맞힌다. 같은 방 사람들이 15초 동안 동시에 베팅하고, 구슬이 하나씩 굴러 나온 뒤 5초 후 다음 판. 맞히면 2배. 결과와 정산은 전부 서버에서.
+0~12, 13칸짜리 룰렛. 누군가 칩을 놓으면 12초 동안 회원들이 같은 판에 건다. 칸을 누르면 바로 걸리고, 숫자 하나는 12배, 빨강·검정 / 홀·짝 / 1–6·7–12는 2배. 공이 6초 동안 칸을 건너뛰다 멈추고, **0이 나오면 무효 판**이라 건 칩을 모두 돌려받는다. 결과와 정산은 전부 서버에서.
 
 ### 소수결
 
@@ -119,7 +119,7 @@ update public.client_policy set min_version = '0.4.0';
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|betting|reveal|crowd|crowd-reveal|crowd-won|live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
@@ -127,7 +127,7 @@ supabase db reset                                      # 마이그레이션 전�
 | -------------------------------------------- | ---------------------------------------- | ----------------------------------- |
 | `LOUNGE_FAKE_429=1` | 가짜 429 상태로 실행 (VIP HOUR, 황금 칩) |
 | `LOUNGE_DEBUG=1` | Realtime 이벤트 로그 |
-| `LOUNGE_E2E_BET=golden                       | chips` | `--table live` 스냅샷에서 자동 베팅 |
+| `LOUNGE_E2E_BET=golden\|chips` | `--table roulette-live` 스냅샷에서 자동 베팅 |
 | `LOUNGE_SERVER=remote` | 운영 서버(`LoungeConfig.remote`) 사용 |
 | `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` | 임의의 Supabase 사용 (가장 우선) |
 
@@ -162,8 +162,7 @@ CLAUDE.md         Claude Code 작업 가이드
 1. 스프라이트 시트 정식 제작, 황금 칩 획득 연출
 2. 상태 공유 끄기 설정
 3. 방 코드로 테이블 나누기
-4. 룰렛
-5. 공개 배포 (Developer ID 서명, 공증, 자동 업데이트)
+4. 공개 배포 (Developer ID 서명, 공증, 자동 업데이트)
 
 ## 크레딧
 

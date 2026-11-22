@@ -22,12 +22,12 @@ enum Snapshot {
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips,
                                          online: true, name: "새벽코더", showSettings: true))
         } else if table == "readme" {
-            // README 대표 이미지: 라운지 · 홀짝 · 슬롯을 나란히 (--locked와 같이 쓰면 VIP HOUR)
+            // README 대표 이미지: 라운지 · 룰렛 · 슬롯을 나란히 (--locked와 같이 쓰면 VIP HOUR)
             content = AnyView(HStack(alignment: .top, spacing: 20) {
                 LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                            toast: store.toast, online: true, name: "새벽코더")
-                OddEvenView(table: fakeTable(store: store, me: me, mode: "crowd-won"), chips: store.chips,
-                            golden: store.golden())
+                RouletteView(table: fakeRoulette(store: store, me: me, mode: "roulette-win"), chips: store.chips,
+                             golden: store.golden())
                 SlotView(machine: fakeSlot(store: store, me: me, mode: "slot-jackpot"), chips: store.chips,
                          golden: store.golden(), vip: locked)
             }
@@ -68,11 +68,14 @@ enum Snapshot {
             // bj-help: 설명 카드 (뒤는 내 차례 판)
             content = AnyView(BlackjackView(table: fakeBlackjack(store: store, me: me, mode: table == "bj-help" ? "bj-myturn" : table),
                                             chips: store.chips, golden: store.golden(), showHelp: table == "bj-help"))
+        } else if let table, table.hasPrefix("roulette-") {
+            // roulette-idle | -betting | -golden | -alone | -spin | -cut-near | -cut-edge | -cut-land | -closed | -win | -void | -help
+            content = AnyView(RouletteView(table: fakeRoulette(store: store, me: me, mode: table == "roulette-help" ? "roulette-betting" : table),
+                                           chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
+                                           showHelp: table == "roulette-help"))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
-        } else if let table {
-            content = AnyView(OddEvenView(table: fakeTable(store: store, me: me, mode: table), chips: store.chips, golden: store.golden()))
         } else {
             content = AnyView(VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
@@ -172,8 +175,56 @@ enum Snapshot {
         return table
     }
 
-    /// 실제 서버에 접속해 테이블에 앉은 뒤 `seconds` 후의 화면을 찍는다 (Realtime 검증용)
-    static func renderLive(to path: String, seconds: Double) {
+    /// 미니 룰렛 가짜 판: 시안과 같은 판 (나 7에 50 · 빨강 50, 철수 홀 100, 영희 9 50 · 빨강 50)
+    static func fakeRoulette(store: LoungeStore, me: Player, mode: String) -> RouletteTable {
+        let table = RouletteTable(store: store)
+        let now = Date()
+        let cs = UUID(), yh = UUID()
+        func bet(_ id: UUID, _ name: String, _ spot: Roulette.Spot, _ amount: Int64, golden: Bool = false, result: Int? = nil) -> RouletteBet {
+            RouletteBet(playerId: id, name: name, spot: spot, amount: amount, golden: golden,
+                        payout: result.map { r in golden && r == 0 ? 0 : amount * Int64(spot.multiplier(r)) })
+        }
+        func crowd(_ mine: [(Roulette.Spot, Int64, Bool)], others: Bool = true, result: Int? = nil) -> [RouletteBet] {
+            mine.map { bet(me.id, me.name, $0.0, $0.1, golden: $0.2, result: result) }
+                + (others ? [bet(cs, "철수", .odd, 100, result: result), bet(yh, "영희", .number(9), 50, result: result),
+                             bet(yh, "영희", .red, 50, result: result)] : [])
+        }
+        let mine: [(Roulette.Spot, Int64, Bool)] = [(.number(7), 50, false), (.red, 50, false)]
+        func round(closesIn: TimeInterval, result: Int? = nil) -> RouletteRound {
+            RouletteRound(id: 2, betClosesAt: now.addingTimeInterval(closesIn), result: result)
+        }
+        switch mode {
+        case "roulette-idle":
+            // 지난 판(9)에 건 칩이 남아 있어도 칸 위엔 안 보여야 한다
+            table.apply(RouletteState(now: now, round: round(closesIn: -20, result: 9), bets: crowd(mine, result: 9), lastResult: 4))
+        case "roulette-golden":
+            table.useGolden = true
+            table.apply(RouletteState(now: now, round: round(closesIn: 8.6), bets: crowd([(.black, 100, true)]), lastResult: 9))
+        case "roulette-alone":
+            table.apply(RouletteState(now: now, round: round(closesIn: 9.6), bets: crowd([(.red, 50, false)], others: false), lastResult: 9))
+        case "roulette-spin":
+            table.apply(RouletteState(now: now, round: round(closesIn: -2.4, result: 7), bets: crowd(mine), lastResult: 9))
+        case "roulette-closed":
+            table.apply(RouletteState(now: now, round: round(closesIn: -1.5, result: 7), bets: crowd([]), lastResult: 9))
+            table.preview(closedAt: now.addingTimeInterval(-0.3))
+        case "roulette-win":
+            table.apply(RouletteState(now: now, round: round(closesIn: -Roulette.spin - 0.8, result: 7), bets: crowd(mine, result: 7), lastResult: 9))
+        case "roulette-void":
+            table.apply(RouletteState(now: now, round: round(closesIn: -Roulette.spin - 0.8, result: 0), bets: crowd(mine, result: 0), lastResult: 9))
+        case "roulette-cut-near", "roulette-cut-edge", "roulette-cut-land":
+            // 클로즈업 컷: 결과 6. 나 6에 10 + 빨강 50 (9에서 다음 칸을 기다림 / 칸막이 위 / 6에 멈춤)
+            let e: TimeInterval = mode == "roulette-cut-near" ? 5.0 : mode == "roulette-cut-edge" ? 5.8 : 6.3
+            table.apply(RouletteState(now: now, round: round(closesIn: -e, result: 6),
+                                      bets: crowd([(.number(6), 10, false), (.red, 50, false)], result: 6), lastResult: 9))
+        default: // roulette-betting
+            table.apply(RouletteState(now: now, round: round(closesIn: 8.6), bets: crowd(mine), lastResult: 9))
+        }
+        return table
+    }
+
+    /// 실서버 룰렛 테이블에 앉아 `seconds` 동안 상태를 찍고 마지막 화면을 저장한다 (Realtime 검증용).
+    /// LOUNGE_E2E_BET=golden|chips면 판이 열려 있을 때 한 번 건다 (chips: 빨강 50 + 7에 10, golden: 홀에 황금 칩)
+    static func renderRouletteLive(to path: String, seconds: Int) {
         Task { @MainActor in
             let store = LoungeStore(live: false)
             await store.connect()
@@ -181,26 +232,35 @@ enum Snapshot {
                 print("connect failed: \(store.netError ?? "?")")
                 exit(1)
             }
-            print("signed in as \(me.name) · chips \(me.chips) · toast \(store.toast?.text ?? "-")")
+            print("signed in as \(me.name) · chips \(me.chips)")
             await store.refresh() // 토큰 환전 + (LOUNGE_FAKE_429면) 황금 칩
-            print("after claim · chips \(store.chips) · golden \(store.golden()) · toast \(store.toast?.text ?? "-")")
-            let table = OddEvenTable(store: store)
+            print("after claim · chips \(store.chips) · golden \(store.golden())")
+            let table = RouletteTable(store: store)
             table.enter()
-            // LOUNGE_E2E_BET=golden|chips → 베팅이 열리면 홀에 건다
-            if let mode = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"] {
-                while table.myBet == nil {
-                    if case .betting(let left) = table.phase(at: .now), left > 1 {
-                        table.useGolden = mode == "golden"
-                        await table.place(.odd)
-                        print("bet → \(table.myBet.map { "\($0.side) \($0.amount) golden=\($0.golden)" } ?? table.message ?? "?") · chips \(store.chips) · golden \(store.golden())")
-                        if table.myBet == nil { break }
+            let mode = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"]
+            var placed = false
+            var last = ""
+            for _ in 0..<(seconds * 2) {
+                try? await Task.sleep(for: .milliseconds(500))
+                let phase = table.phase(at: .now)
+                if let mode, !placed, table.state != nil, phase == .idle || { if case .betting(let l) = phase { l > 2 } else { false } }() {
+                    placed = true
+                    if mode == "golden" {
+                        table.useGolden = true
+                        await table.bet(.odd)
+                    } else {
+                        table.stake = 50
+                        await table.bet(.red)
+                        table.stake = 10
+                        await table.bet(.number(7))
                     }
-                    try? await Task.sleep(for: .milliseconds(300))
+                    print("bet → \(table.myBets.map { "\($0.spot.rawValue) \($0.amount)\($0.golden ? " golden" : "")" }) · \(table.message ?? "ok") · chips \(store.chips) · golden \(store.golden())")
                 }
+                let line = "#\(table.round?.id ?? -1) \(phase) · bets \(table.players().map { "\($0.name) \($0.staked)\($0.net.map { " net \($0)" } ?? "")" })"
+                if line != last { print(line); last = line }
             }
-            try? await Task.sleep(for: .seconds(seconds))
-            print("round \(table.round?.id ?? -1) · bets \(table.bets.count) · seats \(table.seats.map(\.name)) · last \(table.last?.marbles ?? -1)")
-            write(AnyView(OddEvenView(table: table, chips: store.chips, golden: store.golden())), to: path)
+            print("chips \(store.chips) · golden \(store.golden())")
+            write(AnyView(RouletteView(table: table, chips: store.chips, golden: store.golden())), to: path)
             table.leave()
             exit(0)
         }
@@ -284,7 +344,7 @@ enum Snapshot {
                 try? await Task.sleep(for: .seconds(1))
                 let c = store.crowd()
                 let names = c.others.map { "\($0.name)\($0.viewing ? "👁" : "")\($0.status.map { "·" + $0.rawValue } ?? "")" }
-                print("t+\(i)s total \(c.total) viewing \(c.viewing) oddEven \(c.oddEven) others \(names) events \(c.events.map { "\($0.name) \($0.kind) \($0.amount)" }) dot \(store.tableBusy)")
+                print("t+\(i)s total \(c.total) viewing \(c.viewing) roulette \(c.roulette) others \(names) events \(c.events.map { "\($0.name) \($0.kind) \($0.amount)" }) dot \(store.tableBusy)")
             }
             await store.loadBoard()
             await store.tickMinority()
@@ -306,44 +366,6 @@ enum Snapshot {
             try? png.write(to: URL(fileURLWithPath: path))
             print("wrote \(path)")
         }
-    }
-
-    /// mode: betting | reveal | crowd | crowd-reveal
-    private static func fakeTable(store: LoungeStore, me: Player, mode: String) -> OddEvenTable {
-        let now = Date()
-        let crowd = mode.hasPrefix("crowd")
-        let revealing = mode.hasSuffix("reveal") || mode.hasSuffix("won")
-        // (이름, 쪽, 금액). 첫 줄은 나.
-        let plan: [(String, Side, Int64)] = crowd
-            ? [("나", .odd, 100), ("민수", .odd, 500), ("예린", .even, 500), ("지호", .odd, 380),
-               ("서연", .even, 200), ("철수", .odd, 50), ("영희", .even, 100), ("하준", .odd, 100),
-               ("도윤", .odd, 10), ("수아", .even, 10), ("우진", .odd, 100), ("지은", .even, 50)]
-            : [("철수", .odd, 50), ("영희", .even, 100)]
-        let seats = [Seat(id: me.id, name: me.name)] + plan.dropFirst(crowd ? 1 : 0).map { Seat(id: UUID(), name: $0.0) }
-        let ids = crowd ? seats.map(\.id) : seats.dropFirst().map(\.id)
-
-        func bets(round: Int64, settled: Side?) -> [Bet] {
-            zip(plan, ids).map { p, id in
-                Bet(roundId: round, roomCode: "LOUNGE", playerId: id, side: p.1, amount: p.2,
-                    payout: settled.map { $0 == p.1 ? p.2 * 2 : 0 })
-            }
-        }
-
-        let t = OddEvenTable(store: store)
-        // "won": 구슬 7개가 다 나오고 0.5초 뒤 (승리 연출 중)
-        let closedAgo = mode.hasSuffix("won") ? 7 * 0.18 + 0.6 : 3
-        let last = Round(id: 41, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-15 - closedAgo),
-                         closesAt: now.addingTimeInterval(-closedAgo), marbles: 7, settledAt: now.addingTimeInterval(-closedAgo))
-        if revealing {
-            let next = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(2),
-                             closesAt: now.addingTimeInterval(17), marbles: nil, settledAt: nil)
-            t.preview(round: next, bets: [], last: last, lastBets: bets(round: 41, settled: .odd), seats: seats)
-        } else {
-            let current = Round(id: 42, roomCode: "LOUNGE", opensAt: now.addingTimeInterval(-9),
-                                closesAt: now.addingTimeInterval(crowd ? 6 : 11), marbles: nil, settledAt: nil)
-            t.preview(round: current, bets: bets(round: 42, settled: nil), last: last, lastBets: [], seats: seats)
-        }
-        return t
     }
 
     /// mode: slot-idle | slot-spinning | slot-glitch | slot-win | slot-big | slot-jackpot | slot-lose
@@ -430,7 +452,7 @@ enum Snapshot {
         let mine = Member(id: me.id, name: "새벽코더", viewing: true)
         let busy = [
             mine,
-            m("철수", viewing: true, place: .oddeven, .coding), m("영희", viewing: true, place: .oddeven),
+            m("철수", viewing: true, place: .roulette, .coding), m("영희", viewing: true, place: .roulette),
             m("예린", .vip), m("민수", .coding), m("지호", .coding), m("하준", .coding),
             m("서연", .resting), m("도윤", .resting), m("수아"), m("우진", .coding), m("지은", .resting),
         ]
