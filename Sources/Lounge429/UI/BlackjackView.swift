@@ -13,6 +13,7 @@ struct BlackjackView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var help = false
+    @State private var announcedRound: Int64?
 
     // MARK: - 배치 (테이블 영역 312×344 안의 좌표)
 
@@ -42,9 +43,20 @@ struct BlackjackView: View {
                 bottomArea(now).frame(height: 76, alignment: .top)
                 walletBar
             }
-            .onChange(of: table.arrivals.values.filter { $0 <= now }.max()) { _, arrival in
-                let mine = table.mySeat.map { table.settledAt("s\($0.seat)", total: $0.cards.count) }
-                GameAudio.shared.play(.card, at: arrival, volume: arrival == mine ? 1 : 0.55)
+            .onChange(of: table.arrivals.filter { $0.value <= now }.max { $0.value < $1.value }?.key) { _, key in
+                guard let key else { return }
+                let seat = table.seats.first { key.hasPrefix("s\($0.seat)-") }
+                let mine = seat != nil && seat?.seat == table.mySeat?.seat
+                let pan: Float = seat.map { table.slot(of: $0.seat) < 2 ? 0.3 : -0.3 } ?? 0
+                GameAudio.shared.play(.card, at: table.arrival(key), volume: mine ? 1 : 0.55, pan: mine ? 0 : pan)
+            }
+            .onChange(of: table.betAcceptedAt) { _, accepted in
+                GameAudio.shared.play(.betChip, at: accepted)
+            }
+            .onChange(of: myTurn(now) && !table.busy ? round?.id : nil) { _, id in
+                guard let id, announcedRound != id else { return }
+                announcedRound = id
+                GameAudio.shared.play(.yourTurn, at: now)
             }
             .onChange(of: table.actionRequestedAt) { _, _ in
                 switch table.acceptedAction {
@@ -97,7 +109,9 @@ struct BlackjackView: View {
         let arrival = table.settledAt("s\(me.seat)", total: me.cards.count)
         guard now >= arrival else { return nil }
         if me.state == .bust { return HandSound(effect: .bust, time: arrival) }
-        if me.state == .blackjack { return HandSound(effect: .natural, time: arrival) }
+        if me.state == .blackjack && !(me.result == .push && resultsShown(now)) {
+            return HandSound(effect: .natural, time: arrival)
+        }
         guard let round, resultsShown(now), let received = table.resultReceivedAt else { return nil }
         let dealer = table.settledAt("d", total: round.dealerCards.count)
         let time = max(received, dealer.addingTimeInterval(0.4))

@@ -19,6 +19,7 @@ final class BlackjackTable {
     private(set) var state: BJState?
     private(set) var message: String?
     private(set) var busy = false
+    private(set) var betAcceptedAt: Date?
     private(set) var acceptedAction: BJSeat.Action?
     private(set) var actionRequestedAt: Date?
     private(set) var resultReceivedAt: Date?
@@ -80,6 +81,7 @@ final class BlackjackTable {
         await run {
             let golden = self.useGolden && self.store.golden() > 0
             let s = try await self.store.net.bjBet(room: self.room, amount: golden ? 100 : self.stake, golden: golden)
+            self.betAcceptedAt = .now
             if self.store.golden() <= 1 { self.useGolden = false }
             return s
         }

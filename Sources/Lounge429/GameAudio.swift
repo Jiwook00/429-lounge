@@ -51,7 +51,7 @@ final class GameAudio {
     enum Room: String {
         case lounge, floor = "slotRoom", felt = "cardRoom", marbles = "marbleRoom", ballot = "ballotRoom"
     }
-    enum Effect: String, CaseIterable { case lever, reel, card, win, bigWin, jackpot, hit, stand, chips, bust, natural, collect, push }
+    enum Effect: String, CaseIterable { case betChip, yourTurn, lever, reel, card, win, bigWin, jackpot, hit, stand, chips, bust, natural, collect, push }
 
     private var visible = false
     private var room = Room.lounge
@@ -146,10 +146,11 @@ final class GameAudio {
         motor.setVolume(Float(reelsTurning) / 3, fadeDuration: 0.09)
     }
 
-    func play(_ effect: Effect, at time: Date?, volume: Float = 1) {
+    func play(_ effect: Effect, at time: Date?, volume: Float = 1, pan: Float = 0) {
         guard enabled, visible, let time, time >= since,
               Date().timeIntervalSince(time) < 0.2, let sound = player(effect.rawValue) else { return }
         sound.currentTime = 0
+        sound.pan = pan
         sound.volume = volume
         sound.play()
     }
