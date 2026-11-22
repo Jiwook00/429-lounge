@@ -40,13 +40,15 @@ enum Snapshot {
                                          name: taken ? "새벽코더" : nil,
                                          nicknameDraft: taken ? ("danny", "누가 벌써 쓰는 이름이에요") : nil))
         } else if let table, table.hasPrefix("update") {
-            // update: 새 버전 안내(카드 펼침) / update-required: 최소 버전 미달
+            // update: 카드 펼침 / update-notice: 네온 안내 / update-required: 최소 버전 미달
+            // update-sparkle: 앱에서 바로 설치할 수 있는 카드
             let required = table == "update-required"
             let cur = AppVersion(AppInfo.version) ?? AppVersion("0.3.0")!
             let next = AppVersion("\(cur.parts[0]).\(cur.parts[1] + 1).0")!
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, name: "새벽코더", appUpdate: AppUpdate.check(current: cur, latest: next, minimum: required ? next : nil),
-                                         showUpdate: !required))
+                                         onInstallUpdate: table == "update-sparkle" ? {} : nil,
+                                         showUpdate: table == "update" || table == "update-sparkle"))
         } else if let table, table.hasPrefix("lobby-") {
             // lobby-busy | lobby-quiet | lobby-ticker: 접속 현황 (가짜 회원)
             // lobby-board | lobby-board-me | lobby-board-empty: 카드 뒷면 큰손 / lobby-flip: 뒤집는 중(반쯤)

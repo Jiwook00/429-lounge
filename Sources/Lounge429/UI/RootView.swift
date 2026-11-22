@@ -11,6 +11,7 @@ struct RootView: View {
     }
 
     let store: LoungeStore
+    var onInstallUpdate: (() -> Void)?
     @State private var screen: Screen = .lounge
 
     var body: some View {
@@ -30,6 +31,7 @@ struct RootView: View {
                     name: store.me.flatMap { $0.named ? $0.name : nil },
                     onRename: { await store.rename($0) },
                     appUpdate: store.appUpdate,
+                    onInstallUpdate: onInstallUpdate,
                     onRoulette: { go(.roulette(RouletteTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
                     blackjackSeated: store.blackjackSeated,

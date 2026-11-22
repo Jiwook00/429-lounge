@@ -11,14 +11,16 @@ let package = Package(
         .library(name: "LoungeCore", targets: ["LoungeCore"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.1"),
         .package(url: "https://github.com/supabase/supabase-swift.git", from: "2.55.0"),
     ],
     targets: [
         // 메뉴바 앱 (SwiftUI)
         .executableTarget(
             name: "Lounge429",
-            dependencies: ["LoungeCore", "LoungeNet"],
-            resources: [.copy("Resources/Fonts"), .copy("Resources/Sounds")]
+            dependencies: ["LoungeCore", "LoungeNet", .product(name: "Sparkle", package: "Sparkle")],
+            resources: [.copy("Resources/Fonts"), .copy("Resources/Sounds")],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         // 토큰 로그 파싱, 칩 경제 등 UI와 무관한 로직
         .target(name: "LoungeCore"),

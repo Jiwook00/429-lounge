@@ -26,6 +26,7 @@ struct LoungeView: View {
     var nicknameDraft: (text: String, error: String?)?
     /// 새 버전 안내 (ADR-0010). required면 게임 대신 업데이트 카드
     var appUpdate: AppUpdate?
+    var onInstallUpdate: (() -> Void)?
     /// 스냅샷용: 업데이트 카드를 펼친 상태로
     var showSettings = false
     var showUpdate = false
@@ -50,6 +51,7 @@ struct LoungeView: View {
     @Environment(\.openURL) private var openURL
     @State private var renaming = false
     @State private var updating = false
+    @AppStorage("viewedUpdateVersion") private var viewedUpdateVersion = ""
 
     @State private var settingsOpen = false
     @Bindable private var audio = GameAudio.shared
@@ -158,7 +160,8 @@ struct LoungeView: View {
                 if let lock { vipBanner(lock, now: context.date) }
                 if let toast { toastView(toast) }
                 if let appUpdate, appUpdate.required || updating || showUpdate {
-                    UpdateCard(update: appUpdate, onClose: appUpdate.required ? nil : { updating = false })
+                    UpdateCard(update: appUpdate, onInstall: onInstallUpdate,
+                               onClose: appUpdate.required ? nil : { updating = false })
                 } else if online && (name == nil || renaming || nicknameDraft != nil) {
                     NicknameCard(
                         current: name,
@@ -210,14 +213,22 @@ struct LoungeView: View {
                     .glow(Theme.cyan)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    // 버전: 얼핏 보면 안 보이고, 들여다보면 보이는 정도. 새 버전이 있으면 시안으로 눌러 볼 수 있게
+                    // 새 버전은 읽을 때까지 발광만 숨 쉬듯 움직인다. 글자는 항상 선명하게 유지한다.
                     if let appUpdate {
-                        Button { updating.toggle() } label: {
+                        let unread = viewedUpdateVersion != appUpdate.target.description
+                        let pulse = reduceMotion ? 0.65 : 0.5 + 0.5 * sin(t * 2 * .pi / 2.8)
+                        Button {
+                            viewedUpdateVersion = appUpdate.target.description
+                            updating.toggle()
+                        } label: {
                             Text("v\(appUpdate.target.description) 나옴")
                                 .font(Fonts.small())
                                 .foregroundStyle(Theme.cyan)
+                                .glow(Theme.cyan.opacity(unread && !appUpdate.required && !showUpdate ? 0.3 + 0.7 * pulse : 0),
+                                      radius: 4, strong: true)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("새 버전 v\(appUpdate.target.description) 업데이트 안내")
                     } else {
                         Text(AppInfo.versionLabel)
                             .font(Fonts.small())

@@ -26,7 +26,7 @@ https://raw.githubusercontent.com/Jiwook00/429-lounge/main/docs/install.md 읽�
 curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/install.sh | bash
 ```
 
-최신 [릴리스](https://github.com/Jiwook00/429-lounge/releases/latest)를 받아 `/Applications`에 넣고 실행한다. 업데이트도 같은 명령.
+최신 [릴리스](https://github.com/Jiwook00/429-lounge/releases/latest)를 받아 `/Applications`에 넣고 실행한다. 앱에 새 버전이 표시되면 업데이트 카드에서 설치할 수 있다. 설치 명령으로도 업데이트할 수 있다.
 
 - 메뉴바에 슬롯머신 아이콘과 칩 수가 뜬다. Bartender나 Ice 같은 메뉴바 관리 앱을 쓰면 숨김 영역에 들어갔을 수 있다
 - 처음 들어오면 "손님 3F2A9C" 같은 임시 이름이 붙고, 닉네임을 정해야 테이블에 앉을 수 있다. 바꾸려면 팝오버 아래 "이름 바꾸기"
@@ -99,20 +99,28 @@ swift run lounge-bot --name 철수
 
 ## 릴리스
 
+첫 Sparkle 배포 전에 서명 키를 한 번 만든다. Swift 빌드가 받은 Sparkle 도구를 쓴다.
+
 ```sh
-supabase db push --dry-run      # 서버 변경이 있으면 먼저 운영 DB에 (확인 후 --dry-run 빼고)
+swift build --product Lounge429
+.build/artifacts/sparkle/Sparkle/bin/generate_keys --account co.dwook.lounge429
+```
+
+비공개 키는 로그인 키체인에 보관된다. 복구용 사본은 안전한 곳에 보관하고 매 릴리스에 같은 키를 사용한다. 아래 환경 변수에는 첫 배포 때 앱에 넣은 **공개키**를 지정한다. 빌드는 그 키가 키체인의 서명 키와 일치하는지 확인한다.
+
+```sh
+# 서버 변경이 있으면 supabase db push --dry-run 후 확인받아 적용
 # scripts/build-app.sh의 VERSION을 올리고 커밋·푸시한 뒤
-scripts/build-app.sh --dist     # 운영 서버용 유니버설 앱 → build/429-Lounge.zip
-gh release create v0.1.0 build/429-Lounge.zip --title v0.1.0 --notes "..."
+export LOUNGE_SPARKLE_PUBLIC_KEY='<처음 등록한 공개키>'
+scripts/build-app.sh --dist     # 유니버설 앱, 서명된 appcast와 배포 ZIP
+TAG=vX.Y.Z                     # VERSION과 같은 Git 태그
+gh release create "$TAG" build/429-Lounge.zip build/appcast.xml --draft --verify-tag --title "$TAG" --notes "..."
+# 초안에서 ZIP과 appcast를 함께 확인한 뒤 공개한다.
 ```
 
-새 버전이 나오면 앱이 OPEN 위에 `vX.Y.Z 나옴`을 띄운다 (30분마다 확인). RPC를 깨는 마이그레이션이면 같은 마이그레이션에서 최소 버전을 올려 옛 앱의 테이블을 막는다:
+앱은 GitHub의 최신 정식 릴리스에서 `appcast.xml`을 읽는다. 최신으로 공개하는 모든 릴리스에 두 파일을 함께 올린다. 버전마다 다른 ZIP URL을 사용하므로 이전 피드를 읽은 앱도 피드에 서명된 ZIP을 받을 수 있다. Sparkle이 들어가기 전 앱에서는 설치 명령으로 한 번 업데이트한다.
 
-```sql
-update public.client_policy set min_version = '0.4.0';
-```
-
-설치 스크립트는 항상 최신 릴리스의 `429-Lounge.zip`을 받는다. `--remote`만 주면 zip 없이 운영 서버용 앱을 만든다. 운영 서버는 `LoungeConfig.remote`, 배포 결정은 [ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md).
+새 버전은 OPEN 위에 `vX.Y.Z 나옴`으로 표시한다 (30분마다 확인). RPC를 깨는 마이그레이션에서는 서버 최소 버전도 올린다. `--remote`는 ZIP 없이 운영 서버용 앱을 만들고 로컬 빌드처럼 Sparkle 피드를 설정하지 않는다. [ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md), [ADR-0016](docs/madr/0016-sparkle-updates.md).
 
 ## 개발
 

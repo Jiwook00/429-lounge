@@ -28,7 +28,13 @@ final class LoungeStore {
     private(set) var minVersion: AppVersion?
     /// 새 버전 안내. required면 테이블을 막는다
     var appUpdate: AppUpdate? {
-        AppUpdate.check(current: AppVersion(AppInfo.version), latest: latestRelease, minimum: minVersion)
+        // 로컬 실행에서 업데이트 네온을 확인하는 명시적 미리보기 옵션.
+        if ProcessInfo.processInfo.arguments.contains("--preview-update"),
+           let current = AppVersion(AppInfo.version),
+           let next = AppVersion("\(current.parts[0]).\(current.parts[1] + 1).0") {
+            return AppUpdate.check(current: current, latest: next, minimum: nil)
+        }
+        return AppUpdate.check(current: AppVersion(AppInfo.version), latest: latestRelease, minimum: minVersion)
     }
 
     // MARK: 라운지 접속 (ADR-0008)

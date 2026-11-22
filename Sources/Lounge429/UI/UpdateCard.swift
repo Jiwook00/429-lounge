@@ -7,10 +7,12 @@ import SwiftUI
 /// - 필수: 서버 최소 버전 미달. 테이블에 못 앉고 닫을 수 없다
 struct UpdateCard: View {
     let update: AppUpdate
+    var onInstall: (() -> Void)?
     var onClose: (() -> Void)?
 
     @Environment(\.openURL) private var openURL
     @State private var copied = false
+    @State private var manual = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -19,29 +21,19 @@ struct UpdateCard: View {
                 .foregroundStyle(Theme.gold)
             Text(update.required
                  ? "라운지 규칙이 바뀌었어요 · v\(update.target.description)부터 입장"
-                 : "v\(update.current.description) → v\(update.target.description) · 터미널에 한 줄이면 끝나요")
+                 : "v\(update.current.description) → v\(update.target.description)")
                 .font(Fonts.small())
                 .foregroundStyle(Theme.muted)
-            Text(AppInfo.installCommand)
-                .font(Fonts.small())
-                .foregroundStyle(Theme.cream)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
-                .pixelBox(fill: Theme.bg, border: Theme.line)
-            HStack(spacing: 8) {
-                Button(action: copy) {
-                    Text(copied ? "복사했어요" : "명령 복사")
-                        .font(Fonts.bold())
-                        .foregroundStyle(Theme.bg)
-                        .frame(width: 84, height: 26)
-                        .pixelBox(fill: Theme.gold, border: Theme.gold)
+            if let onInstall, !manual {
+                HStack(spacing: 8) {
+                    action("업데이트 설치", perform: onInstall)
+                    Button("수동 설치") { manual = true }
+                        .buttonStyle(.plain)
+                        .font(Fonts.small())
+                        .foregroundStyle(Theme.muted)
                 }
-                .buttonStyle(.plain)
-                Text("붙여 넣으면 껐다 다시 켜져요")
-                    .font(Fonts.small())
-                    .foregroundStyle(Theme.muted)
-                Spacer(minLength: 0)
+            } else {
+                manualInstall
             }
             HStack {
                 Button("바뀐 점") { openURL(AppInfo.releaseURL(update.target)) }
@@ -54,6 +46,37 @@ struct UpdateCard: View {
         }
         .padding(12)
         .pixelBox(border: Theme.gold)
+    }
+
+    private func action(_ title: String, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Text(title)
+                .font(Fonts.bold())
+                .foregroundStyle(Theme.bg)
+                .padding(.horizontal, 8)
+                .frame(minWidth: 84, minHeight: 26)
+                .pixelBox(fill: Theme.gold, border: Theme.gold)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var manualInstall: some View {
+        Group {
+            Text(AppInfo.installCommand)
+                .font(Fonts.small())
+                .foregroundStyle(Theme.cream)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .pixelBox(fill: Theme.bg, border: Theme.line)
+            HStack(spacing: 8) {
+                action(copied ? "복사했어요" : "명령 복사", perform: copy)
+                Text("붙여 넣으면 껐다 다시 켜져요")
+                    .font(Fonts.small())
+                    .foregroundStyle(Theme.muted)
+                Spacer(minLength: 0)
+            }
+        }
     }
 
     private func copy() {

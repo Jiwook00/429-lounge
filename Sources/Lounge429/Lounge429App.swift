@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import SwiftUI
 import UserNotifications
 
@@ -35,7 +36,9 @@ struct Lounge429App: App {
 
     var body: some Scene {
         MenuBarExtra {
-            RootView(store: store)
+            RootView(store: store, onInstallUpdate: delegate.updater.map { updater in
+                { updater.checkForUpdates(nil) }
+            })
         } label: {
             // 다른 회원의 잭팟이면 VIP ↔ 평소로 깜빡인다
             Image(nsImage: Sprites.menuBarIcon(vip: store.vip != store.jackpotFlash, busy: store.tableBusy))
@@ -45,15 +48,22 @@ struct Lounge429App: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     /// App Nap 막기. 팝오버를 닫아 두면 macOS가 앱을 재워 타이머가 밀리고,
     /// Realtime 하트비트가 늦어 서버가 연결을 끊는다 → 다른 회원 화면에서 사라진다.
     /// 맥 자체의 잠자기는 막지 않는다 (잠들면 라운지에서 빠지는 게 맞다)
     private var activity: NSObjectProtocol?
+    private(set) lazy var updater: SPUStandardUpdaterController? = {
+        guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
+              !ProcessInfo.processInfo.arguments.contains("--preview-update") else { return nil }
+        return SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `swift run`으로 띄울 때도 Dock 아이콘 없이 메뉴바 전용으로
         NSApp.setActivationPolicy(.accessory)
+        updater?.startUpdater()
         activity = ProcessInfo.processInfo.beginActivity(
             options: .userInitiatedAllowingIdleSystemSleep, reason: "라운지 접속 유지")
         if Notifier.available { UNUserNotificationCenter.current().delegate = self }

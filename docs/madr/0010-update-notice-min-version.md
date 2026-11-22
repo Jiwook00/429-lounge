@@ -5,6 +5,8 @@ date: 2026-11-20
 
 # 업데이트: 자동 설치 대신 앱 안 안내 + 서버 최소 버전
 
+설치 방식은 [ADR-0016](0016-sparkle-updates.md)에서 확장했다. 버전 안내와 서버 최소 버전은 이어서 사용한다.
+
 ## 배경과 문제
 
 zip 배포([ADR-0007](0007-remote-supabase-zip-distribution.md))엔 업데이트 채널이 없어서 회원이 새 버전을 모른다. 게다가 결과·칩이 서버 RPC에만 있어서([ADR-0003](0003-server-authoritative-rpc.md)) RPC 시그니처를 바꾸는 마이그레이션이 올라가면 옛 앱은 그냥 깨진다.

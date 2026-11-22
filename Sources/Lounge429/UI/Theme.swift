@@ -32,7 +32,7 @@ enum Theme {
 }
 
 extension View {
-    /// 네온 발광. 로고, 결과, 내 베팅, VIP 배너, 활성 테이블에만 쓴다 (DESIGN.md §3)
+    /// 네온 발광. 로고, 결과, 내 베팅, VIP 배너, 활성 테이블, 미확인 업데이트 안내에만 쓴다 (DESIGN.md §3)
     func glow(_ color: Color, radius: CGFloat = 4, strong: Bool = false) -> some View {
         self
             .shadow(color: color.opacity(strong ? 0.85 : 0.6), radius: radius)
