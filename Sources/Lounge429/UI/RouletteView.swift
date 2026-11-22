@@ -244,7 +244,8 @@ struct RouletteView: View {
     // MARK: - 베팅 판
 
     private func board(_ phase: RouletteTable.Phase) -> some View {
-        let marks = table.marks()
+        // 지난 판이 끝나면 칸 위 칩도 치운다 (다음 판 칩과 헷갈리지 않게)
+        let marks = phase == .idle ? [:] : table.marks()
         let open = canBet(phase)
         let dim = !open && phase != .idle && { if case .result = phase { false } else { true } }()
         return VStack(spacing: 4) {

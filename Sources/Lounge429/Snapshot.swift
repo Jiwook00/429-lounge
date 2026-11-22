@@ -195,7 +195,8 @@ enum Snapshot {
         }
         switch mode {
         case "roulette-idle":
-            table.apply(RouletteState(now: now, round: round(closesIn: -20, result: 9), bets: [], lastResult: 4))
+            // 지난 판(9)에 건 칩이 남아 있어도 칸 위엔 안 보여야 한다
+            table.apply(RouletteState(now: now, round: round(closesIn: -20, result: 9), bets: crowd(mine, result: 9), lastResult: 4))
         case "roulette-golden":
             table.useGolden = true
             table.apply(RouletteState(now: now, round: round(closesIn: 8.6), bets: crowd([(.black, 100, true)]), lastResult: 9))
