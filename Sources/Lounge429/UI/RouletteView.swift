@@ -35,8 +35,28 @@ struct RouletteView: View {
             .onChange(of: table.betAcceptedAt) { _, accepted in
                 GameAudio.shared.play(.betChip, at: accepted)
             }
+            .onChange(of: ballIndex(phase)) { _, _ in
+                if case .spinning = phase, !reduceMotion {
+                    GameAudio.shared.play(.rouletteTick, at: now, volume: 0.65)
+                }
+            }
+            .onChange(of: table.closedAt) { _, time in
+                GameAudio.shared.play(.rouletteReject, at: time)
+            }
+            .onChange(of: soundPhase(phase)) { old, next in
+                guard let round = table.round else { return }
+                let close = table.local(round.betClosesAt)
+                if next == 1, old == 0 {
+                    GameAudio.shared.play(.rouletteClose, at: close)
+                }
+                if next == 2 {
+                    GameAudio.shared.play(.rouletteLand, at: close.addingTimeInterval(Roulette.spin))
+                }
+            }
             .onChange(of: revealSound(phase)) { _, cue in
-                if let cue { GameAudio.shared.play(cue, at: now) }
+                if let cue, let round = table.round {
+                    GameAudio.shared.play(cue, at: table.local(round.betClosesAt).addingTimeInterval(Roulette.spin))
+                }
             }
             .padding(14)
             .frame(width: LoungeView.width)
@@ -54,6 +74,14 @@ struct RouletteView: View {
     }
 
     // MARK: - 판 흐름
+
+    private func soundPhase(_ phase: RouletteTable.Phase) -> Int {
+        switch phase {
+        case .idle, .betting: 0
+        case .spinning: 1
+        case .result: 2
+        }
+    }
 
     private func canBet(_ phase: RouletteTable.Phase) -> Bool {
         switch phase {

@@ -51,7 +51,7 @@ final class GameAudio {
     enum Room: String {
         case lounge, floor = "slotRoom", felt = "cardRoom", marbles = "marbleRoom", ballot = "ballotRoom"
     }
-    enum Effect: String, CaseIterable { case betChip, yourTurn, lever, reel, card, win, bigWin, jackpot, hit, stand, chips, bust, natural, collect, push }
+    enum Effect: String, CaseIterable { case rouletteTick, rouletteLand, rouletteClose, rouletteReject, betChip, yourTurn, lever, reel, card, win, bigWin, jackpot, hit, stand, chips, bust, natural, collect, push }
 
     private var visible = false
     private var room = Room.lounge
