@@ -199,6 +199,10 @@ public struct BoardRow: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+struct LastWeekRank: Decodable, Sendable {
+    let rank: Int
+}
+
 // MARK: - 소수결 (ADR-0013)
 
 /// minority_tick() 결과: 지금 판, 다음 판 시각, 내가 참가한 가장 최근 정산 판

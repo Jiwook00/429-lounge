@@ -56,6 +56,7 @@ enum Snapshot {
             let back = table.hasPrefix("lobby-board")
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, crowd: crowd, board: fakeBoard(table),
+                                         lastWeekRank: table.hasPrefix("lobby-board-10") ? 3 : nil,
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
                                          minority: .open(closesAt: Self.kst(hour: 17), picked: false)))
@@ -437,6 +438,14 @@ enum Snapshot {
     private static func fakeBoard(_ mode: String) -> [BoardRow]? {
         switch mode {
         case "lobby-board-empty": return []
+        case "lobby-board-10", "lobby-board-10-me":
+            // 열 명이 꽉 찬 판. -me는 내가 14위 (10위 밖이라 아래에 고정)
+            let names = ["지호", "예린", "민수", "서연", "madman", "하루", "도윤", "채원", "리안", "준"]
+            var rows = names.enumerated().map { i, n in
+                BoardRow(rank: i + 1, name: n, net: Int64(21_450 - i * 2_300), me: mode == "lobby-board-10" && i == 3)
+            }
+            if mode == "lobby-board-10-me" { rows.append(BoardRow(rank: 14, name: "새벽코더", net: -600, me: true)) }
+            return rows
         case "lobby-board-me":
             // 내가 4위 밖
             return [BoardRow(rank: 1, name: "지호", net: 21_450), BoardRow(rank: 2, name: "예린", net: 1_850),

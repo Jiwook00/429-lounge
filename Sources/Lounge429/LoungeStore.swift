@@ -70,11 +70,17 @@ final class LoungeStore {
     /// 이번 주 큰손 (ADR-0012). 라운지 카드를 뒤집을 때 읽는다. 아직 못 읽었으면 nil
     private(set) var board: [BoardRow]?
     private var boardAt: Date?
+    /// 지난주 내 순위. 기록이 없으면 nil (ADR-0012)
+    private(set) var lastWeekRank: Int?
+    private var lastWeekAt: Date?
     /// 팝오버를 열어 보고 있는지. RootView가 창 상태로 갱신한다.
     var viewing = false {
         didSet {
             pushPresence()
-            if viewing && !oldValue { Task { await countBlackjack() } }
+            if viewing && !oldValue {
+                Task { await countBlackjack() }
+                Task { await loadLastWeekRank() }
+            }
         }
     }
     /// 블랙잭 테이블에 앉은 회원 수 (AI 제외, ADR-0014). 라운지 타일에 N/4로
@@ -382,6 +388,15 @@ final class LoungeStore {
         if let rows = try? await net.weeklyBoard() {
             board = rows
             boardAt = now
+        }
+    }
+
+    /// 칩 화면의 "지난주 N위". 팝오버를 열 때 부르고 1분 안에 읽었으면 다시 안 읽는다
+    func loadLastWeekRank(at now: Date = .now) async {
+        guard me != nil, lastWeekAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true else { return }
+        if let rank = try? await net.lastWeekRank() {
+            lastWeekRank = rank
+            lastWeekAt = now
         }
     }
 

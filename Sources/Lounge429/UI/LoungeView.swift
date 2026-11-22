@@ -14,6 +14,8 @@ struct LoungeView: View {
     var crowd: LoungeCrowd = .empty
     /// 이번 주 큰손 (라운지 카드 뒷면, ADR-0012)
     var board: [BoardRow]?
+    /// 지난주 내 순위 (칩 화면). 기록이 없으면 nil
+    var lastWeekRank: Int?
     /// 팝오버가 화면에 보이는지. 닫히면 라운지 카드가 앞면으로 돌아온다
     var visible = true
     /// 스냅샷용: 라운지 카드 면과 뒤집는 중간 프레임
@@ -264,7 +266,7 @@ struct LoungeView: View {
     private var wallet: some View {
         HStack(spacing: 12) {
             PixelView(sprite: Sprites.chip, scale: 3)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(chips.formatted(.number))
                     .font(Fonts.mono(2))
                     .foregroundStyle(Theme.gold)
@@ -273,6 +275,10 @@ struct LoungeView: View {
                     .foregroundStyle(Theme.muted)
             }
             Spacer(minLength: 0)
+            if let lastWeekRank {
+                Text("지난주 \(lastWeekRank)위").font(Fonts.small())
+                    .foregroundStyle(lastWeekRank == 1 ? Theme.gold : Theme.muted)
+            }
             if golden > 0 {
                 VStack(spacing: 2) {
                     PixelView(sprite: Sprites.goldChip, scale: 2)
@@ -280,7 +286,7 @@ struct LoungeView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(8)
         .pixelBox()
     }
 

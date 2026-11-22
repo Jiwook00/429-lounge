@@ -138,8 +138,14 @@ public final class LoungeClient: Sendable {
     }
 
     /// 이번 주 큰손: 위 `top`명 + (그 밖이면) 내 줄 (ADR-0012)
-    public func weeklyBoard(top: Int = 3) async throws -> [BoardRow] {
+    public func weeklyBoard(top: Int = 10) async throws -> [BoardRow] {
         try await supabase.rpc("weekly_board", params: ["p_top": top]).execute().value
+    }
+
+    /// 지난주 내 순위. 지난주에 안 했으면 nil (ADR-0012)
+    public func lastWeekRank() async throws -> Int? {
+        let rows: [LastWeekRank] = try await supabase.rpc("last_week_rank").execute().value
+        return rows.first?.rank
     }
 
     /// 소수결: 지난 판 정산 + 지금 판 열기 + 상태 (ADR-0013)

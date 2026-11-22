@@ -37,13 +37,14 @@ struct LoungeCard: View {
     }
 
     var body: some View {
-        // 앞뒤 중 높은 쪽에 맞춰서 뒤집어도 팝오버 높이가 흔들리지 않게
-        SameHeight {
-            PresenceStrip(crowd: crowd, now: now, onFlip: flip)
-                .hidden(face != .front || frame > 0)
-            BoardCard(rows: board, onFlip: flip)
-                .hidden(face != .back || frame > 0)
+        // 면마다 제 높이: 앞면은 띠 크기 그대로, 뒷면은 큰손 크기. 높이는 옆면 프레임(face가 바뀌는 순간)에 바뀐다
+        Group {
+            switch face {
+            case .front: PresenceStrip(crowd: crowd, now: now, onFlip: flip)
+            case .back: BoardCard(rows: board, onFlip: flip)
+            }
         }
+        .hidden(frame > 0)
         .overlay {
             if frame > 0 { edge }
         }
@@ -87,10 +88,19 @@ struct LoungeCard: View {
     }
 }
 
-/// 이번 주 큰손: 위 3명 + (그 밖이면) 내 줄. 순수익 = 지급액 - 건 칩, KST 월요일 00시에 새 장부
+/// 이번 주 큰손: 위 10명(5줄씩 스크롤) + (10위 밖이면) 아래에 내 줄 고정. 순수익 = 지급액 - 건 칩, KST 월요일 00시에 새 장부
 struct BoardCard: View {
     let rows: [BoardRow]?
     var onFlip: () -> Void = {}
+
+    /// 한 번에 보이는 줄 수와 줄 높이
+    static let visibleLines = 5
+    static let lineHeight: CGFloat = 20
+
+    /// 맨 위에 보이는 줄 (스크롤·화살표 공용)
+    @State private var topID: String?
+    /// ImageRenderer는 ScrollView를 못 그린다 → 스냅샷에선 앞 5줄만 그냥 쌓는다
+    @Environment(\.snapshotting) private var snapshotting
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -114,12 +124,17 @@ struct BoardCard: View {
 
     @ViewBuilder private var content: some View {
         if let rows {
-            let shown = Self.lines(rows)
-            if shown.isEmpty {
+            let top = Self.top(rows)
+            if top.isEmpty && Self.outside(rows) == nil {
                 Text("이번 주 첫 판은 아직이에요").font(Fonts.small()).foregroundStyle(Theme.dim)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(shown) { Line(row: $0) }
+                    HStack(alignment: .top, spacing: 4) {
+                        list(top)
+                        if top.count > Self.visibleLines { arrows(top) }
+                    }
+                    // 10위 밖이면 어디를 보고 있든 내 줄은 아래에 (순위 숫자가 건너뛴다)
+                    if let mine = Self.outside(rows) { Line(row: mine).frame(height: Self.lineHeight) }
                 }
             }
         } else {
@@ -127,11 +142,60 @@ struct BoardCard: View {
         }
     }
 
-    /// 늘 3줄까지: 내가 3위 안이면 위 3명, 밖이면 위 2명 + 내 줄 (순위 숫자가 건너뛰어서 사이가 있다는 게 보인다)
-    static func lines(_ rows: [BoardRow]) -> [BoardRow] {
-        let top = Array(rows.filter { $0.rank <= 3 }.prefix(3))
-        guard let mine = rows.first(where: \.me), !top.contains(mine) else { return top }
-        return Array(top.prefix(2)) + [mine]
+    @ViewBuilder private func list(_ top: [BoardRow]) -> some View {
+        if snapshotting {
+            VStack(spacing: 0) {
+                ForEach(top.prefix(Self.visibleLines)) { Line(row: $0).frame(height: Self.lineHeight) }
+            }
+        } else {
+            scrolling(top)
+        }
+    }
+
+    private func scrolling(_ top: [BoardRow]) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 0) {
+                ForEach(top) { Line(row: $0).frame(height: Self.lineHeight) }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollPosition(id: $topID, anchor: .top)
+        .frame(height: CGFloat(min(top.count, Self.visibleLines)) * Self.lineHeight)
+    }
+
+    /// 스크롤이 어려운 환경을 위한 화살표. 한 번에 한 줄
+    private func arrows(_ top: [BoardRow]) -> some View {
+        let index = top.firstIndex { $0.id == topID } ?? 0
+        let last = top.count - Self.visibleLines
+        return VStack(spacing: 0) {
+            arrow("▲", enabled: index > 0) { topID = top[max(index - 1, 0)].id }
+            Spacer(minLength: 0)
+            arrow("▼", enabled: index < last) { topID = top[min(index + 1, last)].id }
+        }
+        .frame(width: 18, height: CGFloat(Self.visibleLines) * Self.lineHeight)
+    }
+
+    private func arrow(_ glyph: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(nil) { action() }
+        } label: {
+            Text(glyph).font(Fonts.small())
+                .foregroundStyle(enabled ? Theme.gold : Theme.dim.opacity(0.5))
+                .frame(width: 18, height: Self.lineHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    /// 10위까지 (서버가 위 10명 + 내 줄을 준다)
+    static func top(_ rows: [BoardRow]) -> [BoardRow] {
+        rows.filter { $0.rank <= 10 }
+    }
+
+    /// 10위 밖의 내 줄
+    static func outside(_ rows: [BoardRow]) -> BoardRow? {
+        rows.first { $0.me && $0.rank > 10 }
     }
 
     private struct Line: View {
@@ -159,21 +223,6 @@ struct BoardCard: View {
 
         static func color(_ n: Int64) -> Color {
             n > 0 ? Theme.green : n < 0 ? Theme.dim : Theme.muted
-        }
-    }
-}
-
-/// 자식들을 겹쳐 놓고 가장 높은 자식의 높이로 맞춘다 (앞뒤 카드)
-private struct SameHeight: Layout {
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }.max() ?? 0
-        return CGSize(width: width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for s in subviews {
-            s.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
         }
     }
 }

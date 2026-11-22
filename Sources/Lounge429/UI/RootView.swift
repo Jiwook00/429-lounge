@@ -27,6 +27,7 @@ struct RootView: View {
                     online: store.me != nil,
                     crowd: store.crowd(),
                     board: store.board,
+                    lastWeekRank: store.lastWeekRank,
                     visible: store.viewing,
                     name: store.me.flatMap { $0.named ? $0.name : nil },
                     onRename: { await store.rename($0) },
