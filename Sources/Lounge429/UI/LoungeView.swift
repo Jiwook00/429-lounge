@@ -61,7 +61,7 @@ struct LoungeView: View {
                     .font(Fonts.small()).foregroundStyle(Theme.muted)
                 Text("설정").font(Fonts.bold()).foregroundStyle(Theme.neon)
                 settingRow("게임 소리", enabled: audio.enabled) { audio.enabled.toggle() }
-                settingRow("배경음", enabled: audio.backgroundEnabled) { audio.backgroundEnabled.toggle() }
+                settingRow("음악·주변음", enabled: audio.backgroundEnabled) { audio.backgroundEnabled.toggle() }
                     .disabled(!audio.enabled)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {

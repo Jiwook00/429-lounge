@@ -89,7 +89,7 @@ final class GameAudio {
 
     private func player(_ name: String, extension ext: String = "wav") -> AVAudioPlayer? {
         if let existing = players[name] { return existing }
-        guard let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Sounds"),
+        guard let url = LoungeResources.bundle.url(forResource: name, withExtension: ext, subdirectory: "Sounds"),
               let player = try? AVAudioPlayer(contentsOf: url) else { return nil }
         players[name] = player
         return player

@@ -48,7 +48,7 @@ enum Fonts {
     static func mono(_ scale: CGFloat = 1) -> Font { .custom("GalmuriMono11-Regular", fixedSize: 12 * scale) }
 
     static func register() {
-        let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
+        let urls = LoungeResources.bundle.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
         for url in urls {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
