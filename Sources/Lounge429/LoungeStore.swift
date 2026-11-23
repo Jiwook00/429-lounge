@@ -147,6 +147,71 @@ final class LoungeStore {
         return Self.dailyChipsCalendar.date(byAdding: .day, value: 1, to: receivedAt)
     }
 
+    private(set) var latestTicket: LuckyTicket?
+    private(set) var ticketsLoaded = false
+    private(set) var scratching = false
+    var ticketError: String?
+    private var acknowledgedTicket: Date? {
+        didSet {
+            if let id = me?.id { UserDefaults.standard.set(acknowledgedTicket, forKey: "ticketSeen-\(id)") }
+        }
+    }
+
+    var ticketResult: LuckyTicket? {
+        guard let latestTicket, acknowledgedTicket != latestTicket.claimedAt else { return nil }
+        return latestTicket
+    }
+
+    func acknowledgeTicket() { acknowledgedTicket = latestTicket?.claimedAt }
+
+    func ticketCount(at now: Date) -> Int {
+        guard latestTicket?.day == Self.dailyChipsDate.format(now) else { return 0 }
+        return latestTicket?.number ?? 0
+    }
+
+    func ticketAvailable(at now: Date) -> Bool {
+        guard ticketsLoaded, me != nil else { return false }
+        let count = ticketCount(at: now)
+        return count == 0 || (count < 3 && now >= (latestTicket?.claimedAt ?? .distantPast).addingTimeInterval(7200))
+    }
+
+    func ticketLabel(at now: Date) -> String {
+        if ticketResult != nil { return "티켓 결과 보기 ›" }
+        if ticketAvailable(at: now) { return "티켓 긁기 ›" }
+        if ticketCount(at: now) >= 3 { return "오늘 3장 완료" }
+        guard ticketsLoaded, let latestTicket else { return "티켓 확인 중" }
+        let time = latestTicket.claimedAt.addingTimeInterval(7200)
+        return "다음 티켓 " + time.formatted(date: .omitted, time: .shortened)
+    }
+
+    func loadTicket() async {
+        guard let id = me?.id else { return }
+        do {
+            let ticket = try await net.latestTicket()
+            guard me?.id == id else { return }
+            if (ticket?.claimedAt ?? .distantPast) >= (latestTicket?.claimedAt ?? .distantPast) { latestTicket = ticket }
+            ticketsLoaded = true
+        } catch { }
+    }
+
+    func scratch() async {
+        let now = Date.now
+        guard !scratching, ticketResult == nil, ticketAvailable(at: now) else { return }
+        scratching = true
+        ticketError = nil
+        defer { scratching = false }
+        do {
+            let result = try await net.scratchTicket(day: Self.dailyChipsDate.format(now), number: ticketCount(at: now) + 1)
+            update(result.player)
+            latestTicket = result.ticket
+            GameAudio.shared.play(.collect, at: .now)
+        } catch {
+            await loadTicket()
+            await refreshMe()
+            if ticketResult == nil { ticketError = "티켓을 확인하지 못했어요. 다시 시도해 주세요." }
+        }
+    }
+
     func claimDailyChips() async {
         guard !claimingDailyChips, let dailyChipsAvailableAt, dailyChipsAvailableAt <= .now else { return }
         claimingDailyChips = true
@@ -168,6 +233,7 @@ final class LoungeStore {
         await claim()
         pushPresence()
         await keepRoster()
+        await loadTicket()
         await tickMinority()
         await countBlackjack()
     }
@@ -271,6 +337,10 @@ final class LoungeStore {
             netError = "라운지 서버에 연결할 수 없어요"
             return
         }
+        if let id = me?.id {
+            acknowledgedTicket = UserDefaults.standard.object(forKey: "ticketSeen-\(id)") as? Date
+        }
+        await loadTicket()
         joinLounge()
         await keepRoster()
         await claim()

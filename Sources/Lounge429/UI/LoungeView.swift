@@ -17,6 +17,9 @@ struct LoungeView: View {
     /// 지난주 내 순위 (칩 화면). 기록이 없으면 nil
     var lastWeekRank: Int?
     var dailyChipsAvailableAt: Date?
+    var ticketLabel: (Date) -> String = { _ in "티켓 긁기 ›" }
+    var ticketEnabled: (Date) -> Bool = { _ in true }
+    var onTicket: () -> Void = {}
     var claimingDailyChips = false
     var onClaimDailyChips: () -> Void = {}
     /// 팝오버가 화면에 보이는지. 닫히면 라운지 카드가 앞면으로 돌아온다
@@ -267,44 +270,53 @@ struct LoungeView: View {
     }
 
     private func wallet(now: Date) -> some View {
-        HStack(spacing: 12) {
-            PixelView(sprite: Sprites.chip, scale: 3)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+        VStack(spacing: 6) {
+            HStack(spacing: 12) {
+                PixelView(sprite: Sprites.chip, scale: 3)
+                VStack(alignment: .leading, spacing: 4) {
                     Text(chips.formatted(.number))
                         .font(Fonts.mono(2))
                         .foregroundStyle(Theme.gold)
                         .lineLimit(1)
-                    if let dailyChipsAvailableAt, dailyChipsAvailableAt <= now {
-                        Button(action: onClaimDailyChips) {
-                            Text(claimingDailyChips ? "받는 중…" : "오늘의 칩 받기")
-                                .font(Fonts.small())
-                                .foregroundStyle(Theme.gold)
-                                .fixedSize()
-                                .padding(.horizontal, 7)
-                                .frame(minHeight: 26)
-                                .pixelBox(fill: Theme.goldBg, border: Theme.gold)
+                    HStack(spacing: 6) {
+                        Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok → +\((snapshot.today.fresh / 1_000).formatted(.number))칩")
+                            .foregroundStyle(Theme.muted)
+                        Spacer(minLength: 0)
+                        if let lastWeekRank {
+                            Text("지난주 \(lastWeekRank)위").fixedSize()
+                                .foregroundStyle(lastWeekRank == 1 ? Theme.gold : Theme.muted)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(claimingDailyChips)
+                    }
+                    .font(Fonts.small())
+                }
+                if golden > 0 {
+                    VStack(spacing: 2) {
+                        PixelView(sprite: Sprites.goldChip, scale: 2)
+                        Text("×\(golden)").font(Fonts.mono()).foregroundStyle(Theme.gold)
                     }
                 }
-                HStack(spacing: 6) {
-                    Text("오늘 \(snapshot.today.fresh.formatted(.number)) tok → +\((snapshot.today.fresh / 1_000).formatted(.number))칩")
-                        .foregroundStyle(Theme.muted)
-                    Spacer(minLength: 0)
-                    if let lastWeekRank {
-                        Text("지난주 \(lastWeekRank)위").fixedSize()
-                            .foregroundStyle(lastWeekRank == 1 ? Theme.gold : Theme.muted)
-                    }
-                }
-                .font(Fonts.small())
             }
-            if golden > 0 {
-                VStack(spacing: 2) {
-                    PixelView(sprite: Sprites.goldChip, scale: 2)
-                    Text("×\(golden)").font(Fonts.mono()).foregroundStyle(Theme.gold)
-                }
+            if online {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                HStack(spacing: 0) {
+                    let dailyReady = dailyChipsAvailableAt.map { $0 <= now } == true
+                    Button(action: onClaimDailyChips) {
+                        Text(dailyReady ? (claimingDailyChips ? "받는 중…" : "오늘의 칩 받기") : "오늘의 칩 받음")
+                            .foregroundStyle(dailyReady ? Theme.gold : Theme.muted)
+                            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+                    }.disabled(!dailyReady || claimingDailyChips)
+                    Rectangle().fill(Theme.line).frame(width: 1, height: 16)
+                    Button(action: onTicket) {
+                        HStack(spacing: 5) {
+                            if ticketEnabled(now) {
+                                Image(systemName: "ticket.fill").font(.system(size: 10))
+                            }
+                            Text(ticketLabel(now))
+                        }
+                        .foregroundStyle(ticketEnabled(now) ? Theme.cream : Theme.muted)
+                        .padding(.leading, 8).frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+                    }.disabled(!ticketEnabled(now))
+                }.font(Fonts.body()).buttonStyle(.plain)
             }
         }
         .padding(8)

@@ -18,7 +18,10 @@ enum Snapshot {
         store.preview(me: me, snapshot: usage, toast: locked ? "429! 황금 칩 +3" : "토큰 환전 +12칩")
 
         let content: AnyView
-        if table == "settings" {
+        if let table, ["ticket-ready", "ticket-result", "ticket-429"].contains(table) {
+            let amount = table == "ticket-ready" ? nil : table == "ticket-429" ? 429 : 50
+            content = AnyView(LuckyDrawView(chips: 120 + (amount ?? 0), number: 1, amount: amount))
+        } else if table == "settings" {
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips,
                                          online: true, name: "새벽코더", showSettings: true))
         } else if table == "readme" {

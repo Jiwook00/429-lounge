@@ -90,6 +90,23 @@ public struct SlotResult: Codable, Sendable, Equatable {
     }
 }
 
+public struct LuckyTicket: Codable, Sendable, Equatable {
+    public let day: String
+    public let number: Int
+    public let amount: Int
+    public let claimedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case day, number, amount
+        case claimedAt = "claimed_at"
+    }
+}
+
+public struct TicketGrant: Decodable, Sendable {
+    public let ticket: LuckyTicket
+    public let player: Player
+}
+
 /// 칩 지급 RPC 결과
 public struct Grant: Codable, Sendable {
     public let granted: Int64

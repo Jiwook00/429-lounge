@@ -14,7 +14,76 @@ struct RootView: View {
     var onInstallUpdate: (() -> Void)?
     @State private var screen: Screen = .lounge
 
+    @State private var showTicket = false
+
     var body: some View {
+        VStack(spacing: 0) {
+            if showTicket {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    LuckyDrawView(chips: store.chips, number: store.ticketResult?.number ?? min(3, store.ticketCount(at: context.date) + 1),
+                                  amount: store.ticketResult?.amount, busy: store.scratching,
+                                  available: store.ticketAvailable(at: context.date), message: store.ticketError,
+                                  destination: destination,
+                                  onScratch: { Task { await store.scratch() } },
+                                  onBack: { store.acknowledgeTicket(); showTicket = false })
+                }
+            } else {
+                screenContent
+                if needsTicket {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        if store.ticketAvailable(at: context.date) {
+                            Button("무료 티켓 긁기 ›", action: openTicket)
+                                .font(Fonts.bold()).foregroundStyle(Theme.gold).buttonStyle(.plain)
+                                .frame(width: LoungeView.width, height: 30).background(Theme.panel)
+                        }
+                    }
+                }
+            }
+        }
+        .background(WindowVisibility { visible in
+            store.viewing = visible
+            if visible, case .slot(let machine) = screen {
+                GameAudio.shared.setReelsTurning(machine.turningReels(at: .now))
+            }
+            GameAudio.shared.setVisible(visible)
+        })
+        .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
+            guard blocked else { return }
+            showTicket = false
+            go(.lounge)
+        }
+        .task { if store.me == nil { await store.connect() } }
+    }
+
+    private var destination: String {
+        switch screen {
+        case .lounge: "라운지"
+        case .slot: "슬롯"
+        case .roulette: "룰렛"
+        case .blackjack: "블랙잭"
+        case .minority: "소수결"
+        }
+    }
+
+    private var needsTicket: Bool {
+        switch screen {
+        case .lounge: false
+        case .minority:
+            store.minorityUnseen == nil && store.minorityScreen.round.map {
+                $0.myPick == nil && $0.closesAt > .now && store.chips < $0.stake
+            } == true
+        case .slot(let machine): store.chips < 10 && store.golden() == 0 && !machine.isSpinning(at: .now)
+        case .roulette(let table): store.chips < 10 && store.golden() == 0 && table.myBets.isEmpty
+        case .blackjack(let table): store.chips < 10 && store.golden() == 0 && (table.mySeat?.amount ?? 0) == 0
+        }
+    }
+
+    private func openTicket() {
+        store.ticketError = nil
+        showTicket = true
+    }
+
+    private var screenContent: some View {
         Group {
             switch screen {
             case .lounge:
@@ -29,6 +98,9 @@ struct RootView: View {
                     board: store.board,
                     lastWeekRank: store.lastWeekRank,
                     dailyChipsAvailableAt: store.dailyChipsAvailableAt,
+                    ticketLabel: store.ticketLabel(at:),
+                    ticketEnabled: { store.appUpdate?.required != true && (store.ticketAvailable(at: $0) || store.ticketResult != nil) },
+                    onTicket: openTicket,
                     claimingDailyChips: store.claimingDailyChips,
                     onClaimDailyChips: { Task { await store.claimDailyChips() } },
                     visible: store.viewing,
@@ -78,24 +150,6 @@ struct RootView: View {
                     go(.lounge)
                 }
             }
-        }
-        // 팝오버가 실제로 화면에 보이는지 → "보는 중"
-        .background(WindowVisibility { visible in
-            store.viewing = visible
-            if visible, case .slot(let machine) = screen {
-                GameAudio.shared.setReelsTurning(machine.turningReels(at: .now))
-            }
-            GameAudio.shared.setVisible(visible)
-        })
-        // 최소 버전에 못 미치면 테이블에서 일으켜 세운다 (ADR-0010)
-        .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
-            guard blocked else { return }
-            if case .roulette(let table) = screen { table.leave() }
-            if case .blackjack(let table) = screen { table.leave() }
-            go(.lounge)
-        }
-        .task {
-            if store.me == nil { await store.connect() }
         }
     }
 

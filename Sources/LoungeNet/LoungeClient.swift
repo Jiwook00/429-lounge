@@ -269,6 +269,17 @@ public final class LoungeClient: Sendable {
 
     // MARK: - 칩 경제 (docs/chip-economy.md)
 
+    public func latestTicket() async throws -> LuckyTicket? {
+        let rows: [LuckyTicket] = try await supabase.from("lucky_tickets").select()
+            .order("day", ascending: false).order("number", ascending: false).limit(1).execute().value
+        return rows.first
+    }
+
+    public func scratchTicket(day: String, number: Int) async throws -> TicketGrant {
+        struct Params: Encodable { let p_day: String; let p_number: Int }
+        return try await supabase.rpc("scratch_ticket", params: Params(p_day: day, p_number: number)).execute().value
+    }
+
     /// 오늘의 칩 수령 (+100, 누를 때 잔액 100 미만이면 +300)
     public func dailyBonus() async throws -> Grant {
         try await supabase.rpc("daily_bonus").execute().value
