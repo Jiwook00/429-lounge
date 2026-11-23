@@ -54,11 +54,11 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 ### 칩
 
-| 수입      |                                                                           |
-| --------- | ------------------------------------------------------------------------- |
-| 토큰 환전 | 새로 쓴 토큰 1,000개 = 1칩 (캐시 읽기 제외, 상한 없음)                    |
+| 수입      |                                                                                   |
+| --------- | --------------------------------------------------------------------------------- |
+| 토큰 환전 | 새로 쓴 토큰 1,000개 = 1칩 (캐시 읽기 제외, 상한 없음)                            |
 | 오늘의 칩 | 잔액 옆 버튼으로 하루(KST) 한 번 받는다. +100칩, 누를 때 잔액 100 미만이면 +300칩 |
-| 황금 칩   | 429에 걸리면 3개(주간 리밋 10개). 1개 = 공짜 100칩 베팅. 리셋 시각에 소멸 |
+| 황금 칩   | 429에 걸리면 3개(주간 리밋 10개). 1개 = 공짜 100칩 베팅. 리셋 시각에 소멸         |
 
 칩은 현금·실물로 바꿀 수 없고 주고받을 수도 없다. 자세한 규칙은 [docs/chip-economy.md](docs/chip-economy.md).
 
@@ -82,6 +82,10 @@ SPIN은 요청, 결과는 HTTP 응답.
 - **500** 이 뜨면 그 릴이 치지직 깨지고 다시 돈다
 - **429 세 개 = ×429 잭팟**. 실제로 리밋에 걸린 VIP HOUR엔 429가 더 자주 나온다
 - 결과는 `200 OK`, `304 Not Modified`, `404 Not Found`처럼 응답 코드로 표시
+
+### 라운지 벽화
+
+칩을 다 써도 할 수 있는 무료 놀이. 회원 모두가 32×32 벽 하나를 같이 칠한다. 픽셀은 10개, 30초마다 1개씩 다시 차고, 다 쓰면 `429 Too Many Pixels`. 칸에 마우스를 올리면 누가 칠했는지 보이고, 벽은 매주 월요일 새로 시작한다. 칩과는 무관하다.
 
 ## 개발 환경
 
@@ -128,7 +132,7 @@ gh release create "$TAG" build/429-Lounge.zip build/appcast.xml --draft --verify
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

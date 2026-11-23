@@ -29,6 +29,12 @@ enum Theme {
     /// 황금 칩 스프라이트 하이라이트 / 그림자
     static let goldLight = Color(hex: 0xFFF1B8)
     static let goldDark  = Color(hex: 0xB8862B)
+
+    /// 라운지 벽화 팔레트 (서버 색 번호 0~7 순서, ADR-0017)
+    static let wall: [(color: Color, name: String)] = [
+        (cream, "크림"), (neon, "네온"), (gold, "골드"), (cyan, "시안"),
+        (green, "초록"), (felt, "펠트"), (dim, "보라"), (outline, "검정"),
+    ]
 }
 
 extension View {

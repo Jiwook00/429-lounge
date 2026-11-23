@@ -86,6 +86,22 @@ enum Sprites {
         "...WWWWWW...",
     ], palette: base)
 
+    /// 라운지 벽화 타일: 벽돌 줄눈 사이에 칠한 칸들 (12×12)
+    static let wall = PixelSprite(rows: [
+        "dddddddddddd",
+        "dRRdCCdYYddd",
+        "dRRdCCdYYdWd",
+        "dddddddddddd",
+        "dYYdWWdRRdCd",
+        "dYYdWWdRRdCd",
+        "dddddddddddd",
+        "dCCdRRdWWdYd",
+        "dCCdRRdWWdYd",
+        "dddddddddddd",
+        "dWWdYYdCCdRd",
+        "dddddddddddd",
+    ], palette: base.merging(["C": Theme.cyan]) { $1 })
+
     static let dice = PixelSprite(rows: [
         "WWWWWW......",
         "WkWWkW......",

@@ -47,6 +47,9 @@ struct LoungeView: View {
     /// 소수결 타일 상태. nil이면 아직 모름(연결 전)
     var minority: MinorityTileState?
     var onMinority: () -> Void = {}
+    /// 라운지 벽화 타일 아랫줄 (남은 픽셀 / 429 카운트다운)
+    var wallLine: (Date) -> String = { _ in "FREE" }
+    var onWall: () -> Void = {}
     /// 잭팟 시스템 알림 켬/끔
     var notify = false
     var onNotify: () -> Void = {}
@@ -375,11 +378,19 @@ struct LoungeView: View {
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            GameTile(sprite: Sprites.dice, title: "준비 중", mode: "SOON", soon: false, secret: true)
             Button(action: onMinority) {
                 GameTile(sprite: Sprites.ox, title: "소수결",
                          mode: !online ? "평일 3번" : minority?.line(now: .now) ?? "평일 3번",
                          soon: !online, live: online && minority?.open == true)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
+            Button(action: onWall) {
+                // 칩과 무관한 무료 벽 (ADR-0017). 칩 게임(네온)과 구분해 초록 + BETA 라벨
+                let line = online ? wallLine(.now) : "FREE"
+                GameTile(sprite: Sprites.wall, title: "라운지 벽화", mode: line,
+                         soon: !online, live: online, accent: Theme.green,
+                         modeColor: line.hasPrefix("429") ? Theme.neon : nil, label: "BETA")
             }
             .buttonStyle(.plain)
             .disabled(!online)
@@ -423,23 +434,36 @@ private struct GameTile: View {
     var hot = false
     /// 아직 비공개 칸: 전부 흐리게
     var secret = false
+    /// 활성 테두리·발광 색. 칩 게임은 네온, 무료 벽화는 시안
+    var accent: Color = Theme.neon
+    /// 아랫줄 색을 따로 정할 때 (벽화 429)
+    var modeColor: Color?
+    /// 이름 옆 작은 라벨 (accent 바탕)
+    var label: String?
 
     var body: some View {
         HStack(spacing: 10) {
             PixelView(sprite: sprite, scale: 2).opacity(secret ? 0.35 : 1)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Fonts.body()).foregroundStyle(secret ? Theme.dim : Theme.cream)
-                Text(mode).font(Fonts.small()).foregroundStyle(live ? Theme.neon : secret ? Theme.dim : Theme.muted)
-                    .glow(hot ? Theme.neon : .clear)
+                Text(mode).font(Fonts.small()).foregroundStyle(modeColor ?? (live ? accent : secret ? Theme.dim : Theme.muted))
+                    .glow(hot ? accent : .clear)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
-        .pixelBox(fill: secret ? Theme.bg : Theme.panel, border: live ? Theme.neon : Theme.line)
-        .glow(live ? Theme.neon : .clear, radius: hot ? 6 : 4, strong: hot)
+        .pixelBox(fill: secret ? Theme.bg : Theme.panel, border: live ? accent : Theme.line)
+        .glow(live ? accent : .clear, radius: hot ? 6 : 4, strong: hot)
         .contentShape(Rectangle())
         .overlay(alignment: .topTrailing) {
-            if let badge {
+            if let label {
+                Text(label)
+                    .font(Fonts.small())
+                    .foregroundStyle(Theme.bg)
+                    .padding(.horizontal, 3)
+                    .background(live ? accent : Theme.muted)
+                    .padding(6)
+            } else if let badge {
                 Text(badge)
                     .font(Fonts.small())
                     .foregroundStyle(Theme.bg)

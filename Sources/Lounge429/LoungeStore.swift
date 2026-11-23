@@ -20,6 +20,8 @@ final class LoungeStore {
     /// 칩이 들어왔을 때 잠깐 보여주는 알림
     private(set) var toast: Toast?
     private(set) var claimingDailyChips = false
+    /// 라운지 벽화 버킷 (ADR-0017). 벽을 한 번 열기 전엔 nil → 타일은 "FREE"
+    var pixelBucket: PixelBucket?
 
     private static let dailyChipsCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)

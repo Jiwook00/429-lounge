@@ -66,6 +66,9 @@ enum Snapshot {
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
                                          minority: .open(closesAt: Self.kst(hour: 17), picked: false)))
+        } else if let table, table.hasPrefix("wall-") {
+            // wall-idle | wall-painted | wall-same | wall-limited | wall-empty: 라운지 벽화 (ADR-0017)
+            content = AnyView(PixelWallView(wall: fakeWall(store: store, mode: table)))
         } else if let table, table.hasPrefix("minority-result") {
             // minority-result-win | minority-result-lose | minority-result-void
             content = AnyView(MinorityResultView(result: fakeMinorityResult(table), shownAt: .now.addingTimeInterval(-0.5)))
@@ -278,6 +281,37 @@ enum Snapshot {
         NSApplication.shared.run()
     }
 
+    /// 실서버 라운지 벽화를 열고 `seconds` 동안 새 칸이 들어올 때마다 찍는다 (Realtime 검증용).
+    /// 대체 갱신은 30초라, 지연이 몇 초 안이면 Realtime으로 받은 것
+    static func renderWallLive(to path: String, seconds: Int) {
+        Task { @MainActor in
+            let store = LoungeStore(live: false)
+            await store.connect()
+            guard let me = store.me else { print("connect failed: \(store.netError ?? "?")"); exit(1) }
+            print("signed in as \(me.name)")
+            let wall = PixelWall(store: store)
+            wall.enter()
+            var seen: Date?
+            for _ in 0..<(seconds * 4) {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let s = wall.state else { continue }
+                guard let newest = s.pixels.max(by: { $0.at < $1.at }) else { continue }
+                if seen == nil { print("board · \(s.pixels.count)칸 · 내 버킷 \(s.left)/\(s.cap)") }
+                if let seen, newest.at <= seen { continue }
+                if seen != nil {
+                    let lag = Date.now.timeIntervalSince(newest.at.addingTimeInterval(-wall.skew))
+                    print(String(format: "+ %@ %d,%d 색%d · 지연 %.1f초 · 총 %d칸", newest.p, newest.x + 1, newest.y + 1, newest.c, lag, s.pixels.count))
+                }
+                seen = newest.at
+            }
+            write(AnyView(PixelWallView(wall: wall)), to: path)
+            wall.leave()
+            exit(0)
+        }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+    }
+
     /// 실서버 블랙잭 테이블에 앉아 `seconds` 동안 매초 상태를 찍고 마지막 화면을 저장한다.
     /// LOUNGE_E2E_BET=1이면 앱 계정도 걸고, 내 차례엔 12 미만 히트 · 그 외 스탠드
     static func renderBlackjackLive(to path: String, seconds: Int) {
@@ -378,6 +412,75 @@ enum Snapshot {
     }
 
     /// mode: slot-idle | slot-spinning | slot-glitch | slot-win | slot-big | slot-jackpot | slot-lose
+    private static func fakeWall(store: LoungeStore, mode: String) -> PixelWall {
+        let rows = [
+            "",
+            "..n.n.nnn.nnn.............gg",
+            "..n.n...n.n.n............g",
+            "..nnn.nnn.nnn............g",
+            "....n.n.....n............g",
+            "....n.nnn.nnn.............gg",
+            "",
+            ".......c..............y.........c",
+            "",
+            "...yyyyyyyyy",
+            "....ynnnnny......c.......c",
+            ".....ynnny.......cc.....cc",
+            "......yny........ccccccccc.nn.nn",
+            ".......y.........cckccckcc.nnnnn",
+            ".......y.........ccccncccc..nnn",
+            ".......y.........ccckckccc...n",
+            ".....yyyyy.......ccccccccc",
+            "",
+            "..c..........................y",
+            "",
+            "..e.e.e.....mmmmmmmmmm",
+            "..eeeee.....mkkkkkkkkm..g",
+            "...eee......mkyykccckm",
+            "....e.......mkkggkyykm",
+            "....e.......mkkkkkkkkm",
+            ".ffffff.....mmmmmmmmmm",
+            "fffffffff.......mm",
+            "fffffffff....mmmmmmmm",
+            "",
+            "...c.........n.......y.....g",
+        ]
+        let colors: [Character: Int] = ["c": 0, "n": 1, "g": 2, "y": 3, "e": 4, "f": 5, "m": 6, "k": 7]
+        func owner(_ x: Int, _ y: Int) -> String {
+            if y <= 5 { return "영희" }
+            if (9...16).contains(y) && x <= 12 { return "철수" }
+            if (10...16).contains(y) && (17...25).contains(x) { return "민수" }
+            if y >= 12 && x >= 26 { return "예린" }
+            if (20...27).contains(y) { return "새벽코더" }
+            return "우진"
+        }
+        let now = Date.now
+        var pixels: [PixelBoardState.Pixel] = []
+        if mode != "wall-empty" {
+            for (y, row) in rows.enumerated() {
+                for (x, ch) in row.enumerated() {
+                    guard let c = colors[ch] else { continue }
+                    pixels.append(.init(x: x, y: y, c: c, p: owner(x, y), at: now.addingTimeInterval(-Double((x * 7 + y * 13) % 50) * 60)))
+                }
+            }
+        }
+        let counts = Dictionary(grouping: pixels, by: \.p).mapValues(\.count).sorted { $0.value > $1.value }
+        let painters = counts.map { PixelBoardState.Painter(name: $0.key, count: $0.value, me: $0.key == "새벽코더") }
+        let limited = mode == "wall-limited"
+        let left = limited ? 0 : mode == "wall-painted" ? 6 : mode == "wall-empty" ? 10 : 7
+        let wall = PixelWall(store: store)
+        wall.apply(PixelBoardState(now: now, left: left, nextAt: left == 10 ? nil : now.addingTimeInterval(24),
+                                   pixels: pixels, painters: painters))
+        switch mode {
+        case "wall-painted": wall.preview(response: .created(.init(x: 24, y: 21)), selected: .init(x: 24, y: 21), color: 2)
+        case "wall-same": wall.preview(response: .same, selected: .init(x: 20, y: 14), color: 1)
+        case "wall-limited": wall.preview(response: .limited, selected: .init(x: 24, y: 21), color: 2)
+        case "wall-empty": wall.preview(response: .idle, selected: nil, color: 1)
+        default: wall.preview(response: .idle, selected: nil, hover: .init(x: 20, y: 13), color: 1)
+        }
+        return wall
+    }
+
     private static func fakeSlot(store: LoungeStore, me: Player, mode: String) -> SlotMachine {
         let m = SlotMachine(store: store)
         func result(_ reels: [String], _ mult: Int, initial: [String]? = nil, glitched: [Int] = []) -> SlotResult {

@@ -587,3 +587,61 @@ public struct RouletteBet: Decodable, Sendable, Equatable {
         self.payout = payout
     }
 }
+
+// MARK: - 라운지 벽화 (ADR-0017)
+
+/// 이번 주 벽 + 내 버킷. 칩과 무관하다
+public struct PixelBoardState: Decodable, Sendable, Equatable {
+    public struct Pixel: Decodable, Sendable, Equatable {
+        public let x: Int
+        public let y: Int
+        /// 팔레트 번호 0~7
+        public let c: Int
+        /// 칠한 회원 이름
+        public let p: String
+        public let at: Date
+
+        public init(x: Int, y: Int, c: Int, p: String, at: Date) {
+            self.x = x; self.y = y; self.c = c; self.p = p; self.at = at
+        }
+    }
+
+    public struct Painter: Decodable, Sendable, Equatable {
+        public let name: String
+        public let count: Int
+        public let me: Bool
+
+        public init(name: String, count: Int, me: Bool) {
+            self.name = name; self.count = count; self.me = me
+        }
+    }
+
+    public enum Status: String, Decodable, Sendable {
+        case created, same, limited
+    }
+
+    /// 서버 시각 (시계 차이 보정용)
+    public let now: Date
+    public let cap: Int
+    /// 충전 간격(초)
+    public let refill: Int
+    /// now 시점에 남은 픽셀
+    public let left: Int
+    /// 다음 픽셀이 차는 시각. 가득이면 nil
+    public let nextAt: Date?
+    public let pixels: [Pixel]
+    public let painters: [Painter]
+    /// pixel_paint 응답에만 있음
+    public let status: Status?
+
+    enum CodingKeys: String, CodingKey {
+        case now, cap, refill, left, pixels, painters, status
+        case nextAt = "next_at"
+    }
+
+    public init(now: Date, cap: Int = 10, refill: Int = 30, left: Int, nextAt: Date?, pixels: [Pixel],
+                painters: [Painter], status: Status? = nil) {
+        self.now = now; self.cap = cap; self.refill = refill; self.left = left; self.nextAt = nextAt
+        self.pixels = pixels; self.painters = painters; self.status = status
+    }
+}

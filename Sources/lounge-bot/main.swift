@@ -1,6 +1,7 @@
 // 개발용 봇: 미니 룰렛 테이블에 앉아서 매 판 랜덤으로 한두 칸에 건다.
 // 사용법: swift run lounge-bot [--name 봇이름] [--room LOUNGE] [--blackjack]
 // --blackjack: 룰렛 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
+// --wall: 라운지 벽화에 2~5초마다 한 칸씩 칠한다 (버킷이 비면 429를 받고 기다림)
 import Foundation
 import LoungeNet
 
@@ -57,6 +58,12 @@ do {
                 log("👁 보는 중 \(presence.viewing ? "켬" : "끔")")
             }
         }
+    }
+
+    if CommandLine.arguments.contains("--wall") {
+        presence.place = .lounge
+        await link.update(presence)
+        try await paintWall()
     }
 
     if CommandLine.arguments.contains("--blackjack") {
@@ -165,3 +172,24 @@ func playRoulette(me: Player) async throws -> Never {
     }
 }
 
+
+/// 라운지 벽화: 무작위 자리에서 시작해 옆 칸으로 걸어가며 칠한다 (선처럼 보이게)
+func paintWall() async throws -> Never {
+    var x = Int.random(in: 0..<32), y = Int.random(in: 0..<32)
+    let color = Int.random(in: 0..<8)
+    while true {
+        let s = try await client.pixelPaint(x: x, y: y, color: color)
+        switch s.status {
+        case .limited:
+            let wait = max(1, s.nextAt.map { $0.timeIntervalSince(s.now) } ?? 30)
+            log("🎨 429 Too Many Pixels · \(Int(wait))초 대기")
+            try await Task.sleep(for: .seconds(wait + 0.2))
+            continue
+        default:
+            log("🎨 \(x + 1),\(y + 1) \(s.status?.rawValue ?? "-") · 남은 \(s.left)/\(s.cap)")
+        }
+        x = min(31, max(0, x + Int.random(in: -1...1)))
+        y = min(31, max(0, y + Int.random(in: -1...1)))
+        try await Task.sleep(for: .seconds(Double.random(in: 2...5)))
+    }
+}

@@ -52,6 +52,7 @@ public enum LoungeError: LocalizedError {
         case .server("golden_outside_only"): "황금 칩은 바깥 칸에만 놓여요"
         case .server("invalid_spot"): "걸 수 없는 칸이에요"
         case .server("game_retired"): "홀짝은 문을 닫았어요 · 룰렛으로"
+        case .server("invalid_pixel"): "칠할 수 없는 칸이에요"
         case .server(let m): m
         }
     }
@@ -259,6 +260,48 @@ public final class LoungeClient: Sendable {
                     for stream in streams {
                         group.addTask { for await _ in stream { continuation.yield() } }
                     }
+                }
+                await supabase.removeChannel(channel)
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    // MARK: - 라운지 벽화 (ADR-0017)
+
+    /// 이번 주 벽과 내 버킷
+    public func pixelBoard() async throws -> PixelBoardState {
+        try await supabase.rpc("pixel_board").execute().value
+    }
+
+    /// 한 칸 칠하기. 버킷이 비면 에러가 아니라 status = limited
+    public func pixelPaint(x: Int, y: Int, color: Int) async throws -> PixelBoardState {
+        struct Params: Encodable { let p_x: Int; let p_y: Int; let p_color: Int }
+        do {
+            return try await supabase.rpc("pixel_paint", params: Params(p_x: x, p_y: y, p_color: color)).execute().value
+        } catch {
+            throw LoungeError.wrap(error)
+        }
+    }
+
+    /// 벽이 바뀌었다는 신호. 재연결 뒤에도 한 번 보낸다
+    public func pixelChanges() -> AsyncStream<Void> {
+        let supabase = self.supabase
+        return AsyncStream { continuation in
+            let task = Task {
+                let channel = supabase.channel("pixel_board")
+                let stream = channel.postgresChange(AnyAction.self, table: "pixel_board")
+                let statuses = channel.statusChange
+                do {
+                    try await channel.subscribeWithError()
+                } catch {
+                    continuation.finish()
+                    return
+                }
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { for await _ in statuses.resubscribed() { continuation.yield() } }
+                    group.addTask { for await _ in stream { continuation.yield() } }
                 }
                 await supabase.removeChannel(channel)
                 continuation.finish()

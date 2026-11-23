@@ -8,6 +8,7 @@ struct RootView: View {
         case slot(SlotMachine)
         case blackjack(BlackjackTable)
         case minority
+        case wall(PixelWall)
     }
 
     let store: LoungeStore
@@ -62,12 +63,13 @@ struct RootView: View {
         case .roulette: "룰렛"
         case .blackjack: "블랙잭"
         case .minority: "소수결"
+        case .wall: "벽화"
         }
     }
 
     private var needsTicket: Bool {
         switch screen {
-        case .lounge: false
+        case .lounge, .wall: false
         case .minority:
             store.minorityUnseen == nil && store.minorityScreen.round.map {
                 $0.myPick == nil && $0.closesAt > .now && store.chips < $0.stake
@@ -115,6 +117,8 @@ struct RootView: View {
                     onBoard: { Task { await store.loadBoard() } },
                     minority: store.minorityTile,
                     onMinority: { go(.minority) },
+                    wallLine: { store.pixelBucket?.line(at: $0) ?? "FREE" },
+                    onWall: { go(.wall(PixelWall(store: store))) },
                     notify: store.notify,
                     onNotify: { Task { await store.toggleNotify() } },
                     onRefresh: { Task { await store.refresh() } },
@@ -144,6 +148,10 @@ struct RootView: View {
                 }
                 .onAppear { table.enter() }
                 .onDisappear { table.leave() }
+            case .wall(let wall):
+                PixelWallView(wall: wall) { go(.lounge) }
+                    .onAppear { wall.enter() }
+                    .onDisappear { wall.leave() }
             case .slot(let machine):
                 SlotView(machine: machine, chips: store.chips, golden: store.golden(),
                          vip: (store.me?.goldenUntil ?? .distantPast) > .now) {
@@ -159,7 +167,7 @@ struct RootView: View {
         case .blackjack: GameAudio.shared.enter(.felt)
         case .roulette: GameAudio.shared.enter(.marbles)
         case .minority: GameAudio.shared.enter(.ballot)
-        case .lounge: GameAudio.shared.enter(.lounge)
+        case .lounge, .wall: GameAudio.shared.enter(.lounge)
         }
         screen = next
         switch next {
@@ -173,6 +181,8 @@ struct RootView: View {
         case .minority: store.place = .lounge
         // 블랙잭도 같은 이유로 라운지. 인원은 Presence가 아니라 서버 좌석에서 센다 (ADR-0014)
         case .blackjack: store.place = .lounge
+        // 벽화도 Presence엔 라운지로 (옛 앱 호환)
+        case .wall: store.place = .lounge
         }
     }
 }
