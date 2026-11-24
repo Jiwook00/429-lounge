@@ -198,15 +198,18 @@ struct SlotView: View {
     }
 
     private func response(_ t: Date) -> (String, Color, String, Color) {
-        if machine.startedAt == nil { return ("GET /slot", Theme.muted, "체리 2개부터 200 OK", Theme.muted) }
+        if machine.startedAt == nil {
+            return ("GET /slot", Theme.muted, vip ? "체리 2개부터 200 OK" : "429 한 개부터 200 OK", Theme.muted)
+        }
         if machine.isGlitching(at: t) { return ("500", Theme.neon, "Internal Server Error · 재시도…", Theme.neon) }
         if machine.isSpinning(at: t) { return ("102", Theme.cyan, "Processing…", Theme.muted) }
         guard let r = machine.result else { return (" ", Theme.muted, " ", Theme.muted) }
         let won = "+\(r.payout.formatted(.number))"
-        switch r.multiplier {
+        let multiple = r.payoutMultiplier.formatted(.number.precision(.fractionLength(0...1)))
+        switch r.payoutMultiplier {
         case 429...: return ("429", Theme.neon, "JACKPOT · \(won)", Theme.gold)
-        case 10...: return ("201 Created", Theme.gold, "\(won) · \(combo(r)) ×\(r.multiplier)", Theme.gold)
-        case 2...: return ("200 OK", Theme.green, "\(won) · \(combo(r)) ×\(r.multiplier)", Theme.gold)
+        case 10...: return ("201 Created", Theme.gold, "\(won) · \(combo(r)) ×\(multiple)", Theme.gold)
+        case let value where value > 1: return ("200 OK", Theme.green, "\(won) · \(combo(r)) ×\(multiple)", Theme.gold)
         case 1: return ("304", Theme.cyan, "Not Modified · 본전", Theme.cream)
         default: return ("404", Theme.dim, "Not Found · 꽝", Theme.muted)
         }
@@ -217,6 +220,7 @@ struct SlotView: View {
         if Set(s).count == 1, let first = s.first { return Array(repeating: first.label, count: 3).joined(separator: " ") }
         if s.filter({ $0 == .cherry }).count == 2 { return "체리 2개" }
         if s.filter({ $0 == .s429 }).count == 2 { return "429 두 개" }
+        if s.contains(.s429) { return "429 한 개" }
         return s.map(\.label).joined(separator: " ")
     }
 
@@ -225,7 +229,7 @@ struct SlotView: View {
         let rows: [[(SlotSymbol, Int, String)]] = [
             [(.s429, 3, "×429"), (.seven, 3, "×50"), (.bar, 3, "×20")],
             [(.bell, 3, "×10"), (.cherry, 3, "×5"), (.cherry, 2, "×3")],
-            [(.s429, 2, "×3"), (.s429, 1, "×1 본전"), (.err500, 0, "리스핀")],
+            [(.s429, 2, "×3"), (.s429, 1, vip ? "×1 본전" : "×1.8"), (.err500, 0, "리스핀")],
         ]
         return Grid(horizontalSpacing: 4, verticalSpacing: 6) {
             ForEach(0..<rows.count, id: \.self) { r in

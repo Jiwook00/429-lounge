@@ -134,7 +134,7 @@ final class SlotMachine {
     }
 
     /// 릴이 다 멈춘 뒤의 승리 연출 단계
-    var tier: WinTier? { result.flatMap { WinTier(multiplier: $0.multiplier) } }
+    var tier: WinTier? { result.flatMap { WinTier(multiplier: $0.payoutMultiplier) } }
 
     func spin() async {
         let now = Date()

@@ -5,11 +5,11 @@ enum WinTier: Equatable {
     case win, big, jackpot
 
     /// 슬롯 배수 기준. ×1(본전) 이하는 연출 없음.
-    init?(multiplier: Int) {
+    init?(multiplier: Double) {
         switch multiplier {
         case 429...: self = .jackpot
         case 10...: self = .big
-        case 2...: self = .win
+        case let value where value > 1: self = .win
         default: return nil
         }
     }

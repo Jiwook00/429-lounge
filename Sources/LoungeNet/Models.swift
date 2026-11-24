@@ -58,21 +58,24 @@ public struct SlotResult: Codable, Sendable, Equatable {
     /// VIP HOUR 판 (429가 더 자주 나오는 릴)
     public let vip: Bool
     public let multiplier: Int
+    public let payoutMultiplier: Double
     public let payout: Int64
     public let player: Player
 
     enum CodingKeys: String, CodingKey {
         case reels, glitched, vip, multiplier, payout, player
         case initialReels = "initial_reels"
+        case payoutMultiplier = "payout_multiplier"
     }
 
     public init(reels: [String], initialReels: [String]? = nil, glitched: [Int] = [], vip: Bool = false,
-                multiplier: Int, payout: Int64, player: Player) {
+                multiplier: Int, payoutMultiplier: Double? = nil, payout: Int64, player: Player) {
         self.reels = reels
         self.initialReels = initialReels ?? reels
         self.glitched = glitched
         self.vip = vip
         self.multiplier = multiplier
+        self.payoutMultiplier = payoutMultiplier ?? Double(multiplier)
         self.payout = payout
         self.player = player
     }
@@ -85,6 +88,7 @@ public struct SlotResult: Codable, Sendable, Equatable {
         glitched = (try c.decodeIfPresent([Int].self, forKey: .glitched) ?? []).map { $0 - 1 }
         vip = try c.decodeIfPresent(Bool.self, forKey: .vip) ?? false
         multiplier = try c.decode(Int.self, forKey: .multiplier)
+        payoutMultiplier = try c.decodeIfPresent(Double.self, forKey: .payoutMultiplier) ?? Double(multiplier)
         payout = try c.decode(Int64.self, forKey: .payout)
         player = try c.decode(Player.self, forKey: .player)
     }

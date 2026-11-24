@@ -366,7 +366,7 @@ enum Snapshot {
                 let before = store.chips
                 await machine.spin()
                 let r = machine.result
-                print("spin \(i): \(r?.initialReels.joined(separator: " ") ?? "-") → \(r?.reels.joined(separator: " ") ?? "-") glitched \(r?.glitched ?? []) vip \(r?.vip ?? false) ×\(r?.multiplier ?? -1) payout \(r?.payout ?? -1) · chips \(before) → \(store.chips) \(machine.message ?? "")")
+                print("spin \(i): \(r?.initialReels.joined(separator: " ") ?? "-") → \(r?.reels.joined(separator: " ") ?? "-") glitched \(r?.glitched ?? []) vip \(r?.vip ?? false) ×\(r?.payoutMultiplier ?? -1) payout \(r?.payout ?? -1) · chips \(before) → \(store.chips) \(machine.message ?? "")")
             }
             try? await Task.sleep(for: .seconds(0.4))
             write(AnyView(SlotView(machine: machine, chips: store.chips, golden: store.golden())), to: path)
@@ -494,6 +494,9 @@ enum Snapshot {
             m.preview(result: result(["cherry", "bell", "cherry"], 3, initial: ["cherry", "bell", "500"], glitched: [2]),
                       elapsed: 1.6 + 0.25 + 0.25, pending: true)
         case "slot-win": m.preview(result: result(["cherry", "bell", "cherry"], 3), finishedAgo: 0.35)
+        case "slot-single-429":
+            m.preview(result: SlotResult(reels: ["bell", "429", "blank"], multiplier: 1,
+                                         payoutMultiplier: 1.8, payout: 90, player: me), finishedAgo: 0.35)
         case "slot-big": m.preview(result: result(["seven", "seven", "seven"], 50), finishedAgo: 0.9)
         case "slot-jackpot": m.preview(result: result(["429", "429", "429"], 429), finishedAgo: 1.2)
         case "slot-lose": m.preview(result: result(["seven", "blank", "bell"], 0), finishedAgo: 1)

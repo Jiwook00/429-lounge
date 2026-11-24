@@ -279,7 +279,7 @@ struct BlackjackView: View {
             }
             tag("딜러", color: Theme.muted).offset(x: 4, y: 4)
             if !(table.idle(at: now) || betting(now)) {
-                Text("블랙잭 3:2 · 딜러는 17에서 멈춤")
+                Text("블랙잭 ×2.75 · 딜러는 17에서 멈춤")
                     .font(Fonts.small()).foregroundStyle(Theme.gold.opacity(0.7))
                     .frame(width: 308).offset(y: 86)
             }
@@ -796,7 +796,7 @@ struct BlackjackView: View {
     private func resultLine(_ s: BJSeat) -> String {
         let t = BJCard.total(s.cards.map(BJCard.init)).value
         switch s.result {
-        case .blackjack: return "블랙잭! 3:2"
+        case .blackjack: return "블랙잭!"
         case .win: return s.doubled ? "\(t) · 더블 성공" : "\(t) · 이겼어요"
         case .push: return s.golden ? "무승부 · 황금 칩 돌려받음" : "무승부 · 그대로"
         case .lose: return s.state == .bust ? "버스트" : "딜러가 이겼어요"

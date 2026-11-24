@@ -31,7 +31,7 @@ struct BlackjackHelp: View {
                     hand([Self.ha], "1/11", color: Theme.cream)
                 }
             }
-            row("첫 두 장이 21이면 블랙잭 · 3:2") {
+            row("첫 두 장이 21이면 블랙잭") {
                 hand([Self.ha, Self.k], "21", color: Theme.gold)
             }
 
@@ -41,7 +41,7 @@ struct BlackjackHelp: View {
                 move("더블", "두 배 걸고 딱 한 장 (첫 두 장일 때)", fill: Theme.goldBg, border: Theme.gold, text: Theme.gold)
             }
 
-            Text("딜러는 17이 될 때까지 쳐요. 딜러보다 높거나 딜러가 버스트면 2배. 같으면 그대로.")
+            Text("블랙잭은 일반 칩 2.75배, 황금 칩 2.5배. 딜러는 17부터 멈춰요. 보통 이기면 2배, 같으면 그대로.")
                 .font(Fonts.small()).foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
