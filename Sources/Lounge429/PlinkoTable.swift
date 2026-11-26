@@ -604,8 +604,8 @@ final class PlinkoTable {
         if f.endAt == nil {
             if f.spawned < f.n, t >= f.next, let d = drops.first(where: { $0.id == f.drop }) {
                 let ball = d.response.feverBalls[f.spawned]
-                // 서버는 FEVER 공의 레인을 따로 알리지 않는다. 첫 줄이 1이면 첫 핀 j의 반대쪽이 레인
-                let lane = ball.from == 1 ? -(ball.js.first ?? 0) : 0
+                // 서버는 FEVER 공의 레인을 따로 알리지 않는다. 첫 줄이 1이면 첫 핀 j(±1)가 곧 레인
+                let lane = ball.from == 1 ? (ball.js.first ?? 0) : 0
                 spawn(PlinkoBallSpawn(ball: ball, drop: f.drop, fever: true, grade: .none, lane: lane))
                 f.spawned += 1
                 f.next = t + 4

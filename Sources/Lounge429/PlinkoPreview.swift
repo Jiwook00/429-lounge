@@ -46,7 +46,7 @@ enum PlinkoFake {
                        rng: inout SplitMix) -> PlinkoBall {
         lane == 0
             ? path(j: 0, row: 0, dirs: dirs, cloneDirs: cloneDirs, rules: rules, amount: amount, rng: &rng)
-            : path(j: -lane, row: 1, dirs: dirs, cloneDirs: cloneDirs, rules: rules, amount: amount, rng: &rng)
+            : path(j: lane, row: 1, dirs: dirs, cloneDirs: cloneDirs, rules: rules, amount: amount, rng: &rng)
     }
 
     /// 조건에 맞는 한 판이 나올 때까지 시드를 바꿔 가며 뽑는다 (장면을 고정하기 위해)

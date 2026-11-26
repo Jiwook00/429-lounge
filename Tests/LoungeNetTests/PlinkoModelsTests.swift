@@ -10,11 +10,11 @@ import Testing
     }
 
     static let split = #"""
-{"ball":{"js":[1,2,3,4,5,6,7,8,7,8,9],"from":1,"gold":0,"mult":4,"clone":{"js":[7],"from":11,"gold":0,"mult":1.3,"clone":null,"split":null,"bucket":9,"payout":65,"pocket":false},"split":10,"bucket":11,"payout":200,"pocket":false},"fever":false,"payout":265,"pocket":null,"top_mult":4,"fever_balls":[],"lane":-1,"power":833,"grade":"perfect","amount":50,"golden":false,"player":{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"철수","chips":4290,"golden_chips":1,"golden_until":"2026-11-27T03:00:00+00:00","named":true,"last_daily":"2026-11-26"}}
+{"ball":{"js":[1,2,3,4,5,6,7,8,7,8,9],"from":1,"gold":0,"mult":4,"clone":{"js":[7],"from":11,"gold":0,"mult":1.3,"clone":null,"split":null,"bucket":9,"payout":65,"pocket":false},"split":10,"bucket":11,"payout":200,"pocket":false},"fever":false,"payout":265,"pocket":null,"top_mult":4,"fever_balls":[],"lane":1,"power":833,"grade":"perfect","amount":50,"golden":false,"player":{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"철수","chips":4290,"golden_chips":1,"golden_until":"2026-11-27T03:00:00+00:00","named":true,"last_daily":"2026-11-26"}}
 """#
 
     static let pocket = #"""
-{"ball":{"js":[-1,-2,-1,0,-1,0],"from":1,"gold":0,"mult":0,"clone":null,"split":null,"bucket":null,"payout":0,"pocket":true},"fever":false,"payout":10,"pocket":{"fever":false,"reels":["429","429","404"],"refund":10},"top_mult":0,"fever_balls":[],"lane":1,"power":833,"grade":"perfect","amount":50,"golden":false,"player":{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"철수","chips":4290,"golden_chips":1,"golden_until":"2026-11-27T03:00:00+00:00","named":true,"last_daily":"2026-11-26"}}
+{"ball":{"js":[-1,-2,-1,0,-1,0],"from":1,"gold":0,"mult":0,"clone":null,"split":null,"bucket":null,"payout":0,"pocket":true},"fever":false,"payout":10,"pocket":{"fever":false,"reels":["429","429","404"],"refund":10},"top_mult":0,"fever_balls":[],"lane":-1,"power":833,"grade":"perfect","amount":50,"golden":false,"player":{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"철수","chips":4290,"golden_chips":1,"golden_until":"2026-11-27T03:00:00+00:00","named":true,"last_daily":"2026-11-26"}}
 """#
 
     static let fever = #"""
@@ -23,7 +23,7 @@ import Testing
 
     @Test func split() throws {
         let d = try Self.decode(Self.split)
-        #expect(d.lane == -1 && d.grade == .perfect && d.amount == 50)
+        #expect(d.lane == 1 && d.ball.js.first == d.lane && d.grade == .perfect && d.amount == 50)
         #expect(d.ball.split == 10 && d.ball.from == 1 && d.ball.bucket == 11)
         #expect(d.ball.clone?.from == 11 && d.ball.clone?.bucket == 9 && d.ball.clone?.clone == nil)
         #expect(d.pocket == nil && d.feverBalls.isEmpty)

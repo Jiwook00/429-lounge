@@ -97,13 +97,14 @@ begin
   end loop;
 end $$;
 
--- 레인에서 공 하나. 옆 레인은 입구 가이드 핀 (0, ±2)이 안쪽 (1, ∓1)로 민다 → 경로는 1줄부터
+-- 레인에서 공 하나. 옆 레인은 입구 가이드 핀 (0, ±2)이 안쪽 (1, ±1)로 민다 → 경로는 1줄부터
+-- (왼쪽 레인 -1: (0, -2) → (1, -1), 오른쪽 레인 1: (0, 2) → (1, 1))
 create function public.plinko_launch(p_lane int, p_fever boolean, p_catch numeric, p_amount bigint)
 returns jsonb
 language sql volatile as $$
   select case when p_lane = 0
     then plinko_path(0, 0, p_fever, p_catch, false, 0, p_amount)
-    else plinko_path(-p_lane, 1, p_fever, p_catch, false, 0, p_amount) end
+    else plinko_path(p_lane, 1, p_fever, p_catch, false, 0, p_amount) end
 $$;
 
 -- 지갑과 무관한 한 판 결과 (plinko_drop과 plinko_sim이 같이 쓴다)
