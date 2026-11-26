@@ -100,6 +100,9 @@ final class LoungeStore {
     var place: Member.Place = .lounge { didSet { pushPresence() } }
     private var link: LoungeLink?
     private var pushed: Member?
+    /// 429 드롭에서 공이 떠 있는 동안 내 전광판 이벤트를 숨긴다 (공이 닿기 전에 결과가 먼저 뜨지 않게)
+    private var holdOwnDrops = false
+    private var heldEvents: [LoungeEvent] = []
 
     /// 전광판은 이벤트 후 이 시간 동안만 나타난다
     static let tickerWindow: TimeInterval = 180
@@ -428,8 +431,12 @@ final class LoungeStore {
                 switch signal {
                 case .members(let m): members = m
                 case .event(let e):
-                    addEvents([e])
-                    celebrate(e)
+                    if holdOwnDrops, e.game == "plinko", e.name == me?.name {
+                        heldEvents.append(e)
+                    } else {
+                        addEvents([e])
+                        celebrate(e)
+                    }
                 }
             }
             // 연결이 끊겼다 (구독 실패 등) → 잠시 뒤 다시
@@ -442,6 +449,15 @@ final class LoungeStore {
         Task {
             if let recent = try? await net.recentEvents(within: Self.tickerWindow) { addEvents(recent) }
         }
+    }
+
+    /// 429 드롭: 공이 떠 있는 동안 켜 두고, 다 닿으면 끈다. 끄면 숨겼던 내 이벤트가 전광판에 오른다
+    func holdDropEvents(_ hold: Bool) {
+        guard hold != holdOwnDrops else { return }
+        holdOwnDrops = hold
+        guard !hold, !heldEvents.isEmpty else { return }
+        addEvents(heldEvents)
+        heldEvents = []
     }
 
     private func addEvents(_ new: [LoungeEvent]) {

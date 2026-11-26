@@ -1,0 +1,689 @@
+import Foundation
+import LoungeNet
+import Observation
+
+/// 효과음 신호. 테이블이 틱마다 내보내고, 소리는 `GameAudio`가 낸다
+enum PlinkoSound: Equatable {
+    case launch, good, perfect
+    case pin(row: Int, x: Int), gold(x: Int), split
+    case lose(x: Int), win(mult: Double, x: Int), big, max
+    case pocket, reelTick, reelStop, reach, fever, refund
+    case chargeStart, chargeLevel(Int), chargeStop
+}
+
+/// 화면 색 이름 (뷰가 `Theme` 토큰으로 바꾼다)
+enum PlinkoTone: Equatable {
+    case cream, gold, goldLight, neon, cyan, muted, dim, green
+}
+
+/// 핀 좌표: 줄 r, 칸 j (x = 가운데 + j × 11pt)
+struct PinPos: Hashable {
+    let r: Int
+    let j: Int
+}
+
+/// 429 드롭 테이블 (ADR-0018). 서버가 정한 경로를 60ms 틱(칸마다 3틱)으로 재생한다.
+/// 결과와 지갑은 서버가 정하고, 화면의 지갑·지급 표시·전광판은 공이 칸에 닿을 때 반영한다.
+@MainActor @Observable
+final class PlinkoTable {
+    // MARK: 보드 기하 (pt). 팝오버 폭 340 안에 들어가는 308 × 249 안쪽 영역
+    static let width = 308
+    static let height = 249
+    static let cx = 154
+    /// 핀 가로 간격 (같은 줄 이웃 핀 사이). x = cx + j × 11
+    static let hStep = 22
+    static let vStep = 17
+    static let top = 30
+    static let bucketY = top + 11 * vStep + 12
+    static let maxBalls = 5
+    static let stakes: [Int64] = [10, 50, 100, 200]
+    static let multipliers: [Double] = [16, 4, 1.8, 1.3, 1.0, 0.6, 0.4, 0.6, 1.0, 1.3, 1.8, 4, 16]
+    static let bucketLabels = ["16", "4", "1.8", "1.3", "1.0", ".6", ".4", ".6", "1.0", "1.3", "1.8", "4", "16"]
+    static let goldPins: Set<PinPos> = [PinPos(r: 8, j: -4), PinPos(r: 8, j: 4)]
+    static let splitPins: Set<PinPos> = [PinPos(r: 10, j: -8), PinPos(r: 10, j: 8)]
+    static let pocketPin = PinPos(r: 6, j: 0)
+    static let reelSymbols = ["429", "7", "BAR", "200", "404"]
+    static let tickInterval = Duration.milliseconds(60)
+
+    static func x(_ j: Int) -> Int { cx + j * hStep / 2 }
+    static func y(_ r: Int) -> Int { top + r * vStep }
+
+    // MARK: 화면 상태
+    var stake: Int64 = 50
+    var useGolden = false
+    var lane = 0
+    var auto = false {
+        didSet { if auto { lastAutoAt = .now } }
+    }
+    private(set) var message: String?
+    private(set) var tick = 0
+    private(set) var balls: [SimBall] = []
+    private(set) var pinFlash: [PinPos: Flash] = [:]
+    private(set) var bucketFlash: [Int: BucketFlash] = [:]
+    private(set) var pops: [Pop] = []
+    private(set) var coins: [Coin] = []
+    private(set) var banner: Banner?
+    private(set) var beam: Beam?
+    private(set) var reel: Reel?
+    private(set) var fever: FeverRun?
+    private(set) var resp = Resp(text: "GET /drop   200 OK · 레인을 고르고 꾹", tone: .muted)
+    private(set) var walletPop: (text: String, until: Int)?
+    private(set) var streak = 0
+    private(set) var charging = false
+    private(set) var pressedAt: Date?
+    private(set) var lastPower = 500
+    private(set) var gradeShown: PlinkoDrop.Grade = .none
+    private(set) var gradeUntil = -1
+    private(set) var perfectUntil = -1
+    private var shakeUntil = -1
+    /// 스냅샷용: 눌러서 모으는 중인 파워를 고정
+    private(set) var fixedPower: Int?
+    /// 동작 줄이기: 흔들림·배경 점멸 끔
+    var reduced = false
+
+    struct SimBall: Identifiable {
+        let id: Int
+        let drop: Int
+        /// 지나는 핀 (옆 레인이면 첫 칸이 가이드 핀)
+        let stops: [PinPos]
+        let originX: Int
+        let originY: Int
+        let fromTop: Bool
+        let source: PlinkoBall
+        let fever: Bool
+        let grade: PlinkoDrop.Grade
+        var seg = 0
+        var sub = 0
+        var trail: [(x: Int, y: Int)] = []
+        var goldHits = 0
+        var split = false
+        var done = false
+        var isPocket: Bool { source.pocket }
+        var golden: Bool { goldHits > 0 || fever }
+        /// 지금 어느 줄에 있나 (포켓 열림 판정)
+        var row: Int { stops[min(max(seg - 1, 0), stops.count - 1)].r }
+    }
+
+    struct Flash { let until: Int; let tone: PlinkoTone }
+    struct BucketFlash { let until: Int; let tier: Tier }
+    struct Pop: Identifiable { let id: Int; let x: Int; let y: Int; let text: String; let tone: PlinkoTone; let born: Int }
+    struct Coin: Identifiable { let id: Int; var x: Double; var y: Double; var vx: Double; var vy: Double; let born: Int }
+    struct Banner { let kind: Kind; let until: Int; let big: String; let sub: String; enum Kind { case big, max, fever, feverEnd } }
+    struct Beam { let x: Int; let until: Int }
+    struct Resp { let text: String; let tone: PlinkoTone; var glow = false }
+    struct Reel {
+        let start: Int
+        let result: [String]
+        let stops: [Int]
+        let fever: Bool
+        let reach: Bool
+        let drop: Int
+        var doneAt: Int?
+    }
+    struct FeverRun {
+        var total: Int64 = 0
+        var spawned = 0
+        let n: Int
+        var next: Int
+        let drop: Int
+        var endAt: Int?
+    }
+    enum Tier: Equatable { case lose, win, big, max }
+
+    /// 서버 응답 하나(공 하나)의 진행. 지갑에 아직 안 보인 지급액을 들고 있다
+    private struct DropRec {
+        let id: Int
+        let response: PlinkoDrop
+        var unlanded: Int64
+        var liveBalls = 0
+        var reelPending: Bool
+        var feverPending: Bool
+        var feverLeft: Int
+    }
+
+    private struct Request {
+        let amount: Int64
+        let lane: Int
+        let power: Int
+        let golden: Bool
+    }
+
+    // MARK: 내부
+    private let store: LoungeStore
+    private var drops: [DropRec] = []
+    private var queue: [Request] = []
+    @ObservationIgnored private var pumping = false
+    @ObservationIgnored private var nextID = 1
+    @ObservationIgnored private var driver: Task<Void, Never>?
+    @ObservationIgnored private var lastAutoAt = Date.distantPast
+    @ObservationIgnored private var closed = false
+    @ObservationIgnored private var reelQueue: [Int] = []
+    @ObservationIgnored private var pinSounds = 0
+    @ObservationIgnored private var rng: SplitMix
+
+    /// 소리 신호를 받는 쪽 (뷰가 `GameAudio`에 연결)
+    var onSound: ((PlinkoSound) -> Void)?
+
+    init(store: LoungeStore, seed: UInt64? = nil) {
+        self.store = store
+        rng = SplitMix(seed: seed ?? UInt64.random(in: 1...UInt64.max))
+    }
+
+    // MARK: - 입력
+
+    /// 칩 표시: 서버가 이미 반영한 지갑에서 아직 닿지 않은 지급액을 뺀다. 보낸 판의 건 칩은 바로 뺀다
+    func shown(chips: Int) -> Int {
+        let held = drops.reduce(Int64(0)) { $0 + $1.unlanded }
+        let charge = queue.reduce(Int64(0)) { $0 + ($1.golden ? 0 : $1.amount) }
+        return chips - Int(held) - Int(charge)
+    }
+
+    /// 떠 있는 공 수 (분열·FEVER 공은 한 판으로 센다). 최대 5
+    var inFlight: Int { queue.count + drops.filter { $0.liveBalls > 0 || $0.reelPending }.count }
+    var feverActive: Bool { fever != nil || drops.contains { $0.feverPending } }
+
+    func blockReason(chips: Int, golden: Int) -> String? {
+        if feverActive { return "FEVER 중 · 자동으로 쏟아져요" }
+        if inFlight >= Self.maxBalls { return "공 5/5 · 잠깐만요" }
+        let useG = useGolden && golden > 0
+        if !useG, shown(chips: chips) < Int(stake) { return "칩이 모자라요" }
+        return nil
+    }
+
+    func power(at now: Date) -> Int {
+        if let fixedPower { return fixedPower }
+        guard charging, let pressedAt else { return lastPower }
+        return PlinkoGauge.power(held: now.timeIntervalSince(pressedAt))
+    }
+
+    /// 눌렀다. 시각은 이벤트 타임스탬프 (프레임이 아니라)
+    func press(at time: Date) {
+        guard !charging, !closed, blockReason(chips: store.chips, golden: store.golden()) == nil else { return }
+        charging = true
+        pressedAt = time
+        message = nil
+        onSound?(.chargeStart)
+    }
+
+    /// 뗐다. 누른 시각과 뗀 시각으로 파워를 정하고 던진다
+    func release(at time: Date) {
+        guard charging, let pressedAt else { return }
+        let p = PlinkoGauge.power(held: time.timeIntervalSince(pressedAt))
+        charging = false
+        self.pressedAt = nil
+        onSound?(.chargeStop)
+        submit(power: p)
+    }
+
+    /// 팝오버가 닫히는 등 뗌 없이 끝났을 때: 던지지 않고 취소
+    func cancelCharge() {
+        guard charging else { return }
+        charging = false
+        pressedAt = nil
+        onSound?(.chargeStop)
+    }
+
+    private func submit(power p: Int) {
+        let golden = useGolden && store.golden() > 0
+        guard blockReason(chips: store.chips, golden: store.golden()) == nil else { return }
+        let r = Request(amount: golden ? 100 : stake, lane: lane, power: p, golden: golden)
+        lastPower = p
+        queue.append(r)
+        syncHold()
+        onSound?(.launch)
+        let grade = PlinkoGauge.grade(power: p)
+        if grade != .none {
+            gradeShown = grade
+            gradeUntil = tick + 10
+            if grade == .perfect { perfectUntil = tick + 10 }
+            addPop(x: Self.x(2 * lane), y: 16, text: grade == .perfect ? "PERFECT" : "GOOD",
+                   tone: grade == .perfect ? .gold : .cream)
+            onSound?(grade == .perfect ? .perfect : .good)
+        }
+        if golden, store.golden() <= 1 { useGolden = false }
+        Task { await pump() }
+    }
+
+    private func pump() async {
+        guard !pumping else { return }
+        pumping = true
+        defer { pumping = false }
+        while let r = queue.first, !closed {
+            do {
+                let d = try await store.net.plinkoDrop(amount: r.amount, lane: r.lane, power: r.power, golden: r.golden)
+                queue.removeFirst()
+                receive(d)
+            } catch {
+                queue.removeAll()
+                auto = false
+                message = error.localizedDescription
+                syncHold()
+            }
+        }
+        if closed { queue.removeAll() }
+        syncHold()
+    }
+
+    /// 응답이 왔다: 지갑은 서버 값으로 바꾸되 화면에는 공이 닿을 때까지 지급액을 뺀 값을 보여준다
+    private func receive(_ d: PlinkoDrop) {
+        store.update(d.player)
+        guard !closed else { return }
+        let id = nextID
+        nextID += 1
+        let rec = DropRec(id: id, response: d, unlanded: d.payout, reelPending: false,
+                          feverPending: d.fever, feverLeft: d.feverBalls.count)
+        drops.append(rec)
+        spawn(PlinkoBallSpawn(ball: d.ball, drop: id, fever: false, grade: d.grade, lane: d.lane))
+        syncHold()
+    }
+
+    // MARK: - 공 만들기
+
+    private struct PlinkoBallSpawn {
+        let ball: PlinkoBall
+        let drop: Int
+        let fever: Bool
+        let grade: PlinkoDrop.Grade
+        /// 옆 레인이면 가이드 핀을 앞에 둔다 (nil이면 분열 공: 분열 핀에서 시작)
+        let lane: Int?
+        var originPin: PinPos?
+    }
+
+    private func spawn(_ s: PlinkoBallSpawn) {
+        var stops: [PinPos] = []
+        if s.ball.from == 1, let lane = s.lane {
+            stops.append(PinPos(r: 0, j: 2 * lane))
+        }
+        for (i, j) in s.ball.js.enumerated() { stops.append(PinPos(r: s.ball.from + i, j: j)) }
+        guard let first = stops.first else { return }
+        let originX: Int, originY: Int, fromTop: Bool
+        if let origin = s.originPin {
+            originX = Self.x(origin.j)
+            originY = Self.y(origin.r) - 4
+            fromTop = false
+        } else {
+            originX = Self.x(first.j)
+            originY = -4
+            fromTop = true
+        }
+        let id = nextID
+        nextID += 1
+        balls.append(SimBall(id: id, drop: s.drop, stops: stops, originX: originX, originY: originY, fromTop: fromTop,
+                             source: s.ball, fever: s.fever, grade: s.grade))
+        if !s.fever, let i = drops.firstIndex(where: { $0.id == s.drop }) { drops[i].liveBalls += 1 }
+    }
+
+    /// 지금 위치 (pt). 칸마다 3틱: 핀 위 → 옆으로 튕김 → 다음 핀 쪽
+    func position(of b: SimBall) -> (x: Int, y: Int) {
+        let a: (x: Int, y: Int) = b.seg == 0 ? (b.originX, b.originY) : hitPoint(b.stops[b.seg - 1])
+        if b.sub == 0 { return a }
+        let end: (x: Int, y: Int)
+        if b.seg >= b.stops.count {
+            end = (Self.x(2 * (b.source.bucket ?? 6) - 12), Self.bucketY + 6)
+        } else {
+            end = hitPoint(b.stops[b.seg])
+        }
+        let dx = Double(end.x - a.x), dy = Double(end.y - a.y)
+        if b.sub == 1 {
+            return (Int((Double(a.x) + dx * 0.35).rounded()), Int((Double(a.y) + (b.seg == 0 && b.fromTop ? dy * 0.4 : -2)).rounded()))
+        }
+        return (Int((Double(a.x) + dx * 0.75).rounded()), Int((Double(a.y) + dy * 0.55).rounded()))
+    }
+
+    private func hitPoint(_ pin: PinPos) -> (x: Int, y: Int) { (Self.x(pin.j), Self.y(pin.r) - 4) }
+
+    // MARK: - 틱
+
+    func enter() {
+        closed = false
+        guard driver == nil else { return }
+        driver = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.tickInterval)
+                guard let self else { return }
+                self.driverTick()
+            }
+        }
+    }
+
+    /// 화면을 떠난다. 서버에 이미 간 판의 지갑은 `store`가 갖고 있으니 연출만 접는다
+    func leave() {
+        closed = true
+        cancelCharge()
+        driver?.cancel()
+        driver = nil
+        balls = []
+        drops = []
+        reel = nil
+        fever = nil
+        reelQueue = []
+        syncHold()
+    }
+
+    private func driverTick() {
+        if auto, !charging, Date().timeIntervalSince(lastAutoAt) >= 0.6 {
+            lastAutoAt = .now
+            if blockReason(chips: store.chips, golden: store.golden()) == nil {
+                submit(power: Int.random(in: 0...1000, using: &rng))
+            }
+        }
+        guard needsStep else { return }
+        step()
+    }
+
+    private var needsStep: Bool {
+        !balls.isEmpty || reel != nil || fever != nil || !pops.isEmpty || !coins.isEmpty || banner != nil || beam != nil
+            || !pinFlash.isEmpty || !bucketFlash.isEmpty || shakeUntil >= tick || gradeUntil >= tick || perfectUntil >= tick
+            || walletPop != nil || !reelQueue.isEmpty
+    }
+
+    /// 스냅샷용: 틱을 n번 돌린다
+    func advance(_ n: Int) { for _ in 0..<n { step() } }
+
+    private func step() {
+        tick += 1
+        let t = tick
+        pinSounds = 0
+        var born: [SimBall] = []
+        var order: [Int] = []
+        for i in balls.indices where !balls[i].done {
+            let p = position(of: balls[i])
+            balls[i].trail.insert(p, at: 0)
+            if balls[i].trail.count > 3 { balls[i].trail.removeLast(balls[i].trail.count - 3) }
+            balls[i].sub += 1
+            if balls[i].sub > 2 {
+                balls[i].sub = 0
+                balls[i].seg += 1
+                if balls[i].seg > balls[i].stops.count {
+                    order.append(i)
+                } else {
+                    hit(ball: i, stopIndex: balls[i].seg - 1, born: &born)
+                }
+            }
+        }
+        for i in order { land(ball: i) }
+        balls.removeAll { $0.done }
+        balls.append(contentsOf: born)
+
+        stepReel()
+        stepFever()
+        finishDrops()
+
+        pinFlash = pinFlash.filter { $0.value.until >= t }
+        bucketFlash = bucketFlash.filter { $0.value.until >= t }
+        pops.removeAll { t - $0.born >= 14 }
+        coins.removeAll { t - $0.born >= 16 }
+        for i in coins.indices {
+            coins[i].x += coins[i].vx
+            coins[i].y += coins[i].vy
+            coins[i].vy += 0.9
+        }
+        if let b = banner, b.until < t { banner = nil }
+        if let b = beam, b.until < t { beam = nil }
+        if let w = walletPop, w.until < t { walletPop = nil }
+    }
+
+    // MARK: 핀에 닿음
+
+    private func hit(ball i: Int, stopIndex: Int, born: inout [SimBall]) {
+        let b = balls[i]
+        let pin = b.stops[stopIndex]
+        let p = hitPoint(pin)
+        if b.isPocket, stopIndex == b.stops.count - 1 {
+            balls[i].done = true
+            if let d = drops.firstIndex(where: { $0.id == b.drop }) {
+                drops[d].liveBalls -= 1
+                drops[d].reelPending = true
+            }
+            pinFlash[pin] = Flash(until: tick + 30, tone: .gold)
+            addPop(x: p.x, y: p.y - 16, text: "POCKET!", tone: .gold)
+            onSound?(.pocket)
+            reelQueue.append(b.drop)
+            startReelIfPossible()
+            return
+        }
+        var tone: PlinkoTone = fever != nil ? .gold : .neon
+        var plain = true
+        if Self.goldPins.contains(pin) {
+            balls[i].goldHits += 1
+            tone = .goldLight
+            plain = false
+            addPop(x: p.x, y: p.y - 12, text: "+0.3", tone: .gold)
+            onSound?(.gold(x: p.x))
+        } else if Self.splitPins.contains(pin), !b.fever, !b.split, let clone = b.source.split == pin.r ? b.source.clone : nil {
+            tone = .cyan
+            plain = false
+            balls[i].split = true
+            addPop(x: p.x, y: p.y - 12, text: "SPLIT", tone: .cyan)
+            onSound?(.split)
+            if fever == nil { resp = Resp(text: "207 Multi-Status · 공이 둘로", tone: .cyan) }
+            let spawnBall = PlinkoBallSpawn(ball: clone, drop: b.drop, fever: false, grade: b.grade, lane: nil, originPin: pin)
+            spawnLater(spawnBall, born: &born, splitFrom: b)
+        }
+        if plain, pinSounds < 4 {
+            pinSounds += 1
+            onSound?(.pin(row: pin.r, x: p.x))
+        }
+        pinFlash[pin] = Flash(until: tick + 4, tone: tone)
+    }
+
+    /// 분열 공은 같은 틱에 태어나서 다음 틱부터 움직인다
+    private func spawnLater(_ s: PlinkoBallSpawn, born: inout [SimBall], splitFrom parent: SimBall) {
+        var stops: [PinPos] = []
+        for (i, j) in s.ball.js.enumerated() { stops.append(PinPos(r: s.ball.from + i, j: j)) }
+        guard let pin = s.originPin, !stops.isEmpty else { return }
+        var clone = SimBall(id: nextID, drop: s.drop, stops: stops, originX: Self.x(pin.j), originY: Self.y(pin.r) - 4,
+                            fromTop: false, source: s.ball, fever: false, grade: s.grade)
+        clone.goldHits = parent.goldHits
+        clone.split = true
+        nextID += 1
+        born.append(clone)
+        if let d = drops.firstIndex(where: { $0.id == s.drop }) { drops[d].liveBalls += 1 }
+    }
+
+    // MARK: 칸에 닿음
+
+    private func land(ball i: Int) {
+        let b = balls[i]
+        balls[i].done = true
+        let t = tick
+        guard let bucket = b.source.bucket else { return }
+        let rec = drops.firstIndex(where: { $0.id == b.drop })
+        let pay = b.source.payout
+        let mult = b.source.mult
+        let x = Self.x(2 * bucket - 12)
+        let tier: Tier = mult >= 16 ? .max : mult >= 4 ? .big : mult >= 1.1 ? .win : .lose
+        let drop = rec.map { drops[$0].response }
+        let splitDrop = drop?.ball.clone != nil
+        // 분열한 판은 공마다 지급액을 그대로 보여준다 (건 칩은 한 번뿐이라 공별로 뺄 수 없다)
+        let gain: Int64 = b.fever || splitDrop || (drop?.golden ?? false) ? pay : pay - (drop?.amount ?? 0)
+        if let rec {
+            drops[rec].unlanded -= pay
+            if !b.fever { drops[rec].liveBalls -= 1 }
+        }
+        bucketFlash[bucket] = BucketFlash(until: t + 8, tier: tier)
+        if pay > 0 { walletPop = ("+" + Self.fmt(pay), t + 12) }
+        switch tier {
+        case .max: onSound?(.max)
+        case .big: onSound?(.big)
+        case .win: onSound?(.win(mult: mult, x: x))
+        case .lose: onSound?(.lose(x: x))
+        }
+        if gain > 0 {
+            addPop(x: x, y: Self.bucketY - 12, text: "+" + Self.fmt(gain), tone: tier == .max ? .neon : tier == .big ? .gold : .cream)
+        } else {
+            addPop(x: x, y: Self.bucketY - 12, text: "×" + Self.mt(mult), tone: .dim)
+        }
+        let goldNote = b.source.gold > 0 ? " · 골드 +" + Self.mt(b.source.gold) : ""
+        if b.fever {
+            fever?.total += pay
+        } else {
+            streak = mult >= 1.1 ? streak + 1 : 0
+            switch tier {
+            case .max: resp = Resp(text: "429 Too Many Chips · ×\(Self.mt(mult)) · +\(Self.fmt(gain))", tone: .neon, glow: true)
+            case .big: resp = Resp(text: "201 Created · ×\(Self.mt(mult)) · +\(Self.fmt(gain))\(goldNote)", tone: .gold, glow: true)
+            case .win: resp = Resp(text: "200 OK · ×\(Self.mt(mult)) · +\(Self.fmt(gain))\(goldNote)", tone: .green)
+            case .lose: resp = Resp(text: "206 Partial Content · ×\(Self.mt(mult)) · \(Self.fmt(pay))칩 돌려받음", tone: .muted)
+            }
+        }
+        if tier == .big || tier == .max {
+            let isMax = tier == .max
+            shake(isMax ? 14 : 8)
+            burst(x: x, y: Self.bucketY, n: isMax ? 20 : 10)
+            if fever == nil || isMax {
+                banner = isMax
+                    ? Banner(kind: .max, until: t + 36, big: "×" + Self.mt(mult), sub: "MAX DROP · +\(Self.fmt(gain))칩")
+                    : Banner(kind: .big, until: t + 24, big: "×" + Self.mt(mult), sub: "BIG DROP · +\(Self.fmt(gain))칩")
+            }
+            if isMax { beam = Beam(x: x, until: t + 30) }
+        }
+    }
+
+    // MARK: 스타트 포켓 릴
+
+    private func startReelIfPossible() {
+        guard reel == nil, fever == nil, let id = reelQueue.first,
+              let rec = drops.first(where: { $0.id == id }), let pocket = rec.response.pocket else { return }
+        reelQueue.removeFirst()
+        let t = tick
+        let reach = pocket.reach
+        reel = Reel(start: t, result: pocket.reels, stops: [t + 8, t + 14, t + (reach ? 34 : 22)],
+                    fever: pocket.fever, reach: reach, drop: id, doneAt: nil)
+        resp = Resp(text: "302 Found · 스타트 포켓", tone: .gold)
+    }
+
+    private func stepReel() {
+        let t = tick
+        if reel == nil { startReelIfPossible() }
+        guard var r = reel else { return }
+        if r.doneAt == nil {
+            if r.stops.contains(t) { onSound?(.reelStop) } else if t % 2 == 0 { onSound?(.reelTick) }
+            if r.reach, t >= r.stops[1], t < r.stops[2], (t - r.stops[1]) % 8 == 0 { onSound?(.reach) }
+            if t >= r.stops[2] {
+                r.doneAt = t
+                reel = r
+                finishReel(r)
+                return
+            }
+        }
+        if let done = r.doneAt, t > done + (r.fever ? 20 : 16) { reel = nil }
+    }
+
+    private func finishReel(_ r: Reel) {
+        let t = tick
+        guard let d = drops.firstIndex(where: { $0.id == r.drop }) else { return }
+        drops[d].reelPending = false
+        let pocket = drops[d].response.pocket
+        if r.fever {
+            fever = FeverRun(n: drops[d].response.feverBalls.count, next: t + 10, drop: r.drop)
+            resp = Resp(text: "429 429 429 · FEVER", tone: .neon, glow: true)
+            banner = Banner(kind: .fever, until: t + 24, big: "429 429 429", sub: "FEVER · 공 \(drops[d].response.feverBalls.count)개 · 배수 ×2")
+            shake(10)
+            burst(x: Self.cx, y: Self.top + 6 * Self.vStep, n: 16)
+            onSound?(.fever)
+        } else {
+            let refund = pocket?.refund ?? 0
+            drops[d].unlanded -= refund
+            if refund > 0 { walletPop = ("+" + Self.fmt(refund), t + 12) }
+            resp = Resp(text: "302 Found · 환급 \(Self.fmt(refund))칩", tone: .muted)
+            onSound?(.refund)
+        }
+    }
+
+    // MARK: FEVER
+
+    private func stepFever() {
+        let t = tick
+        guard var f = fever else { return }
+        if f.endAt == nil {
+            if f.spawned < f.n, t >= f.next, let d = drops.first(where: { $0.id == f.drop }) {
+                let ball = d.response.feverBalls[f.spawned]
+                // 서버는 FEVER 공의 레인을 따로 알리지 않는다. 첫 줄이 1이면 첫 핀 j의 반대쪽이 레인
+                let lane = ball.from == 1 ? -(ball.js.first ?? 0) : 0
+                spawn(PlinkoBallSpawn(ball: ball, drop: f.drop, fever: true, grade: .none, lane: lane))
+                f.spawned += 1
+                f.next = t + 4
+                if let i = drops.firstIndex(where: { $0.id == f.drop }) { drops[i].feverLeft -= 1 }
+            }
+            if f.spawned >= f.n, !balls.contains(where: { $0.fever }) {
+                f.endAt = t
+                banner = Banner(kind: .feverEnd, until: t + 40, big: "+" + Self.fmt(f.total), sub: "FEVER 끝 · 공 \(f.n)개 합계")
+                resp = Resp(text: "200 OK · FEVER +\(Self.fmt(f.total))", tone: .gold, glow: true)
+                shake(12)
+                burst(x: Self.cx, y: Self.bucketY, n: 24)
+                onSound?(.max)
+                if let i = drops.firstIndex(where: { $0.id == f.drop }) { drops[i].feverPending = false }
+            }
+        }
+        if let end = f.endAt, t > end + 40 {
+            fever = nil
+            startReelIfPossible()
+        } else {
+            fever = f
+        }
+    }
+
+    /// 다 끝난 판을 치운다. 남은 지급액이 있으면(서버·연출 차이) 지갑에 그대로 보여준다
+    private func finishDrops() {
+        let before = drops.count
+        drops.removeAll { $0.liveBalls <= 0 && !$0.reelPending && !$0.feverPending }
+        if drops.count != before { syncHold() }
+        if drops.isEmpty && queue.isEmpty { syncHold() }
+    }
+
+    private func syncHold() {
+        store.holdDropEvents(!drops.isEmpty || !queue.isEmpty)
+    }
+
+    // MARK: 효과
+
+    private func addPop(x: Int, y: Int, text: String, tone: PlinkoTone) {
+        pops.append(Pop(id: nextID, x: x, y: y, text: text, tone: tone, born: tick))
+        nextID += 1
+    }
+
+    private func burst(x: Int, y: Int, n: Int) {
+        for _ in 0..<n {
+            let vx = (Double.random(in: 0..<1, using: &rng) * 2 - 1) * 5
+            let vy = -(3 + Double.random(in: 0..<1, using: &rng) * 5)
+            coins.append(Coin(id: nextID, x: Double(x), y: Double(y), vx: vx, vy: vy, born: tick))
+            nextID += 1
+        }
+    }
+
+    private func shake(_ n: Int) {
+        if !reduced { shakeUntil = max(shakeUntil, tick + n) }
+    }
+
+    /// 화면 흔들림 (pt). 4틱 주기
+    var shakeOffset: (x: Int, y: Int) {
+        guard tick <= shakeUntil else { return (0, 0) }
+        return [(2, 0), (-2, 1), (1, -1), (-1, 0)][tick % 4]
+    }
+
+    /// 포켓이 열린 걸로 보여야 하나: GOOD·PERFECT 공이 포켓 줄을 지나기 전
+    var pocketOpen: Bool {
+        balls.contains { !$0.done && !$0.fever && $0.grade != .none && $0.row <= Self.pocketPin.r }
+    }
+
+    static func fmt(_ n: Int64) -> String { max(0, n).formatted(.number) }
+
+    /// 소수 첫째 자리까지 (정수면 소수점 없이)
+    static func mt(_ m: Double) -> String {
+        let r = (m * 10).rounded() / 10
+        return r == r.rounded() ? String(Int(r)) : String(r)
+    }
+}
+
+/// 연출용 난수 (스냅샷에서 같은 그림이 나오게 시드를 줄 수 있다)
+struct SplitMix: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
+}
