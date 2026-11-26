@@ -371,18 +371,16 @@ struct LoungeView: View {
             }
             .buttonStyle(.plain)
             .disabled(!online)
+            Button(action: onPlinko) {
+                GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
             Button(action: onBlackjack) {
                 // AI 빼고 앉은 회원만 센다 (빈 자리는 딜 때 AI가 채움). 4명이면 만석이라 흐리게
                 GameTile(sprite: Sprites.spade, title: "블랙잭",
                          mode: !online ? "TABLE" : blackjackSeated >= 4 ? "TABLE · 4/4 만석" : "TABLE · \(blackjackSeated)/4",
                          soon: !online, live: online && blackjackSeated < 4, hot: blackjackSeated > 0 && blackjackSeated < 4)
-            }
-            .buttonStyle(.plain)
-            .disabled(!online)
-            Button(action: onMinority) {
-                GameTile(sprite: Sprites.ox, title: "소수결",
-                         mode: !online ? "평일 3번" : minority?.line(now: .now) ?? "평일 3번",
-                         soon: !online, live: online && minority?.open == true)
             }
             .buttonStyle(.plain)
             .disabled(!online)
@@ -395,8 +393,10 @@ struct LoungeView: View {
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onPlinko) {
-                GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online)
+            Button(action: onMinority) {
+                GameTile(sprite: Sprites.ox, title: "소수결",
+                         mode: !online ? "평일 3번" : minority?.line(now: .now) ?? "평일 3번",
+                         soon: !online, live: online && minority?.open == true)
             }
             .buttonStyle(.plain)
             .disabled(!online)

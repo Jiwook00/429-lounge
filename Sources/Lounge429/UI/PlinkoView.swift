@@ -441,12 +441,15 @@ struct PlinkoView: View {
                 ? "파워 \(power / 10)" + (grade == .perfect ? " · 지금!" : grade == .good ? " · 거의!" : "")
                 : reason ?? (table.auto ? "AUTO · 레인 유지 · 파워 랜덤"
                     : table.useGolden && golden > 0 ? "꾹 눌렀다 떼기 · 황금 칩" : "꾹 눌렀다 떼기 · \(table.stake)칩")
+            // 글자 줄 높이를 고정해서 24pt 제목과 10pt 설명이 버튼 안에서 잘리지 않게
             VStack(spacing: 4) {
-                Text(label).font(Fonts.bold(2))
-                Text(sub).font(Fonts.small())
+                Text(label).font(Fonts.bold(2)).lineLimit(1).frame(height: 28)
+                Text(sub).font(Fonts.small()).lineLimit(1).frame(height: 14)
             }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 4)
             .foregroundStyle(charging ? Theme.outline : reason != nil ? Theme.dim : Theme.cream)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: 54)
             .pixelBox(fill: fill, border: charging ? Theme.goldDark : reason != nil ? Theme.line : Theme.neonDeep)
             .glow(blocked ? .clear : fill)
             .offset(y: charging ? 2 : 0)

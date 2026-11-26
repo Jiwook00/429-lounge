@@ -70,7 +70,10 @@ final class PlinkoTable {
     private(set) var walletPop: (text: String, until: Int)?
     private(set) var streak = 0
     var charging = false
+    /// 누른 이벤트의 시각 (뗀 이벤트 시각과 비교해 보낼 파워를 정한다)
     private(set) var pressedAt: Date?
+    /// 누른 순간의 지금 시계 (게이지 그리기용). 이벤트 시각은 시계 기준이 달라 화면 시각과 바로 비교하면 안 된다
+    @ObservationIgnored private var pressedWall: Date?
     private(set) var lastPower = 500
     private(set) var gradeShown: PlinkoDrop.Grade = .none
     private(set) var gradeUntil = -1
@@ -195,8 +198,8 @@ final class PlinkoTable {
 
     func power(at now: Date) -> Int {
         if let fixedPower { return fixedPower }
-        guard charging, let pressedAt else { return lastPower }
-        return PlinkoGauge.power(held: now.timeIntervalSince(pressedAt))
+        guard charging, let pressedWall else { return lastPower }
+        return PlinkoGauge.power(held: now.timeIntervalSince(pressedWall))
     }
 
     /// 눌렀다. 시각은 이벤트 타임스탬프 (프레임이 아니라)
@@ -204,6 +207,7 @@ final class PlinkoTable {
         guard !charging, !closed, blockReason(chips: store.chips, golden: store.golden()) == nil else { return }
         charging = true
         pressedAt = time
+        pressedWall = .now
         message = nil
         onSound?(.chargeStart)
     }
@@ -211,9 +215,13 @@ final class PlinkoTable {
     /// 뗐다. 누른 시각과 뗀 시각으로 파워를 정하고 던진다
     func release(at time: Date) {
         guard charging, let pressedAt else { return }
-        let p = PlinkoGauge.power(held: time.timeIntervalSince(pressedAt))
+        // 두 이벤트 시각의 차이 (같은 시계). 어긋나 보이면(음수·지나치게 김) 화면 시계로 잰다
+        var held = time.timeIntervalSince(pressedAt)
+        if !(0...30).contains(held), let pressedWall { held = Date.now.timeIntervalSince(pressedWall) }
+        let p = PlinkoGauge.power(held: held)
         charging = false
         self.pressedAt = nil
+        pressedWall = nil
         onSound?(.chargeStop)
         submit(power: p)
     }
@@ -223,6 +231,7 @@ final class PlinkoTable {
         guard charging else { return }
         charging = false
         pressedAt = nil
+        pressedWall = nil
         onSound?(.chargeStop)
     }
 
