@@ -109,7 +109,7 @@ public struct PlinkoDrop: Codable, Sendable, Equatable {
     public let grade: Grade
     public let amount: Int64
     public let golden: Bool
-    /// 이 판 뒤 4·2·9 글자 수 (0~2)
+    /// 이 판 뒤 4·2·9 글자 수 (0~3)
     public let letters: Int
     /// VIP HOUR 판 (포켓 입구가 넓다)
     public let vip: Bool

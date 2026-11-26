@@ -42,7 +42,7 @@ final class PlinkoTable {
     /// FEVER 공은 배수 ×1.5 (서버 `plinko_path`와 같다)
     static let feverMult = 1.5
     static let feverLabels = ["24", "7.5", "3", "2.1", "1.2", ".75", ".45", ".75", "1.2", "2.1", "3", "7.5", "24"]
-    /// 4·2·9: FEVER가 아닌 포켓마다 한 글자, 셋 다 켜지면 다음 포켓은 FEVER 확정
+    /// 4·2·9: FEVER가 아닌 포켓마다 한 글자, 셋 다 켜지면(대기) 다음 포켓은 FEVER 확정
     static let letterChars = ["4", "2", "9"]
     static let goldPins: Set<PinPos> = [PinPos(r: 8, j: -4), PinPos(r: 8, j: 4)]
     static let splitPins: Set<PinPos> = [PinPos(r: 10, j: -8), PinPos(r: 10, j: 8)]
@@ -71,7 +71,7 @@ final class PlinkoTable {
     private(set) var beam: Beam?
     private(set) var reel: Reel?
     private(set) var fever: FeverRun?
-    /// 화면의 4·2·9 글자 수 (0~2). 서버 값은 응답에 먼저 오지만 포켓 릴이 멈출 때 켠다
+    /// 화면의 4·2·9 글자 수 (0~3). 서버 값은 응답에 먼저 오지만 포켓 릴이 멈출 때 켠다
     private(set) var letters = 0
     /// 방금 켜진 글자 (반짝임용): 몇 번째 글자, 언제까지
     private(set) var letterFlash: (index: Int, until: Int)?
@@ -132,6 +132,8 @@ final class PlinkoTable {
         let reach: Bool
         let drop: Int
         var doneAt: Int?
+        /// 4·2·9 대기에서 들어온 확정 판: 릴이 처음부터 429로 돈다
+        var ceiling = false
     }
     struct FeverRun {
         var total: Int64 = 0
@@ -464,6 +466,9 @@ final class PlinkoTable {
     /// 스냅샷용: 틱을 n번 돌린다
     func advance(_ n: Int) { for _ in 0..<n { step() } }
 
+    /// 4·2·9가 다 켜진 대기: 다음 포켓은 FEVER 확정
+    var letterReady: Bool { letters >= Self.letterChars.count && fever == nil }
+
     /// 스냅샷용: 이미 모은 글자 수
     func previewLetters(_ n: Int) { letters = n }
 
@@ -629,8 +634,9 @@ final class PlinkoTable {
         reelQueue.removeFirst()
         let t = tick
         let reach = pocket.reach
-        reel = Reel(start: t, result: pocket.reels, stops: [t + 8, t + 14, t + (reach ? 34 : 22)],
-                    fever: pocket.fever, reach: reach, drop: id, doneAt: nil)
+        reel = Reel(start: t, result: pocket.reels,
+                    stops: pocket.ceiling ? [t + 12, t + 22, t + 34] : [t + 8, t + 14, t + (reach ? 34 : 22)],
+                    fever: pocket.fever, reach: reach, drop: id, doneAt: nil, ceiling: pocket.ceiling)
         log?("reel \(pocket.reels.joined(separator: " ")) \(pocket.fever ? "FEVER" : "환급 \(pocket.refund)")\(reach ? " 리치" : "")")
     }
 
@@ -662,7 +668,7 @@ final class PlinkoTable {
             fever = FeverRun(n: n, next: t + 10, drop: r.drop, ceiling: ceiling)
             // FEVER 동안은 글자 셋이 다 켜져 있다 (끝나면 0부터)
             letters = Self.letterChars.count
-            letterFlash = ceiling ? (2, t + 24) : nil
+            letterFlash = nil
             banner = Banner(kind: .fever, until: t + 24, big: "429 429 429",
                             sub: (ceiling ? "4·2·9 완성 · " : "FEVER · ") + "공 \(n)개 · ×1.5")
             shake(10)
@@ -676,10 +682,16 @@ final class PlinkoTable {
                 addPop(x: Self.cx, y: Self.y(Self.pocketPin.r) - 16, text: "+" + Self.fmt(refund), tone: .green)
             }
             onSound?(.refund)
-            let next = min(drops[d].response.letters, Self.letterChars.count - 1)
+            let next = min(drops[d].response.letters, Self.letterChars.count)
             if next > letters {
                 letterFlash = (next - 1, t + 20)
-                onSound?(.letter)
+                if next == Self.letterChars.count {
+                    // 9까지 켜졌다: 다음 포켓은 FEVER 확정
+                    shake(6)
+                    onSound?(.reach)
+                } else {
+                    onSound?(.letter)
+                }
             }
             letters = next
         }

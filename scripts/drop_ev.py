@@ -2,7 +2,7 @@
 """429 드롭 환수율 계산기 (ADR-0018, ADR-0019).
 
 공이 서로 영향을 주지 않으므로 (줄, 칸, 분열 여부) 위의 DP로 공 하나의 기대값을 정확히 계산한다.
-4·2·9 글자(포켓 천장)는 포켓 사이에만 이어지는 상태라, 포켓 하나의 장기 평균 가치로 바꿔 DP에 넣는다
+4·2·9 글자(포켓 천장: 세 글자가 다 켜진 뒤 네 번째 포켓은 FEVER 확정)는 포켓 사이에만 이어지는 상태라, 포켓 하나의 장기 평균 가치로 바꿔 DP에 넣는다
 (갱신 보상 정리: FEVER 비율 = 1 / 한 주기의 기대 포켓 수).
 `--mc N`을 주면 같은 규칙으로 공 N개를 글자 상태까지 이어서 굴려 DP와 비교하고 결과 분포를 찍는다.
 수치를 바꾸면 서버 마이그레이션(`plinko_*`)과 docs/chip-economy.md도 같이 고친다.
@@ -20,10 +20,10 @@ GOLD = {(8, 4), (8, -4)}        # 골드 핀: 맞은 공의 최종 배수 +GOLD_
 GOLD_BONUS = 0.3
 SPLIT = {(10, 8), (10, -8)}     # 분열 핀: 공이 둘로. 공 하나당 한 번, FEVER 공은 분열하지 않음
 POCKET = (6, 0)                 # 스타트 포켓
-POCKET_CATCH = {'none': 0.0302, 'good': 0.0312, 'perfect': 0.0322}  # 등급별 포켓이 공을 잡을 확률
-VIP_CATCH = 0.0135              # VIP HOUR(황금 칩 유효 시간)엔 포켓 입구가 이만큼 넓다
+POCKET_CATCH = {'none': 0.0381, 'good': 0.0393, 'perfect': 0.0405}  # 등급별 포켓이 공을 잡을 확률
+VIP_CATCH = 0.0170              # VIP HOUR(황금 칩 유효 시간)엔 포켓 입구가 이만큼 넓다
 FEVER_ODDS = 1 / 8              # 포켓에 들어간 뒤 FEVER(429 429 429) 확률
-LETTERS = 3                     # 4·2·9: FEVER가 아닌 포켓마다 한 글자. 세 번째 포켓은 FEVER 확정
+LETTERS = 3                     # 4·2·9: FEVER가 아닌 포켓마다 한 글자. 셋 다 켜진 뒤(대기) 다음 포켓은 FEVER 확정
 REFUND = 0.2                    # FEVER가 아니면 건 칩의 20% 환급
 FEVER_BALLS = 40
 FEVER_MULT = 1.5
@@ -78,11 +78,11 @@ def fever_ball():
 
 
 def fever_rate():
-    """포켓 하나가 FEVER일 장기 비율. 한 주기 = FEVER까지의 포켓 수 (최대 LETTERS개)."""
+    """포켓 하나가 FEVER일 장기 비율. 한 주기 = FEVER까지의 포켓 수 (최대 LETTERS + 1개)."""
     p, e = FEVER_ODDS, 0.0
-    for k in range(1, LETTERS + 1):
+    for k in range(1, LETTERS + 2):
         stay = (1 - p) ** (k - 1)
-        e += k * stay * (p if k < LETTERS else 1)
+        e += k * stay * (p if k <= LETTERS else 1)
     return 1 / e
 
 
@@ -111,7 +111,7 @@ def monte_carlo(n, grade='none', vip=False, seed=429):
             r, j, gold, s = stack.pop()
             while True:
                 if (r, j) == POCKET and not fever and rnd.random() < catch:
-                    if letters == LETTERS - 1 or rnd.random() < FEVER_ODDS:
+                    if letters == LETTERS or rnd.random() < FEVER_ODDS:
                         letters = 0
                         pay += sum(run(rnd.choice('LCR'), True) for _ in range(FEVER_BALLS))
                     else:

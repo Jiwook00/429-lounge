@@ -115,7 +115,7 @@ enum Snapshot {
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
         } else if let table, table.hasPrefix("plinko") {
-            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -ceiling | -fever | -fever-end | -vip
+            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -ready | -ceiling | -fever | -fever-end | -vip
             let vip = locked || table == "plinko-vip"
             let plinko = fakePlinko(store: store, me: me, mode: table)
             plinko.vip = vip
@@ -639,10 +639,15 @@ enum Snapshot {
             drop(0, forceCatch: true, reels: ["7", "BAR", "404"], letters: 2) { $0.pocket }
             table.advance(46)
         case "plinko-ceiling":
-            // 4·2 다음 포켓: 릴이 429 429 429로 멈추고 4·2·9 완성
-            table.previewLetters(2)
+            // 4·2·9 대기에서 들어온 포켓: 릴이 처음부터 429로 돌며 하나씩 서는 중
+            table.previewLetters(3)
             drop(0, forceCatch: true, fever: true, ceiling: true) { $0.pocket }
-            table.advance(58)
+            table.advance(44)
+        case "plinko-ready":
+            // 9까지 켜진 순간: NEXT FEVER, 포켓이 맥박친다
+            table.previewLetters(2)
+            drop(0, forceCatch: true, reels: ["7", "429", "BAR"], letters: 3) { $0.pocket }
+            table.advance(50)
         case "plinko-fever":
             drop(0, forceCatch: true, fever: true) { $0.pocket }
             table.advance(100)
