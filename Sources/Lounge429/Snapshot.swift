@@ -15,6 +15,14 @@ private struct PlinkoLiveHost: View {
 /// 개발용: 화면을 PNG로 렌더링 (2x). 테이블 화면은 가짜 데이터로.
 @MainActor
 enum Snapshot {
+    /// lobby-whatsnew-skip용 가짜 문구 (실제 버전에 없는 내용)
+    static let fakeNotes = WhatsNew.notes + [
+        ReleaseNote(version: "0.15.0", lines: ["블랙잭: 칩을 누를 때마다 더 걸려요 (최대 1,000)"],
+                    game: WhatsNew.Game.blackjack.rawValue, newGames: []),
+        ReleaseNote(version: "0.16.0", lines: ["게임마다 이번 주 최고 한 방이 떠요"]),
+        ReleaseNote(version: "0.17.0", lines: ["벽화에 새 색 두 개"], game: WhatsNew.Game.wall.rawValue),
+    ]
+
     static func render(to path: String, locked: Bool, table: String?) {
         var usage = UsageScanner().scan()
         if locked {
@@ -68,7 +76,7 @@ enum Snapshot {
             let crowd = fakeCrowd(me: me, mode: table)
             let back = table.hasPrefix("lobby-board")
             let daily = table == "lobby-daily"
-            let whatsNew = table == "lobby-whatsnew" || table == "lobby-new"
+            let whatsNew = table.hasPrefix("lobby-whatsnew") || table == "lobby-new"
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, crowd: crowd, board: fakeBoard(table),
                                          lastWeekRank: table.hasPrefix("lobby-board-10") || daily ? 3 : nil,
@@ -76,9 +84,14 @@ enum Snapshot {
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
                                          minority: .open(closesAt: Self.kst(hour: 17), picked: false),
-                                         // lobby-whatsnew: 업데이트 뒤 "새로 들어온 것" 카드 / lobby-new: 카드를 닫은 뒤 NEW 라벨
-                                         whatsNewVersion: whatsNew ? "0.14.0" : AppInfo.version,
-                                         forceWhatsNew: table == "lobby-whatsnew" ? true : table == "lobby-new" ? false : nil))
+                                         // lobby-whatsnew: 업데이트 뒤 "새로 들어온 것" 카드 (0.13.1 → 0.14.0)
+                                         // lobby-whatsnew-skip: 여러 버전을 건너뛰고 받았을 때 (가짜 0.15~0.17 문구, 0.14.0 → 0.17.0)
+                                         // lobby-new: 카드를 닫은 뒤 NEW 라벨
+                                         whatsNewVersion: table == "lobby-whatsnew-skip" ? "0.17.0" : whatsNew ? "0.14.0" : AppInfo.version,
+                                         whatsNewNotes: table == "lobby-whatsnew-skip" ? Self.fakeNotes : WhatsNew.notes,
+                                         whatsNewSeenOverride: table == "lobby-whatsnew-skip" ? "0.14.0" : whatsNew ? "0.13.1" : nil,
+                                         newGamesOverride: table == "lobby-new" ? [WhatsNew.Game.plinko.rawValue] : whatsNew ? [] : nil,
+                                         hideWhatsNew: table == "lobby-new"))
         } else if let table, table.hasPrefix("wall-") {
             // wall-idle | wall-painted | wall-same | wall-limited | wall-empty: 라운지 벽화 (ADR-0017)
             content = AnyView(PixelWallView(wall: fakeWall(store: store, mode: table)))

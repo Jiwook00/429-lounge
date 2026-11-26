@@ -53,8 +53,11 @@ struct LoungeView: View {
     var onWall: () -> Void = {}
     /// "새로 들어온 것" 기준 버전 (스냅샷은 바꿔 넣는다). 번들 없이 돌면 "dev"라 카드·NEW 라벨이 없다
     var whatsNewVersion: String = AppInfo.version
-    /// 스냅샷용: nil이면 본 기록대로, true면 카드를 띄우고, false면 감춘다
-    var forceWhatsNew: Bool?
+    /// 스냅샷용: 버전별 문구, 마지막으로 본 버전, NEW 게임을 바꿔 넣는다 (nil이면 실제 값). hideWhatsNew면 카드를 감춘다
+    var whatsNewNotes: [ReleaseNote] = WhatsNew.notes
+    var whatsNewSeenOverride: String?
+    var newGamesOverride: Set<String>?
+    var hideWhatsNew = false
     /// 잭팟 시스템 알림 켬/끔
     var notify = false
     var onNotify: () -> Void = {}
@@ -69,8 +72,8 @@ struct LoungeView: View {
     @State private var updating = false
     @AppStorage("viewedUpdateVersion") private var viewedUpdateVersion = ""
     @AppStorage("whatsNewSeenVersion") private var whatsNewSeenVersion = ""
-    /// `NEW` 라벨을 뗀 게임들 (쉼표로 이음)
-    @AppStorage("whatsNewSeenGames") private var whatsNewSeenGames = ""
+    /// `NEW` 라벨을 붙일 게임들 (카드를 닫을 때 더하고, 그 게임에 들어가면 뺀다. 쉼표로 이음)
+    @AppStorage("whatsNewNewGames") private var whatsNewNewGames = ""
 
     @State private var settingsOpen = false
     @Bindable private var audio = GameAudio.shared
@@ -193,10 +196,12 @@ struct LoungeView: View {
                         initialText: nicknameDraft?.text ?? "",
                         initialError: nicknameDraft?.error
                     )
-                } else if online, let note = pendingNote {
-                    WhatsNewCard(note: note,
-                                 onTry: note.game.map { game in { whatsNewSeenVersion = note.version; open(game) } },
-                                 onClose: { whatsNewSeenVersion = note.version })
+                } else if online, let digest = pendingDigest {
+                    WhatsNewCard(digest: digest,
+                                 onTry: digest.game.flatMap(WhatsNew.Game.init(rawValue:)).map { game in
+                                     { dismissWhatsNew(digest); open(game) }
+                                 },
+                                 onClose: { dismissWhatsNew(digest) })
                 } else {
                     if online {
                         LoungeCard(crowd: crowd, now: context.date, board: board, visible: visible,
@@ -366,21 +371,30 @@ struct LoungeView: View {
             .pixelBox(fill: t.golden ? Theme.gold : Theme.goldBg, border: Theme.gold)
     }
 
-    private var pendingNote: WhatsNew.Note? {
-        guard let note = WhatsNew.note(for: whatsNewVersion) else { return nil }
-        return forceWhatsNew ?? (whatsNewSeenVersion != note.version) ? note : nil
+    private var pendingDigest: ReleaseDigest? {
+        guard !hideWhatsNew else { return nil }
+        return ReleaseNotes.digest(whatsNewNotes, current: whatsNewVersion, seen: whatsNewSeenOverride ?? whatsNewSeenVersion)
     }
 
-    /// 이번 버전에 새로 생긴 게임이고 아직 안 들어가 봤으면 `NEW`
+    private var newGames: Set<String> {
+        newGamesOverride ?? Set(whatsNewNewGames.split(separator: ",").map(String.init))
+    }
+
+    /// 카드를 닫는다: 지금 버전까지 본 걸로 하고, 카드의 새 게임들에 `NEW`를 붙여 둔다
+    private func dismissWhatsNew(_ digest: ReleaseDigest) {
+        whatsNewSeenVersion = whatsNewVersion
+        whatsNewNewGames = newGames.union(digest.newGames).sorted().joined(separator: ",")
+    }
+
+    /// 새로 생긴 게임이고 아직 안 들어가 봤으면 `NEW`
     private func newLabel(_ game: WhatsNew.Game) -> String? {
-        guard let note = WhatsNew.note(for: whatsNewVersion), note.newGames.contains(game) else { return nil }
-        return whatsNewSeenGames.split(separator: ",").contains(Substring(game.rawValue)) ? nil : "NEW"
+        newGames.contains(game.rawValue) ? "NEW" : nil
     }
 
     /// 타일·해보기로 게임에 들어간다. 들어가면 그 게임의 `NEW` 라벨을 뗀다
     private func open(_ game: WhatsNew.Game) {
         if newLabel(game) != nil {
-            whatsNewSeenGames = (whatsNewSeenGames.split(separator: ",").map(String.init) + [game.rawValue]).joined(separator: ",")
+            whatsNewNewGames = newGames.subtracting([game.rawValue]).sorted().joined(separator: ",")
         }
         switch game {
         case .roulette: onRoulette()
