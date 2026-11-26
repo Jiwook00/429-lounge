@@ -68,13 +68,17 @@ enum Snapshot {
             let crowd = fakeCrowd(me: me, mode: table)
             let back = table.hasPrefix("lobby-board")
             let daily = table == "lobby-daily"
+            let whatsNew = table == "lobby-whatsnew" || table == "lobby-new"
             content = AnyView(LoungeView(snapshot: usage, lastScan: .now, chips: store.chips, golden: store.golden(),
                                          online: true, crowd: crowd, board: fakeBoard(table),
                                          lastWeekRank: table.hasPrefix("lobby-board-10") || daily ? 3 : nil,
                                          dailyChipsAvailableAt: daily ? store.dailyChipsAvailableAt : nil,
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
-                                         minority: .open(closesAt: Self.kst(hour: 17), picked: false)))
+                                         minority: .open(closesAt: Self.kst(hour: 17), picked: false),
+                                         // lobby-whatsnew: 업데이트 뒤 "새로 들어온 것" 카드 / lobby-new: 카드를 닫은 뒤 NEW 라벨
+                                         whatsNewVersion: whatsNew ? "0.14.0" : AppInfo.version,
+                                         forceWhatsNew: table == "lobby-whatsnew" ? true : table == "lobby-new" ? false : nil))
         } else if let table, table.hasPrefix("wall-") {
             // wall-idle | wall-painted | wall-same | wall-limited | wall-empty: 라운지 벽화 (ADR-0017)
             content = AnyView(PixelWallView(wall: fakeWall(store: store, mode: table)))

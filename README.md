@@ -125,6 +125,7 @@ swift build --product Lounge429
 
 ```sh
 # 서버 변경이 있으면 supabase db push --dry-run 후 확인받아 적용
+# 회원에게 알릴 변경이 있으면 Sources/Lounge429/UI/WhatsNew.swift의 notes에 이번 버전 줄을 더한다
 # scripts/build-app.sh의 VERSION을 올리고 커밋·푸시한 뒤
 export LOUNGE_SPARKLE_PUBLIC_KEY='<처음 등록한 공개키>'
 scripts/build-app.sh --dist     # 유니버설 앱, 서명된 appcast와 배포 ZIP

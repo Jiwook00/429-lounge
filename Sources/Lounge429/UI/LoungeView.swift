@@ -51,6 +51,10 @@ struct LoungeView: View {
     /// 라운지 벽화 타일 아랫줄 (남은 픽셀 / 429 카운트다운)
     var wallLine: (Date) -> String = { _ in "FREE" }
     var onWall: () -> Void = {}
+    /// "새로 들어온 것" 기준 버전 (스냅샷은 바꿔 넣는다). 번들 없이 돌면 "dev"라 카드·NEW 라벨이 없다
+    var whatsNewVersion: String = AppInfo.version
+    /// 스냅샷용: nil이면 본 기록대로, true면 카드를 띄우고, false면 감춘다
+    var forceWhatsNew: Bool?
     /// 잭팟 시스템 알림 켬/끔
     var notify = false
     var onNotify: () -> Void = {}
@@ -64,6 +68,9 @@ struct LoungeView: View {
     @State private var renaming = false
     @State private var updating = false
     @AppStorage("viewedUpdateVersion") private var viewedUpdateVersion = ""
+    @AppStorage("whatsNewSeenVersion") private var whatsNewSeenVersion = ""
+    /// `NEW` 라벨을 뗀 게임들 (쉼표로 이음)
+    @AppStorage("whatsNewSeenGames") private var whatsNewSeenGames = ""
 
     @State private var settingsOpen = false
     @Bindable private var audio = GameAudio.shared
@@ -186,6 +193,10 @@ struct LoungeView: View {
                         initialText: nicknameDraft?.text ?? "",
                         initialError: nicknameDraft?.error
                     )
+                } else if online, let note = pendingNote {
+                    WhatsNewCard(note: note,
+                                 onTry: note.game.map { game in { whatsNewSeenVersion = note.version; open(game) } },
+                                 onClose: { whatsNewSeenVersion = note.version })
                 } else {
                     if online {
                         LoungeCard(crowd: crowd, now: context.date, board: board, visible: visible,
@@ -355,48 +366,76 @@ struct LoungeView: View {
             .pixelBox(fill: t.golden ? Theme.gold : Theme.goldBg, border: Theme.gold)
     }
 
+    private var pendingNote: WhatsNew.Note? {
+        guard let note = WhatsNew.note(for: whatsNewVersion) else { return nil }
+        return forceWhatsNew ?? (whatsNewSeenVersion != note.version) ? note : nil
+    }
+
+    /// 이번 버전에 새로 생긴 게임이고 아직 안 들어가 봤으면 `NEW`
+    private func newLabel(_ game: WhatsNew.Game) -> String? {
+        guard let note = WhatsNew.note(for: whatsNewVersion), note.newGames.contains(game) else { return nil }
+        return whatsNewSeenGames.split(separator: ",").contains(Substring(game.rawValue)) ? nil : "NEW"
+    }
+
+    /// 타일·해보기로 게임에 들어간다. 들어가면 그 게임의 `NEW` 라벨을 뗀다
+    private func open(_ game: WhatsNew.Game) {
+        if newLabel(game) != nil {
+            whatsNewSeenGames = (whatsNewSeenGames.split(separator: ",").map(String.init) + [game.rawValue]).joined(separator: ",")
+        }
+        switch game {
+        case .roulette: onRoulette()
+        case .slot: onSlot()
+        case .plinko: onPlinko()
+        case .blackjack: onBlackjack()
+        case .wall: onWall()
+        case .minority: onMinority()
+        }
+    }
+
     private var games: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-            Button(action: onRoulette) {
+            Button { open(.roulette) } label: {
                 // 홀짝 자리(첫 칸). 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
                 GameTile(sprite: Sprites.roulette, title: "미니 룰렛",
                          mode: !online ? "TABLE" : crowd.roulette > 0 ? "TABLE · \(crowd.roulette)명 앉음" : "TABLE · 비어 있음",
-                         soon: !online, live: online, hot: crowd.roulette > 0)
+                         soon: !online, live: online, hot: crowd.roulette > 0, label: newLabel(.roulette))
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onSlot) {
+            Button { open(.slot) } label: {
                 GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO", soon: !online, live: online,
-                         badge: crowd.slot > 0 ? "\(crowd.slot)명" : nil)
+                         badge: crowd.slot > 0 ? "\(crowd.slot)명" : nil, label: newLabel(.slot))
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onPlinko) {
-                GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online)
+            Button { open(.plinko) } label: {
+                GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online,
+                         label: newLabel(.plinko))
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onBlackjack) {
+            Button { open(.blackjack) } label: {
                 // AI 빼고 앉은 회원만 센다 (빈 자리는 딜 때 AI가 채움). 4명이면 만석이라 흐리게
                 GameTile(sprite: Sprites.spade, title: "블랙잭",
                          mode: !online ? "TABLE" : blackjackSeated >= 4 ? "TABLE · 4/4 만석" : "TABLE · \(blackjackSeated)/4",
-                         soon: !online, live: online && blackjackSeated < 4, hot: blackjackSeated > 0 && blackjackSeated < 4)
+                         soon: !online, live: online && blackjackSeated < 4, hot: blackjackSeated > 0 && blackjackSeated < 4,
+                         label: newLabel(.blackjack))
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onWall) {
+            Button { open(.wall) } label: {
                 // 칩과 무관한 무료 벽 (ADR-0017). 칩 게임(네온)과 구분해 초록 + BETA 라벨
                 let line = online ? wallLine(.now) : "FREE"
                 GameTile(sprite: Sprites.wall, title: "라운지 벽화", mode: line,
                          soon: !online, live: online, accent: Theme.green,
-                         modeColor: line.hasPrefix("429") ? Theme.neon : nil, label: "BETA")
+                         modeColor: line.hasPrefix("429") ? Theme.neon : nil, label: newLabel(.wall) ?? "BETA")
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            Button(action: onMinority) {
+            Button { open(.minority) } label: {
                 GameTile(sprite: Sprites.ox, title: "소수결",
                          mode: !online ? "평일 3번" : minority?.line(now: .now) ?? "평일 3번",
-                         soon: !online, live: online && minority?.open == true)
+                         soon: !online, live: online && minority?.open == true, label: newLabel(.minority))
             }
             .buttonStyle(.plain)
             .disabled(!online)
