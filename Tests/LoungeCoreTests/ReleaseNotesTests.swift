@@ -13,6 +13,12 @@ import Testing
         #expect(d?.from == nil && d?.to == "0.16.0" && d?.lines == ["랭킹 1", "랭킹 2"])
     }
 
+    /// 카드가 생기기 전 버전(0.13.1)에서 문구 없는 패치(0.14.1)로 바로 올라와도 0.14.0 문구를 본다
+    @Test func noSeenRecordShowsLatestNoteUpToCurrent() {
+        let d = ReleaseNotes.digest(Self.notes, current: "0.14.1", seen: "")
+        #expect(d?.from == nil && d?.to == "0.14.0" && d?.game == "plinko")
+    }
+
     @Test func oneStepShowsThatVersion() {
         let d = ReleaseNotes.digest(Self.notes, current: "0.15.0", seen: "0.14.0")
         #expect(d?.from == nil && d?.to == "0.15.0" && d?.game == "blackjack")

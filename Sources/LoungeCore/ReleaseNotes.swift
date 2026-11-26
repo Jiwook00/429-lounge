@@ -33,7 +33,8 @@ public struct ReleaseDigest: Sendable, Equatable {
 
 public enum ReleaseNotes {
     /// - current: 지금 앱 버전. 숫자가 아니면("dev") 아무것도 없다
-    /// - seen: 마지막으로 카드를 본 버전. 비었거나 숫자가 아니면 처음 설치로 보고 지금 버전 문구만
+    /// - seen: 마지막으로 카드를 본 버전. 비었거나 숫자가 아니면(처음 설치, 카드가 생기기 전 버전에서 올라옴)
+    ///   지금 버전 이하 중 가장 최신 문구 하나만 (0.13.1 → 0.14.1이면 0.14.0 문구)
     /// - 그 외: seen < 버전 ≤ current 인 문구를 최신부터 모은다 (0.14 → 0.18로 건너뛰면 0.15~0.18)
     public static func digest(_ notes: [ReleaseNote], current: String, seen: String, maxLines: Int = 4) -> ReleaseDigest? {
         guard let now = AppVersion(current) else { return nil }
@@ -42,7 +43,10 @@ public enum ReleaseNotes {
             picked = notes.compactMap { n in AppVersion(n.version).map { ($0, n) } }
                 .filter { $0.0 > last && $0.0 <= now }
         } else {
-            picked = notes.compactMap { n in AppVersion(n.version).flatMap { $0 == now ? ($0, n) : nil } }
+            picked = notes.compactMap { n in AppVersion(n.version).map { ($0, n) } }
+                .filter { $0.0 <= now }
+                .max { $0.0 < $1.0 }
+                .map { [$0] } ?? []
         }
         let newest = picked.sorted { $0.0 > $1.0 }
         guard let top = newest.first else { return nil }
