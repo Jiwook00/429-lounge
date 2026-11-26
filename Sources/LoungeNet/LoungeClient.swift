@@ -352,6 +352,17 @@ public final class LoungeClient: Sendable {
         } catch { throw LoungeError.wrap(error) }
     }
 
+    // MARK: - 429 드롭 (ADR-0018)
+
+    /// 공 하나. lane -1|0|1, power 0~1000 (뗀 타이밍). 결과는 응답에 다 들어 있다
+    public func plinkoDrop(amount: Int64, lane: Int, power: Int, golden: Bool = false) async throws -> PlinkoDrop {
+        struct Params: Encodable { let p_amount: Int64; let p_lane: Int; let p_power: Int; let p_golden: Bool }
+        let params = Params(p_amount: amount, p_lane: lane, p_power: power, p_golden: golden)
+        do {
+            return try await supabase.rpc("plinko_drop", params: params).execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
     // MARK: - 라운지 접속 / 전광판 (ADR-0008)
 
     /// 최근 `within`초 안의 전광판 이벤트 (오래된 것부터)

@@ -31,5 +31,6 @@ let package = Package(
         // 디버그용 CLI: 지금 로그에서 읽히는 사용량/리밋 상태를 출력
         .executableTarget(name: "lounge-scan", dependencies: ["LoungeCore"]),
         .testTarget(name: "LoungeCoreTests", dependencies: ["LoungeCore"]),
+        .testTarget(name: "LoungeNetTests", dependencies: ["LoungeNet"]),
     ]
 )
