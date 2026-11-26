@@ -161,6 +161,9 @@ final class PlinkoTable {
     @ObservationIgnored private var pinSounds = 0
     @ObservationIgnored private var rng: SplitMix
 
+    /// 개발용 로그 (`--table plinko-live`가 착지·릴·FEVER를 줄로 찍는다)
+    var log: ((String) -> Void)?
+
     /// 소리 신호를 받는 쪽 (뷰가 `GameAudio`에 연결)
     var onSound: ((PlinkoSound) -> Void)?
 
@@ -502,6 +505,7 @@ final class PlinkoTable {
             drops[rec].unlanded -= pay
             if !b.fever { drops[rec].liveBalls -= 1 }
         }
+        log?("land 칸 \(bucket) ×\(Self.mt(mult)) 지급 \(pay)\(b.fever ? " (FEVER)" : "")\(b.source.gold > 0 ? " 골드 +\(Self.mt(b.source.gold))" : "") · 표시 칩 \(shown(chips: store.chips))")
         bucketFlash[bucket] = BucketFlash(until: t + 8, tier: tier)
         if pay > 0 { walletPop = ("+" + Self.fmt(pay), t + 12) }
         switch tier {
@@ -551,6 +555,7 @@ final class PlinkoTable {
         reel = Reel(start: t, result: pocket.reels, stops: [t + 8, t + 14, t + (reach ? 34 : 22)],
                     fever: pocket.fever, reach: reach, drop: id, doneAt: nil)
         resp = Resp(text: "302 Found · 스타트 포켓", tone: .gold)
+        log?("reel \(pocket.reels.joined(separator: " ")) \(pocket.fever ? "FEVER" : "환급 \(pocket.refund)")\(reach ? " 리치" : "")")
     }
 
     private func stepReel() {

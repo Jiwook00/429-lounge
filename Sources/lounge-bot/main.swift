@@ -1,6 +1,7 @@
 // 개발용 봇: 미니 룰렛 테이블에 앉아서 매 판 랜덤으로 한두 칸에 건다.
 // 사용법: swift run lounge-bot [--name 봇이름] [--room LOUNGE] [--blackjack]
 // --blackjack: 룰렛 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
+// --plinko: 429 드롭에 공을 계속 떨어뜨린다 (무작위 레인·파워, 잔액 부족이면 쉬었다 다시)
 // --wall: 라운지 벽화에 2~5초마다 한 칸씩 칠한다 (버킷이 비면 429를 받고 기다림)
 import Foundation
 import LoungeNet
@@ -66,6 +67,12 @@ do {
         try await paintWall()
     }
 
+    if CommandLine.arguments.contains("--plinko") {
+        presence.place = .lounge // 옛 앱이 모르는 위치 값이라 라운지로
+        await link.update(presence)
+        try await dropPlinko()
+    }
+
     if CommandLine.arguments.contains("--blackjack") {
         presence.place = .lounge // 옛 앱 호환: 블랙잭도 라운지로 (ADR-0014)
         await link.update(presence)
@@ -76,6 +83,27 @@ do {
 } catch {
     log("💥 \(error)")
     exit(1)
+}
+
+/// 429 드롭: 무작위 레인·파워로 공을 계속 던진다. 한 줄에 한 판 (분열·포켓·FEVER 포함)
+func dropPlinko() async throws -> Never {
+    while true {
+        let amount = Int64([10, 10, 50, 50, 100].randomElement()!)
+        let lane = Int.random(in: -1...1)
+        let power = Int.random(in: 0...1000)
+        do {
+            let d = try await client.plinkoDrop(amount: amount, lane: lane, power: power)
+            let split = d.ball.clone != nil ? " 분열" : ""
+            let where_ = d.ball.pocket ? "포켓(\(d.pocket?.reels.joined(separator: " ") ?? ""))" : "칸 \(d.ball.bucket ?? -1) ×\(d.ball.mult)"
+            let fever = d.fever ? " FEVER 공 \(d.feverBalls.count)개" : ""
+            log("⚪️ \(amount)칩 레인 \(lane) 파워 \(power) \(d.grade.rawValue) → \(where_)\(split)\(fever) · 지급 \(d.payout) · 칩 \(d.player.chips)")
+            // 공이 다 내려오는 시간(약 2.4초, FEVER면 +10초)만큼 쉰다: 앱 화면에서 같이 보이게
+            try await Task.sleep(for: .seconds(d.fever ? 14 : Double.random(in: 0.6...2.2)))
+        } catch {
+            log("⚠️ \(error.localizedDescription)")
+            try await Task.sleep(for: .seconds(5))
+        }
+    }
 }
 
 /// 블랙잭: 판이 없거나 베팅 중이면 걸고, 내 차례면 잠깐 고민하다 친다

@@ -358,6 +358,64 @@ enum Snapshot {
         NSApplication.shared.run()
     }
 
+    /// 실서버 429 드롭에 앉아 `seconds` 동안 상태를 찍고 마지막 화면을 저장한다 (착지 때 지갑이 바뀌는지 확인용).
+    /// LOUNGE_E2E_BET=1: 앱 계정도 1.5초마다 한 번 누르고 뗀다(눌림 0.1~1.2초) / auto: AUTO로 / golden: 황금 칩 한 번
+    /// 끝나면 떠 있는 공이 다 내려올 때까지 기다린 뒤 서버에 기록된 판 수와 칩을 비교한다
+    static func renderPlinkoLive(to path: String, seconds: Int) {
+        Task { @MainActor in
+            let store = LoungeStore(live: false)
+            await store.connect()
+            guard let me = store.me else { print("connect failed: \(store.netError ?? "?")"); exit(1) }
+            print("signed in as \(me.name) · chips \(me.chips) · golden \(store.golden())")
+            let table = PlinkoTable(store: store)
+            table.log = { print("  \($0)") }
+            table.enter()
+            let mode = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"]
+            table.stake = 10
+            let start = store.chips
+            var presses = 0
+            if mode == "auto" { table.auto = true }
+            if mode == "golden", store.golden() > 0 {
+                table.useGolden = true
+                table.press(at: .now)
+                table.release(at: .now.addingTimeInterval(0.9))
+                presses += 1
+                print("golden drop · 보이는 칩 \(table.shown(chips: store.chips))")
+            }
+            var last = ""
+            for i in 0..<(seconds * 4) {
+                try? await Task.sleep(for: .milliseconds(250))
+                if mode == "1", i % 6 == 0, !table.charging {
+                    let held = Double.random(in: 0.1...1.2)
+                    let t0 = Date()
+                    table.lane = Int.random(in: -1...1)
+                    table.press(at: t0)
+                    if table.charging {
+                        table.release(at: t0.addingTimeInterval(held))
+                        presses += 1
+                        print("drop #\(presses) 레인 \(table.lane) 눌림 \(String(format: "%.2f", held))초 → 파워 \(table.lastPower) \(PlinkoGauge.grade(power: table.lastPower).rawValue)")
+                    } else {
+                        print("drop 막힘 · \(table.blockReason(chips: store.chips, golden: store.golden()) ?? "?") \(table.message ?? "")")
+                    }
+                }
+                let line = "공 \(table.inFlight)/5 fever \(table.feverActive) · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips) · \(table.resp.text)\(table.message.map { " · \($0)" } ?? "")"
+                if line != last { print(line); last = line }
+            }
+            table.auto = false
+            // 떠 있는 공이 다 닿을 때까지
+            for _ in 0..<120 where table.inFlight > 0 || table.feverActive || table.shown(chips: store.chips) != store.chips {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            print("끝 · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips) · 시작 \(start) → 변화 \(store.chips - start)")
+            write(AnyView(PlinkoView(table: table, chips: store.chips, golden: store.golden())), to: path)
+            table.leave()
+            exit(0)
+        }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+    }
+
     /// 실서버에서 슬롯을 `spins`번 돌리고 마지막 화면을 찍는다
     static func renderSlotLive(to path: String, spins: Int) {
         Task { @MainActor in
