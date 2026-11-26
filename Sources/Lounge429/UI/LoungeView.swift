@@ -40,6 +40,7 @@ struct LoungeView: View {
     var showUpdate = false
     var onRoulette: () -> Void = {}
     var onSlot: () -> Void = {}
+    var onPlinko: () -> Void = {}
     /// 블랙잭에 앉은 회원 수 (AI 제외)
     var blackjackSeated = 0
     var onBlackjack: () -> Void = {}
@@ -394,8 +395,11 @@ struct LoungeView: View {
             }
             .buttonStyle(.plain)
             .disabled(!online)
-            // 6번째 칸: 아직 비공개
-            GameTile(sprite: Sprites.lock, title: "???", mode: "SECRET", soon: false, secret: true)
+            Button(action: onPlinko) {
+                GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online)
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
         }
     }
 

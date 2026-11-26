@@ -85,6 +85,10 @@ enum Snapshot {
             content = AnyView(RouletteView(table: fakeRoulette(store: store, me: me, mode: table == "roulette-help" ? "roulette-betting" : table),
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
+        } else if let table, table.hasPrefix("plinko") {
+            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -fever
+            content = AnyView(PlinkoView(table: fakePlinko(store: store, me: me, mode: table), chips: store.chips,
+                                         golden: store.golden()))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -479,6 +483,51 @@ enum Snapshot {
         default: wall.preview(response: .idle, selected: nil, hover: .init(x: 20, y: 13), color: 1)
         }
         return wall
+    }
+
+    /// 429 드롭 가짜 장면: 시드를 고정해 서버 규칙대로 뽑은 한 판을 틱으로 되감아 재생한다
+    static func fakePlinko(store: LoungeStore, me: Player, mode: String) -> PlinkoTable {
+        let table = PlinkoTable(store: store, seed: 429)
+        func drop(_ lane: Int, grade: PlinkoDrop.Grade = .none, amount: Int64 = 100, forceCatch: Bool = false,
+                  reels: [String]? = nil, fever: Bool = false, matching: (PlinkoBall) -> Bool = { _ in true }) {
+            let player = Player(id: me.id, name: me.name, chips: Int64(store.chips), goldenChips: me.goldenChips, goldenUntil: me.goldenUntil)
+            table.preview(drop: PlinkoFake.drop(player: player, lane: lane, amount: amount, grade: grade,
+                                                forceCatch: forceCatch, reels: reels, fever: fever, matching: matching))
+        }
+        switch mode {
+        case "plinko-charging":
+            // 앞서 쏜 공 둘: 먼저 것은 한참 내려갔고, 나중 것은 PERFECT라 포켓이 열려 있다
+            drop(0) { $0.bucket != nil }
+            table.advance(24)
+            drop(1, grade: .perfect) { $0.bucket != nil && $0.split == nil }
+            table.advance(8)
+            table.lane = 1
+            table.previewCharging(power: 850)
+            table.advance(6)
+        case "plinko-flying":
+            // 분열: 오른쪽 레인 공이 (10, 8) 분열 핀을 맞고 둘로 갈라진 직후. 다른 공은 왼쪽 레인
+            drop(1, grade: .good) { $0.split != nil && $0.clone != nil }
+            table.advance(10)
+            drop(-1) { $0.bucket != nil && $0.split == nil }
+            table.advance(24)
+        case "plinko-win":
+            drop(0) { $0.bucket == 2 && $0.gold == 0 && $0.split == nil }
+            table.advance(43)
+        case "plinko-big":
+            drop(0, grade: .perfect) { ($0.bucket == 1 || $0.bucket == 11) && $0.split == nil && $0.gold == 0 }
+            table.advance(41)
+        case "plinko-max":
+            drop(0) { $0.bucket == 0 && $0.split == nil }
+            table.advance(41)
+        case "plinko-pocket":
+            drop(0, forceCatch: true) { $0.pocket }
+            table.advance(38)
+        case "plinko-fever":
+            drop(0, forceCatch: true, fever: true) { $0.pocket }
+            table.advance(118)
+        default: break
+        }
+        return table
     }
 
     private static func fakeSlot(store: LoungeStore, me: Player, mode: String) -> SlotMachine {

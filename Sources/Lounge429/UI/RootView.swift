@@ -6,6 +6,7 @@ struct RootView: View {
         case lounge
         case roulette(RouletteTable)
         case slot(SlotMachine)
+        case plinko(PlinkoTable)
         case blackjack(BlackjackTable)
         case minority
         case wall(PixelWall)
@@ -46,6 +47,8 @@ struct RootView: View {
             if visible, case .slot(let machine) = screen {
                 GameAudio.shared.setReelsTurning(machine.turningReels(at: .now))
             }
+            // 누른 채로 팝오버가 닫히면 던지지 않고 취소
+            if !visible, case .plinko(let table) = screen { table.cancelCharge() }
             GameAudio.shared.setVisible(visible)
         })
         .onChange(of: store.appUpdate?.required == true, initial: true) { _, blocked in
@@ -60,6 +63,7 @@ struct RootView: View {
         switch screen {
         case .lounge: "라운지"
         case .slot: "슬롯"
+        case .plinko: "429 드롭"
         case .roulette: "룰렛"
         case .blackjack: "블랙잭"
         case .minority: "소수결"
@@ -75,6 +79,7 @@ struct RootView: View {
                 $0.myPick == nil && $0.closesAt > .now && store.chips < $0.stake
             } == true
         case .slot(let machine): store.chips < 10 && store.golden() == 0 && !machine.isSpinning(at: .now)
+        case .plinko(let table): store.chips < 10 && store.golden() == 0 && table.inFlight == 0 && !table.feverActive
         case .roulette(let table): store.chips < 10 && store.golden() == 0 && table.myBets.isEmpty
         case .blackjack(let table): store.chips < 10 && store.golden() == 0 && (table.mySeat?.amount ?? 0) == 0
         }
@@ -112,6 +117,7 @@ struct RootView: View {
                     onInstallUpdate: onInstallUpdate,
                     onRoulette: { go(.roulette(RouletteTable(store: store))) },
                     onSlot: { go(.slot(SlotMachine(store: store))) },
+                    onPlinko: { go(.plinko(PlinkoTable(store: store))) },
                     blackjackSeated: store.blackjackSeated,
                     onBlackjack: { go(.blackjack(BlackjackTable(store: store))) },
                     onBoard: { Task { await store.loadBoard() } },
@@ -152,6 +158,13 @@ struct RootView: View {
                 PixelWallView(wall: wall) { go(.lounge) }
                     .onAppear { wall.enter() }
                     .onDisappear { wall.leave() }
+            case .plinko(let table):
+                PlinkoView(table: table, chips: store.chips, golden: store.golden()) {
+                    table.leave()
+                    go(.lounge)
+                }
+                .onAppear { table.enter() }
+                .onDisappear { table.leave() }
             case .slot(let machine):
                 SlotView(machine: machine, chips: store.chips, golden: store.golden(),
                          vip: (store.me?.goldenUntil ?? .distantPast) > .now) {
@@ -163,7 +176,7 @@ struct RootView: View {
 
     private func go(_ next: Screen) {
         switch next {
-        case .slot: GameAudio.shared.enter(.floor)
+        case .slot, .plinko: GameAudio.shared.enter(.floor)
         case .blackjack: GameAudio.shared.enter(.felt)
         case .roulette: GameAudio.shared.enter(.marbles)
         case .minority: GameAudio.shared.enter(.ballot)
@@ -177,6 +190,8 @@ struct RootView: View {
         // 룰렛은 홀짝 자리를 이어받아 Presence 값도 같다 (Member.Place.roulette = "oddeven")
         case .roulette: store.place = .roulette
         case .slot: store.place = .slot
+        // 429 드롭도 옛 앱이 모르는 위치 값이라 라운지로
+        case .plinko: store.place = .lounge
         // 옛 앱이 모르는 위치 값을 보내면 회원 목록이 깨진다 → 소수결은 라운지로
         case .minority: store.place = .lounge
         // 블랙잭도 같은 이유로 라운지. 인원은 Presence가 아니라 서버 좌석에서 센다 (ADR-0014)

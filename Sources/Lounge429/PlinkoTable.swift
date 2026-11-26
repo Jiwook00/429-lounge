@@ -69,7 +69,7 @@ final class PlinkoTable {
     private(set) var resp = Resp(text: "GET /drop   200 OK · 레인을 고르고 꾹", tone: .muted)
     private(set) var walletPop: (text: String, until: Int)?
     private(set) var streak = 0
-    private(set) var charging = false
+    var charging = false
     private(set) var pressedAt: Date?
     private(set) var lastPower = 500
     private(set) var gradeShown: PlinkoDrop.Grade = .none
@@ -77,7 +77,7 @@ final class PlinkoTable {
     private(set) var perfectUntil = -1
     private var shakeUntil = -1
     /// 스냅샷용: 눌러서 모으는 중인 파워를 고정
-    private(set) var fixedPower: Int?
+    var fixedPower: Int?
     /// 동작 줄이기: 흔들림·배경 점멸 끔
     var reduced = false
 
@@ -265,7 +265,7 @@ final class PlinkoTable {
     }
 
     /// 응답이 왔다: 지갑은 서버 값으로 바꾸되 화면에는 공이 닿을 때까지 지급액을 뺀 값을 보여준다
-    private func receive(_ d: PlinkoDrop) {
+    func receive(_ d: PlinkoDrop) {
         store.update(d.player)
         guard !closed else { return }
         let id = nextID
