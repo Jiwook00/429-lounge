@@ -18,6 +18,10 @@ for arg in "$@"; do
     esac
 done
 
+# 배포 앱만 진짜 번들 ID를 쓴다. 로컬 빌드는 .dev로 나눠서 설정(UserDefaults)을 따로 둔다
+# (같은 ID면 개발 중에 닫은 "새로 들어온 것" 카드가 배포 앱에서도 본 걸로 남는다)
+if [[ $DIST == 1 ]]; then BUNDLE_ID="co.dwook.lounge429"; else BUNDLE_ID="co.dwook.lounge429.dev"; fi
+
 if [[ $DIST == 1 ]]; then
     : "${LOUNGE_SPARKLE_PUBLIC_KEY:?README 릴리스 절차에서 만든 Sparkle 공개키를 지정하세요}"
     ARCH=(--arch arm64 --arch x86_64)
@@ -65,7 +69,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleName</key><string>429 Lounge</string>
     <key>CFBundleDisplayName</key><string>429 Lounge</string>
-    <key>CFBundleIdentifier</key><string>co.dwook.lounge429</string>
+    <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key><string>Lounge429</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>

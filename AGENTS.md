@@ -87,6 +87,7 @@ swift build --product Lounge429
 - Claude Code의 429는 로그에 `apiErrorStatus: 429`, `quotaLimits.resetsAt`, `rateLimitType`으로 남는다
 - Codex는 `token_usage_record`(응답마다, `response_id`)로 세고, 429는 `token_count.rate_limits` 창이 100%일 때. 같은 리밋의 `resets_at`이 초 단위로 흔들리니 `UsageScanner.mergeHits`로 고정한다
 - 두 도구를 쓰면 토큰은 합쳐서 `claim_tokens` 한 번, 황금 칩은 리밋마다 ([ADR-0009](docs/madr/0009-codex-support-golden-per-tool.md))
+- 번들 ID: 배포(`--dist`)만 `co.dwook.lounge429`, 로컬 빌드는 `co.dwook.lounge429.dev`. 설정(UserDefaults)과 알림 권한이 따로라, 개발 중에 닫은 "새로 들어온 것" 카드가 배포 앱에 남지 않는다
 - 세션은 키체인이 아니라 `~/Library/Application Support/429Lounge/sessions/<host>/<profile>/`에 파일로 저장
 - `ImageRenderer`는 메인 런루프가 필요하다. `dispatchMain()`으로 돌리면 멈춘다 (`NSApplication.run()` 사용)
 - 메뉴바 관리 앱(Bartender, Ice 등)이 새 아이콘을 숨김 영역에 넣을 수 있다
