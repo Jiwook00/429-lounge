@@ -36,7 +36,7 @@ final class PlinkoTable {
     static let top = 30
     static let bucketY = top + 11 * vStep + 12
     static let maxBalls = 5
-    static let stakes: [Int64] = [10, 50, 100, 200]
+    static let stakes: [Int64] = [50, 100, 200, 300]
     static let multipliers: [Double] = [16, 4, 1.8, 1.3, 1.0, 0.6, 0.4, 0.6, 1.0, 1.3, 1.8, 4, 16]
     static let bucketLabels = ["16", "4", "1.8", "1.3", "1.0", ".6", ".4", ".6", "1.0", "1.3", "1.8", "4", "16"]
     static let goldPins: Set<PinPos> = [PinPos(r: 8, j: -4), PinPos(r: 8, j: 4)]

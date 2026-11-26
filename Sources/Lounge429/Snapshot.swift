@@ -399,7 +399,7 @@ enum Snapshot {
                 }
             }
             let mode = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"]
-            table.stake = 10
+            table.stake = 50
             let start = store.chips
             var presses = 0
             if mode == "auto" { table.auto = true }

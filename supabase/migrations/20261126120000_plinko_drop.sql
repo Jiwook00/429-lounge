@@ -173,7 +173,7 @@ declare
 begin
   if me is null then raise exception 'not_authenticated'; end if;
   if not exists (select 1 from players where id = me and named) then raise exception 'not_named'; end if;
-  if amount is null or amount not between 1 and 200 then raise exception 'invalid_amount'; end if;
+  if amount is null or amount not between 1 and 300 then raise exception 'invalid_amount'; end if;
 
   if p_golden then
     update players set golden_chips = golden_chips - 1
