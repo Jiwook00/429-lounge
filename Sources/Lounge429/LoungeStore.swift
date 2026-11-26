@@ -371,6 +371,9 @@ final class LoungeStore {
         showToast(message, golden: golden)
     }
 
+    /// 게임 화면이 못 보여 준 결과를 라운지 알림으로 (429 드롭 FEVER를 보기 전에 나갔을 때)
+    func announce(_ message: String, golden: Bool = false) { showToast(message, golden: golden) }
+
     private func showToast(_ message: String, golden: Bool = false) {
         let t = Toast(text: message, golden: golden, at: .now)
         toast = t

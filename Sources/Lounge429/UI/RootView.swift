@@ -169,7 +169,7 @@ struct RootView: View {
                     GameAudio.shared.warmPlinko()
                     table.enter()
                 }
-                .onDisappear { table.leave() }
+                .onDisappear { table.pause() } // 팝오버를 닫으면 멈췄다가 다시 열면 이어서 (나가기는 ‹ 라운지)
             case .slot(let machine):
                 SlotView(machine: machine, chips: store.chips, golden: store.golden(),
                          vip: (store.me?.goldenUntil ?? .distantPast) > .now) {

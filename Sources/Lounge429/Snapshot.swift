@@ -115,7 +115,7 @@ enum Snapshot {
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
         } else if let table, table.hasPrefix("plinko") {
-            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -ceiling | -fever | -vip
+            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -ceiling | -fever | -fever-end | -vip
             let vip = locked || table == "plinko-vip"
             let plinko = fakePlinko(store: store, me: me, mode: table)
             plinko.vip = vip
@@ -646,6 +646,11 @@ enum Snapshot {
         case "plinko-fever":
             drop(0, forceCatch: true, fever: true) { $0.pocket }
             table.advance(100)
+        case "plinko-fever-end":
+            // FEVER가 끝나고 4·2·9가 하나씩 꺼지는 중
+            drop(0, forceCatch: true, fever: true) { $0.pocket }
+            for _ in 0..<600 where table.fever?.endAt == nil { table.advance(1) }
+            table.advance(8)
         case "plinko-vip":
             // VIP HOUR: 포켓 입구가 늘 열려 있다
             table.previewLetters(1)

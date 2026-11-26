@@ -263,7 +263,14 @@ struct PlinkoView: View {
 
     private func feverBar(_ f: PlinkoTable.FeverRun, t: Int) -> some View {
         let c = phase(t, 3) ? Theme.neon : Theme.gold
-        return HStack {
+        // 4·2·9는 FEVER 내내 켜 두고, 끝나면 6틱마다 하나씩 끈다 (FEVER가 글자를 쓴 것)
+        let lit = f.endAt.map { max(0, PlinkoTable.letterChars.count - (t - $0) / 6) } ?? PlinkoTable.letterChars.count
+        return HStack(spacing: 6) {
+            HStack(spacing: 2) {
+                ForEach(0..<PlinkoTable.letterChars.count, id: \.self) { i in
+                    letterBox(i, lit: i < lit, filled: false, glow: false)
+                }
+            }
             Text("FEVER ×1.5 · 공 \(f.spawned)/\(f.n)")
             Spacer()
             Text("+" + PlinkoTable.fmt(f.total))
@@ -272,8 +279,8 @@ struct PlinkoView: View {
         .foregroundStyle(c)
         .glow(c)
         .padding(.horizontal, 6)
-        .frame(width: boardW, height: 12)
-        .position(x: boardW / 2, y: 9)
+        .frame(width: boardW, height: 14)
+        .position(x: boardW / 2, y: 10)
     }
 
     /// 4·2·9 글자 (포켓 천장). FEVER가 아닌 포켓마다 하나 켜지고, 셋 다 켜지면 다음 포켓은 FEVER
@@ -282,19 +289,24 @@ struct PlinkoView: View {
             ForEach(0..<PlinkoTable.letterChars.count, id: \.self) { i in
                 let lit = i < table.letters
                 let flashing = table.letterFlash.map { $0.index == i && t <= $0.until } ?? false
-                let on = flashing && phase(t, 2)
-                Text(PlinkoTable.letterChars[i])
-                    .font(Fonts.small())
-                    .foregroundStyle(on ? Theme.outline : lit ? Theme.gold : Theme.dim)
-                    .frame(width: 14, height: 14)
-                    .background(on ? Theme.gold : Theme.outline)
-                    .overlay(Rectangle().strokeBorder(lit ? Theme.gold : Theme.line, lineWidth: 2))
-                    .glow(flashing || (lit && table.letters == 2 && i < 2) ? Theme.gold : .clear, radius: 2)
+                letterBox(i, lit: lit, filled: flashing && phase(t, 2),
+                          glow: flashing || (lit && table.letters == 2 && i < 2))
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("4·2·9 글자 \(min(table.letters, 3))개")
         .position(x: 6 + 23, y: 10)
+    }
+
+    /// 4·2·9 글자 한 칸 (14×14). 켜지면 골드, filled면 골드로 채워 반짝
+    private func letterBox(_ i: Int, lit: Bool, filled: Bool, glow: Bool) -> some View {
+        Text(PlinkoTable.letterChars[i])
+            .font(Fonts.small())
+            .foregroundStyle(filled ? Theme.outline : lit ? Theme.gold : Theme.dim)
+            .frame(width: 14, height: 14)
+            .background(filled ? Theme.gold : Theme.outline)
+            .overlay(Rectangle().strokeBorder(lit ? Theme.gold : Theme.line, lineWidth: 2))
+            .glow(glow ? Theme.gold : .clear, radius: 2)
     }
 
     private func reelView(_ r: PlinkoTable.Reel, t: Int) -> some View {

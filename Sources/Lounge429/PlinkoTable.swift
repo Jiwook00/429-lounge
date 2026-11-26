@@ -381,8 +381,26 @@ final class PlinkoTable {
         }
     }
 
-    /// 화면을 떠난다. 서버에 이미 간 판의 지갑은 `store`가 갖고 있으니 연출만 접는다
+    /// 팝오버가 닫혔다: 연출을 그대로 멈춰 두고, 다시 열면(`enter`) 이어서 재생한다.
+    /// 접어 버리면 포켓으로 가던 공의 FEVER를 못 보고 4·2·9만 0이 된 것처럼 보인다
+    func pause() {
+        cancelCharge()
+        auto = false
+        driver?.cancel()
+        driver = nil
+    }
+
+    /// 화면을 떠난다. 서버에 이미 간 판의 지갑은 `store`가 갖고 있으니 연출만 접는다.
+    /// 아직 못 보여 준 FEVER가 있으면 라운지 알림으로 알린다
     func leave() {
+        if !closed {
+            let unseen = drops.filter { $0.response.fever && $0.feverPending }
+            if !unseen.isEmpty {
+                let total = unseen.reduce(Int64(0)) { $0 + $1.response.payout }
+                let ceiling = unseen.contains { $0.response.pocket?.ceiling == true }
+                store.announce((ceiling ? "4·2·9 완성 · " : "429 429 429 · ") + "FEVER +\(Self.fmt(total))칩", golden: true)
+            }
+        }
         closed = true
         cancelCharge()
         driver?.cancel()
