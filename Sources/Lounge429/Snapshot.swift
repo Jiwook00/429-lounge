@@ -426,7 +426,7 @@ enum Snapshot {
                         print("drop 막힘 · \(table.blockReason(chips: store.chips, golden: store.golden()) ?? "?") \(table.message ?? "")")
                     }
                 }
-                let line = "공 \(table.inFlight)/5 fever \(table.feverActive) · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips) · \(table.resp.text)\(table.message.map { " · \($0)" } ?? "")"
+                let line = "공 \(table.inFlight)/5 fever \(table.feverActive) · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips)\(table.message.map { " · \($0)" } ?? "")"
                 if line != last { print(line); last = line }
             }
             table.auto = false

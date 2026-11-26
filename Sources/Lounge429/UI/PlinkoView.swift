@@ -26,7 +26,6 @@ struct PlinkoView: View {
         VStack(spacing: 10) {
             topBar(fever: fever)
             board(t: t, fever: fever)
-            respLine
             controls
             dropButton
             bottomBar
@@ -88,7 +87,7 @@ struct PlinkoView: View {
             ForEach(table.pops) { pop in popView(pop, t: t) }
             if let f = table.fever { feverBar(f, t: t) }
             if table.streak >= 2, !fever {
-                Text("\(table.streak)연속 200 OK")
+                Text("\(table.streak)연속")
                     .font(Fonts.small()).foregroundStyle(Theme.cyan)
                     .position(x: boardW - 6 - 30, y: 8)
             }
@@ -326,18 +325,6 @@ struct PlinkoView: View {
         .overlay(Rectangle().strokeBorder(col, lineWidth: 2))
         .glow(col, radius: 6, strong: true)
         .position(x: boardW / 2, y: 64 + 24)
-    }
-
-    // MARK: - 응답 줄
-
-    private var respLine: some View {
-        let r = table.resp
-        return Text(r.text)
-            .font(Fonts.bold())
-            .foregroundStyle(tone(r.tone))
-            .glow(r.glow ? tone(r.tone) : .clear)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 14)
     }
 
     // MARK: - 조작

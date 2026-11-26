@@ -66,7 +66,6 @@ final class PlinkoTable {
     private(set) var beam: Beam?
     private(set) var reel: Reel?
     private(set) var fever: FeverRun?
-    private(set) var resp = Resp(text: "GET /drop   200 OK · 레인을 고르고 꾹", tone: .muted)
     private(set) var walletPop: (text: String, until: Int)?
     private(set) var streak = 0
     var charging = false
@@ -113,7 +112,6 @@ final class PlinkoTable {
     struct Coin: Identifiable { let id: Int; var x: Double; var y: Double; var vx: Double; var vy: Double; let born: Int }
     struct Banner { let kind: Kind; let until: Int; let big: String; let sub: String; enum Kind { case big, max, fever, feverEnd } }
     struct Beam { let x: Int; let until: Int }
-    struct Resp { let text: String; let tone: PlinkoTone; var glow = false }
     struct Reel {
         let start: Int
         let result: [String]
@@ -504,7 +502,6 @@ final class PlinkoTable {
             balls[i].split = true
             addPop(x: p.x, y: p.y - 12, text: "SPLIT", tone: .cyan)
             onSound?(.split)
-            if fever == nil { resp = Resp(text: "207 Multi-Status · 공이 둘로", tone: .cyan) }
             let spawnBall = PlinkoBallSpawn(ball: clone, drop: b.drop, fever: false, grade: b.grade, lane: nil, originPin: pin)
             spawnLater(spawnBall, born: &born, splitFrom: b)
         }
@@ -563,17 +560,10 @@ final class PlinkoTable {
         } else {
             addPop(x: x, y: Self.bucketY - 12, text: "×" + Self.mt(mult), tone: .dim)
         }
-        let goldNote = b.source.gold > 0 ? " · 골드 +" + Self.mt(b.source.gold) : ""
         if b.fever {
             fever?.total += pay
         } else {
             streak = mult >= 1.1 ? streak + 1 : 0
-            switch tier {
-            case .max: resp = Resp(text: "429 Too Many Chips · ×\(Self.mt(mult)) · +\(Self.fmt(gain))", tone: .neon, glow: true)
-            case .big: resp = Resp(text: "201 Created · ×\(Self.mt(mult)) · +\(Self.fmt(gain))\(goldNote)", tone: .gold, glow: true)
-            case .win: resp = Resp(text: "200 OK · ×\(Self.mt(mult)) · +\(Self.fmt(gain))\(goldNote)", tone: .green)
-            case .lose: resp = Resp(text: "206 Partial Content · ×\(Self.mt(mult)) · \(Self.fmt(pay))칩 돌려받음", tone: .muted)
-            }
         }
         if tier == .big || tier == .max {
             let isMax = tier == .max
@@ -598,7 +588,6 @@ final class PlinkoTable {
         let reach = pocket.reach
         reel = Reel(start: t, result: pocket.reels, stops: [t + 8, t + 14, t + (reach ? 34 : 22)],
                     fever: pocket.fever, reach: reach, drop: id, doneAt: nil)
-        resp = Resp(text: "302 Found · 스타트 포켓", tone: .gold)
         log?("reel \(pocket.reels.joined(separator: " ")) \(pocket.fever ? "FEVER" : "환급 \(pocket.refund)")\(reach ? " 리치" : "")")
     }
 
@@ -626,7 +615,6 @@ final class PlinkoTable {
         let pocket = drops[d].response.pocket
         if r.fever {
             fever = FeverRun(n: drops[d].response.feverBalls.count, next: t + 10, drop: r.drop)
-            resp = Resp(text: "429 429 429 · FEVER", tone: .neon, glow: true)
             banner = Banner(kind: .fever, until: t + 24, big: "429 429 429", sub: "FEVER · 공 \(drops[d].response.feverBalls.count)개 · 배수 ×2")
             shake(10)
             burst(x: Self.cx, y: Self.top + 6 * Self.vStep, n: 16)
@@ -635,7 +623,6 @@ final class PlinkoTable {
             let refund = pocket?.refund ?? 0
             drops[d].unlanded -= refund
             if refund > 0 { walletPop = ("+" + Self.fmt(refund), t + 12) }
-            resp = Resp(text: "302 Found · 환급 \(Self.fmt(refund))칩", tone: .muted)
             onSound?(.refund)
         }
     }
@@ -658,7 +645,6 @@ final class PlinkoTable {
             if f.spawned >= f.n, !balls.contains(where: { $0.fever }) {
                 f.endAt = t
                 banner = Banner(kind: .feverEnd, until: t + 40, big: "+" + Self.fmt(f.total), sub: "FEVER 끝 · 공 \(f.n)개 합계")
-                resp = Resp(text: "200 OK · FEVER +\(Self.fmt(f.total))", tone: .gold, glow: true)
                 shake(12)
                 burst(x: Self.cx, y: Self.bucketY, n: 24)
                 onSound?(.max)
