@@ -435,7 +435,7 @@ enum Snapshot {
                 try? await Task.sleep(for: .milliseconds(250))
             }
             try? await Task.sleep(for: .milliseconds(500))
-            print("끝 · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips) · 시작 \(start) → 변화 \(store.chips - start)")
+            print("끝 · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips) · 시작 \(start) → 변화 \(store.chips - start) · 이번 판 \(table.sessionNet)")
             write(AnyView(PlinkoView(table: table, chips: store.chips, golden: store.golden())), to: path)
             table.leave()
             exit(0)

@@ -66,7 +66,10 @@ final class PlinkoTable {
     private(set) var beam: Beam?
     private(set) var reel: Reel?
     private(set) var fever: FeverRun?
-    private(set) var walletPop: (text: String, until: Int)?
+    /// 이번 판 손익: 이 화면에 들어온 뒤 순이익 (건 칩을 뺀 값). 들어올 때마다 0
+    private(set) var sessionNet: Int64 = 0
+    /// 화면에 보이는 손익 (공이 닿으면 몇 틱에 걸쳐 굴러가듯 따라간다)
+    private(set) var shownNet: Int64 = 0
     private(set) var streak = 0
     var charging = false
     /// 누른 이벤트의 시각 (뗀 이벤트 시각과 비교해 보낼 파워를 정한다)
@@ -140,6 +143,8 @@ final class PlinkoTable {
         var reelPending: Bool
         var feverPending: Bool
         var feverLeft: Int
+        /// 이번 판 손익에서 건 칩을 이미 뺐나 (그 판의 첫 결과 때 한 번만)
+        var charged = false
     }
 
     private struct Request {
@@ -346,6 +351,8 @@ final class PlinkoTable {
 
     func enter() {
         closed = false
+        sessionNet = 0
+        shownNet = 0
         guard driver == nil else { return }
         // 정해진 시각마다 (sleep 길이만큼 기다리면 작업 시간만큼 틱이 조금씩 늘어진다). 많이 밀리면 몰아서 돌지 않고 다시 맞춘다
         driver = Task { [weak self] in
@@ -420,7 +427,7 @@ final class PlinkoTable {
     private var needsStep: Bool {
         !balls.isEmpty || reel != nil || fever != nil || !pops.isEmpty || !coins.isEmpty || banner != nil || beam != nil
             || !pinFlash.isEmpty || !bucketFlash.isEmpty || shakeUntil >= tick || gradeUntil >= tick || perfectUntil >= tick
-            || walletPop != nil || !reelQueue.isEmpty
+            || shownNet != sessionNet || !reelQueue.isEmpty
     }
 
     /// 스냅샷용: 틱을 n번 돌린다
@@ -466,7 +473,7 @@ final class PlinkoTable {
         }
         if let b = banner, b.until < t { banner = nil }
         if let b = beam, b.until < t { beam = nil }
-        if let w = walletPop, w.until < t { walletPop = nil }
+        rollNet()
     }
 
     // MARK: 핀에 닿음
@@ -480,6 +487,8 @@ final class PlinkoTable {
             if let d = drops.firstIndex(where: { $0.id == b.drop }) {
                 drops[d].liveBalls -= 1
                 drops[d].reelPending = true
+                // 포켓에 잡힌 것도 그 판의 결과: 건 칩을 여기서 뺀다 (환급·FEVER는 나중에 더해진다)
+                sessionNet -= chargeStake(d)
             }
             pinFlash[pin] = Flash(until: tick + 30, tone: .gold)
             addPop(x: p.x, y: p.y - 16, text: "POCKET!", tone: .gold)
@@ -538,28 +547,24 @@ final class PlinkoTable {
         let mult = b.source.mult
         let x = Self.x(2 * bucket - 12)
         let tier: Tier = mult >= 16 ? .max : mult >= 4 ? .big : mult >= 1.1 ? .win : .lose
-        let drop = rec.map { drops[$0].response }
-        let splitDrop = drop?.ball.clone != nil
-        // 분열한 판은 공마다 지급액을 그대로 보여준다 (건 칩은 한 번뿐이라 공별로 뺄 수 없다)
-        let gain: Int64 = b.fever || splitDrop || (drop?.golden ?? false) ? pay : pay - (drop?.amount ?? 0)
+        // 순이익: 그 판의 첫 결과면 건 칩을 뺀다 (분열한 판은 먼저 닿은 공이, FEVER 공은 이미 낸 판이라 지급액 그대로)
+        var gain = pay
+        if !b.fever, let rec { gain -= chargeStake(rec) }
+        sessionNet += gain
         if let rec {
             drops[rec].unlanded -= pay
             if !b.fever { drops[rec].liveBalls -= 1 }
         }
         log?("land 칸 \(bucket) ×\(Self.mt(mult)) 지급 \(pay)\(b.fever ? " (FEVER)" : "")\(b.source.gold > 0 ? " 골드 +\(Self.mt(b.source.gold))" : "") · 표시 칩 \(shown(chips: store.chips))")
         bucketFlash[bucket] = BucketFlash(until: t + 8, tier: tier)
-        if pay > 0 { walletPop = ("+" + Self.fmt(pay), t + 12) }
         switch tier {
         case .max: onSound?(.max)
         case .big: onSound?(.big)
         case .win: onSound?(.win(mult: mult, x: x))
         case .lose: onSound?(.lose(x: x))
         }
-        if gain > 0 {
-            addPop(x: x, y: Self.bucketY - 12, text: "+" + Self.fmt(gain), tone: tier == .max ? .neon : tier == .big ? .gold : .cream)
-        } else {
-            addPop(x: x, y: Self.bucketY - 12, text: "×" + Self.mt(mult), tone: .dim)
-        }
+        addPop(x: x, y: Self.bucketY - 12, text: Self.signed(gain),
+               tone: gain < 0 ? .neon : gain == 0 ? .dim : tier == .max ? .neon : tier == .big ? .gold : .green)
         if b.fever {
             fever?.total += pay
         } else {
@@ -622,7 +627,10 @@ final class PlinkoTable {
         } else {
             let refund = pocket?.refund ?? 0
             drops[d].unlanded -= refund
-            if refund > 0 { walletPop = ("+" + Self.fmt(refund), t + 12) }
+            sessionNet += refund
+            if refund > 0 {
+                addPop(x: Self.cx, y: Self.y(Self.pocketPin.r) - 16, text: "+" + Self.fmt(refund), tone: .green)
+            }
             onSound?(.refund)
         }
     }
@@ -703,6 +711,26 @@ final class PlinkoTable {
     }
 
     static func fmt(_ n: Int64) -> String { max(0, n).formatted(.number) }
+
+    /// +15 / −20 / ±0 (빼기는 진짜 마이너스 기호)
+    static func signed(_ n: Int64) -> String {
+        n > 0 ? "+" + fmt(n) : n < 0 ? "−" + fmt(-n) : "±0"
+    }
+
+    /// 그 판의 건 칩을 이번 판 손익에서 한 번만 뺀다. 뺀 금액을 돌려준다 (황금 칩은 0)
+    private func chargeStake(_ i: Int) -> Int64 {
+        guard !drops[i].charged else { return 0 }
+        drops[i].charged = true
+        return drops[i].response.golden ? 0 : drops[i].response.amount
+    }
+
+    /// 보이는 손익이 실제 값을 따라간다: 남은 차이의 1/3씩 (최소 1칩), 6틱 안팎이면 도착
+    private func rollNet() {
+        let diff = sessionNet - shownNet
+        guard diff != 0 else { return }
+        let stepSize = max(1, abs(diff) / 3)
+        shownNet += diff > 0 ? min(diff, stepSize) : -min(-diff, stepSize)
+    }
 
     /// 소수 첫째 자리까지 (정수면 소수점 없이)
     static func mt(_ m: Double) -> String {
