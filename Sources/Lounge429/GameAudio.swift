@@ -58,6 +58,9 @@ final class GameAudio {
     private var since = Date()
     private var reelsTurning = 0
     private var players: [String: AVAudioPlayer] = [:]
+    /// 한꺼번에 여러 번 겹쳐 울려야 하는 소리(429 드롭의 핀·착지): 이름마다 플레이어 4개를 돌려 쓴다
+    private var pools: [String: (players: [AVAudioPlayer], next: Int)] = [:]
+    private static let poolSize = 4
     private var fadeTask: Task<Void, Never>?
 
     func enter(_ next: Room) {
@@ -77,6 +80,7 @@ final class GameAudio {
         if !enabled || !visible {
             fadeTask?.cancel()
             for player in players.values { player.stop() }
+            stopPools()
         }
         updateAmbience()
         updateMotor()
@@ -84,6 +88,8 @@ final class GameAudio {
 
     private func stopEffects() {
         for effect in Effect.allCases { players[effect.rawValue]?.stop() }
+        stopPools()
+        players["dropCharge"]?.stop()
         setReelsTurning(0)
     }
 
@@ -144,6 +150,84 @@ final class GameAudio {
             motor.play()
         }
         motor.setVolume(Float(reelsTurning) / 3, fadeDuration: 0.09)
+    }
+
+    private func stopPools() {
+        for pool in pools.values { for p in pool.players { p.stop() } }
+        players["dropCharge"]?.stop()
+    }
+
+    /// 풀에서 다음 플레이어를 꺼낸다 (처음엔 4개까지 만든다). 뒤늦게 쓰는 플레이어가 앞 소리를 끊는다
+    private func pooled(_ name: String) -> AVAudioPlayer? {
+        var pool = pools[name] ?? ([], 0)
+        let player: AVAudioPlayer
+        if pool.players.count < Self.poolSize {
+            guard let url = LoungeResources.bundle.url(forResource: name, withExtension: "wav", subdirectory: "Sounds"),
+                  let made = try? AVAudioPlayer(contentsOf: url) else { return nil }
+            made.enableRate = true
+            made.prepareToPlay()
+            pool.players.append(made)
+            player = made
+        } else {
+            player = pool.players[pool.next % Self.poolSize]
+        }
+        pool.next = (pool.next + 1) % Self.poolSize
+        pools[name] = pool
+        return player
+    }
+
+    private func fire(_ name: String, volume: Float = 1, pan: Float = 0, rate: Float = 1) {
+        guard let sound = pooled(name) else { return }
+        sound.stop()
+        sound.currentTime = 0
+        sound.pan = pan
+        sound.volume = volume
+        sound.rate = rate
+        sound.play()
+    }
+
+    /// 429 드롭 소리. 소리 끄기·창 닫기면 아무것도 안 낸다 (충전음 루프는 `refreshPlayback`이 끊는다)
+    func plinko(_ sound: PlinkoSound) {
+        guard enabled, visible else { return }
+        func pan(_ x: Int) -> Float { Float(max(-1, min(1, Double(x - PlinkoTable.cx) / Double(PlinkoTable.cx)))) }
+        switch sound {
+        case .chargeStart:
+            guard let loop = chargeLoop() else { return }
+            loop.currentTime = 0
+            loop.rate = 0.45
+            loop.volume = 0.8
+            loop.numberOfLoops = -1
+            loop.play()
+        case .chargeLevel(let power):
+            players["dropCharge"]?.rate = Float(0.45 + 1.55 * Double(power) / 1000)
+        case .chargeStop: players["dropCharge"]?.stop()
+        case .launch: fire("dropLaunch")
+        case .good: fire("dropGood")
+        case .perfect: fire("dropPerfect")
+        case .pin(let row, let x): fire("dropPin\(min(11, max(0, row)))", pan: pan(x))
+        case .gold(let x): fire("dropGold", pan: pan(x))
+        case .split: fire("dropSplit")
+        case .lose(let x): fire("dropLand", pan: pan(x))
+        case .win(let mult, let x): fire("win", pan: pan(x), rate: mult >= 1.8 ? 1.26 : mult >= 1.3 ? 1.12 : 1)
+        case .big: fire("bigWin")
+        case .max: fire("dropMax")
+        case .pocket: fire("dropPocket")
+        case .reelTick: break
+        case .reelStop: fire("reel")
+        case .reach: fire("dropReach")
+        case .fever: fire("dropFever")
+        case .refund: fire("push")
+        }
+    }
+
+    private func chargeLoop() -> AVAudioPlayer? {
+        if let existing = players["dropCharge"] { return existing }
+        guard let url = LoungeResources.bundle.url(forResource: "dropCharge", withExtension: "wav", subdirectory: "Sounds"),
+              let made = try? AVAudioPlayer(contentsOf: url) else { return nil }
+        made.enableRate = true
+        made.prepareToPlay()
+        players["dropCharge"] = made
+        return made
     }
 
     func play(_ effect: Effect, at time: Date?, volume: Float = 1, pan: Float = 0) {

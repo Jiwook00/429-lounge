@@ -163,7 +163,10 @@ struct RootView: View {
                     table.leave()
                     go(.lounge)
                 }
-                .onAppear { table.enter() }
+                .onAppear {
+                    table.onSound = { GameAudio.shared.plinko($0) }
+                    table.enter()
+                }
                 .onDisappear { table.leave() }
             case .slot(let machine):
                 SlotView(machine: machine, chips: store.chips, golden: store.golden(),

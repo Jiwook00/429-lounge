@@ -361,6 +361,7 @@ final class PlinkoTable {
     }
 
     private func driverTick() {
+        if charging { onSound?(.chargeLevel(power(at: .now))) }
         if auto, !charging, Date().timeIntervalSince(lastAutoAt) >= 0.6 {
             lastAutoAt = .now
             if blockReason(chips: store.chips, golden: store.golden()) == nil {
