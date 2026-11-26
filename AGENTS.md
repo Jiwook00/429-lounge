@@ -29,6 +29,7 @@ supabase db push --dry-run           # 운영 DB(서울, 링크됨)에 적용될
 
 swift run lounge-bot --name 철수      # 상대 봇
 swift run lounge-scan                # 토큰 로그 파싱 결과
+scripts/install-hooks.sh             # 클론마다 한 번: git 훅 (커밋하는 Markdown 표를 Prettier로 정렬)
 ```
 
 ## 구조
@@ -51,6 +52,7 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 - **픽셀 규칙.** 스프라이트 정수 배율, Galmuri는 12/24pt(Galmuri9는 10pt)만, `pixelBox` 테두리. 색은 `Theme` 토큰만 쓰고 hex를 뷰에 직접 넣지 않는다. 발광은 `.glow()`로, DESIGN.md §7에 적힌 곳에만. 자세한 건 DESIGN.md.
 - **새 게임을 만들면** `game_results` 뷰를 다시 만들어 그 게임의 한 판(`net` = 지급액 − 건 칩, 황금 칩은 0)을 `union all`로 더한다. 안 하면 이번 주 큰손에서 빠진다 ([ADR-0012](docs/madr/0012-weekly-board-net-winnings.md))
 - **칩 규칙을 바꾸면** `docs/chip-economy.md`도 같이 고친다.
+- **Markdown은 Prettier로 정렬된 상태로 커밋한다** (`.prettierrc.json`). `scripts/install-hooks.sh`를 한 번 실행하면 pre-commit 훅이 커밋하는 `.md`의 스테이징된 내용만 정렬해 다시 올린다. 훅을 안 쓰는 환경이면 커밋 전에 `npx prettier --write <파일>`. 편집할 때 파일 전체를 정렬하는 도구가 남기는 엉뚱한 정렬 변경을 막기 위해서다
 - **Swift 6 strict concurrency.** `LoungeCore`, `LoungeNet` 타입은 `Sendable`로 유지한다.
 - 코드 주석과 UI 카피는 한국어. 카피 톤은 DESIGN.md §11.
 

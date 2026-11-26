@@ -1,0 +1,40 @@
+#!/bin/sh
+# 커밋하는 Markdown 파일을 Prettier로 정렬한다 (설정: .prettierrc.json).
+# 누가 고쳤든(Claude, Codex, 직접) 커밋되는 표 정렬이 같아서, 편집할 때 도는 포맷터가 엉뚱한 정렬 변경을 남기지 않는다.
+# 스테이징된 내용만 정렬해서 다시 넣는다 → `git add -p`로 일부만 올린 파일도 안 올린 부분을 건드리지 않는다.
+# 설치: scripts/install-hooks.sh (한 번)
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- '*.md')
+[ -z "$files" ] && exit 0
+
+if ! command -v npx >/dev/null 2>&1; then
+    echo "pre-commit: npx가 없어 Markdown 정렬을 건너뜁니다" >&2
+    exit 0
+fi
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+status=0
+for f in $files; do
+    # 스테이징된 내용을 정렬
+    if ! git show ":$f" | npx --yes prettier@3 --stdin-filepath "$f" > "$tmp" 2>/dev/null; then
+        echo "pre-commit: $f 정렬 실패 (Prettier 오류). 고친 뒤 다시 커밋하세요" >&2
+        status=1
+        continue
+    fi
+    if git show ":$f" | cmp -s - "$tmp"; then continue; fi
+    # 작업 트리에 안 올린 변경이 있었나 (인덱스를 바꾸기 전에 본다)
+    clean=0
+    [ "$(git hash-object -- "$f")" = "$(git rev-parse ":$f")" ] && clean=1
+    mode=$(git ls-files -s -- "$f" | cut -d' ' -f1)
+    blob=$(git hash-object -w "$tmp")
+    git update-index --cacheinfo "$mode,$blob,$f"
+    # 작업 트리: 안 올린 변경이 없으면 같은 결과로 맞추고, 있으면 파일 전체를 정렬한다
+    if [ $clean = 1 ]; then
+        cp "$tmp" "$f"
+    else
+        npx --yes prettier@3 --write --log-level warn "$f"
+    fi
+    echo "pre-commit: $f 표 정렬을 맞췄습니다"
+done
+exit $status
