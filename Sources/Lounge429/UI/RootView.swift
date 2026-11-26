@@ -165,6 +165,7 @@ struct RootView: View {
                 }
                 .onAppear {
                     table.onSound = { GameAudio.shared.plinko($0) }
+                    GameAudio.shared.warmPlinko()
                     table.enter()
                 }
                 .onDisappear { table.leave() }

@@ -3,6 +3,15 @@ import LoungeCore
 import LoungeNet
 import SwiftUI
 
+/// 개발용: 실제 창에 띄운 429 드롭 (지갑 값이 바뀌면 다시 그린다)
+private struct PlinkoLiveHost: View {
+    let table: PlinkoTable
+    let store: LoungeStore
+    var body: some View { PlinkoView(table: table, chips: store.chips, golden: store.golden()) }
+}
+
+@MainActor private var plinkoWindow: NSWindow?
+
 /// 개발용: 화면을 PNG로 렌더링 (2x). 테이블 화면은 가짜 데이터로.
 @MainActor
 enum Snapshot {
@@ -370,6 +379,25 @@ enum Snapshot {
             let table = PlinkoTable(store: store)
             table.log = { print("  \($0)") }
             table.enter()
+            // LOUNGE_PLINKO_WINDOW=1: 실제 창에 띄워 그리면서 잰다 (화면 그리기가 틱을 미는지 확인용)
+            if ProcessInfo.processInfo.environment["LOUNGE_PLINKO_WINDOW"] == "1" {
+                NSApplication.shared.setActivationPolicy(.accessory)
+                let host = NSHostingView(rootView: PlinkoLiveHost(table: table, store: store))
+                let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 340, height: 560),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+                window.contentView = host
+                window.makeKeyAndOrderFront(nil)
+                plinkoWindow = window
+                if ProcessInfo.processInfo.environment["LOUNGE_PLINKO_SOUND"] == "1" {
+                    let was = GameAudio.shared.enabled
+                    GameAudio.shared.enabled = true
+                    GameAudio.shared.setVisible(true)
+                    GameAudio.shared.enter(.floor)
+                    table.onSound = { GameAudio.shared.plinko($0) }
+                    GameAudio.shared.warmPlinko()
+                    atexit_b { MainActor.assumeIsolated { GameAudio.shared.enabled = was } }
+                }
+            }
             let mode = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"]
             table.stake = 10
             let start = store.chips

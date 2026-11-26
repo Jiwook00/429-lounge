@@ -349,9 +349,14 @@ final class PlinkoTable {
     func enter() {
         closed = false
         guard driver == nil else { return }
+        // 정해진 시각마다 (sleep 길이만큼 기다리면 작업 시간만큼 틱이 조금씩 늘어진다). 많이 밀리면 몰아서 돌지 않고 다시 맞춘다
         driver = Task { [weak self] in
+            let clock = ContinuousClock()
+            var next = clock.now
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.tickInterval)
+                next += Self.tickInterval
+                if next < clock.now - Self.tickInterval { next = clock.now + Self.tickInterval }
+                try? await Task.sleep(until: next, tolerance: .milliseconds(2), clock: clock)
                 guard let self else { return }
                 self.driverTick()
             }
@@ -372,7 +377,37 @@ final class PlinkoTable {
         syncHold()
     }
 
+    /// 개발용: 틱 간격 측정 (log가 있을 때만)
+    @ObservationIgnored private var perfLast: Date?
+    @ObservationIgnored private var perfGaps: [Double] = []
+
+    private func perfMark() {
+        guard let log else { return }
+        let now = Date()
+        if let last = perfLast { perfGaps.append(now.timeIntervalSince(last) * 1000) }
+        perfLast = now
+        if perfGaps.count >= 100 {
+            let s = perfGaps.sorted()
+            log(String(format: "perf 틱 간격 ms p50 %.1f p95 %.1f max %.1f", s[50], s[95], s[99]))
+            perfGaps = []
+        }
+    }
+
+    @ObservationIgnored private var perfWork: [Double] = []
+
     private func driverTick() {
+        perfMark()
+        let began = Date()
+        defer {
+            if log != nil {
+                perfWork.append(Date().timeIntervalSince(began) * 1000)
+                if perfWork.count >= 100 {
+                    let s = perfWork.sorted()
+                    log?(String(format: "perf 틱 작업 ms p50 %.2f p95 %.2f max %.2f", s[50], s[95], s[99]))
+                    perfWork = []
+                }
+            }
+        }
         if charging { onSound?(.chargeLevel(power(at: .now))) }
         if auto, !charging, Date().timeIntervalSince(lastAutoAt) >= 0.6 {
             lastAutoAt = .now

@@ -58,9 +58,8 @@ final class GameAudio {
     private var since = Date()
     private var reelsTurning = 0
     private var players: [String: AVAudioPlayer] = [:]
-    /// 한꺼번에 여러 번 겹쳐 울려야 하는 소리(429 드롭의 핀·착지): 이름마다 플레이어 4개를 돌려 쓴다
-    private var pools: [String: (players: [AVAudioPlayer], next: Int)] = [:]
-    private static let poolSize = 4
+    /// 429 드롭 소리 (핀·착지가 틱마다 여러 번 겹쳐 울린다)
+    private let drop = DropAudio()
     private var fadeTask: Task<Void, Never>?
 
     func enter(_ next: Room) {
@@ -80,7 +79,7 @@ final class GameAudio {
         if !enabled || !visible {
             fadeTask?.cancel()
             for player in players.values { player.stop() }
-            stopPools()
+            drop.stopAll()
         }
         updateAmbience()
         updateMotor()
@@ -88,8 +87,7 @@ final class GameAudio {
 
     private func stopEffects() {
         for effect in Effect.allCases { players[effect.rawValue]?.stop() }
-        stopPools()
-        players["dropCharge"]?.stop()
+        drop.stopAll()
         setReelsTurning(0)
     }
 
@@ -152,38 +150,11 @@ final class GameAudio {
         motor.setVolume(Float(reelsTurning) / 3, fadeDuration: 0.09)
     }
 
-    private func stopPools() {
-        for pool in pools.values { for p in pool.players { p.stop() } }
-        players["dropCharge"]?.stop()
-    }
-
-    /// 풀에서 다음 플레이어를 꺼낸다 (처음엔 4개까지 만든다). 뒤늦게 쓰는 플레이어가 앞 소리를 끊는다
-    private func pooled(_ name: String) -> AVAudioPlayer? {
-        var pool = pools[name] ?? ([], 0)
-        let player: AVAudioPlayer
-        if pool.players.count < Self.poolSize {
-            guard let url = LoungeResources.bundle.url(forResource: name, withExtension: "wav", subdirectory: "Sounds"),
-                  let made = try? AVAudioPlayer(contentsOf: url) else { return nil }
-            made.enableRate = true
-            made.prepareToPlay()
-            pool.players.append(made)
-            player = made
-        } else {
-            player = pool.players[pool.next % Self.poolSize]
-        }
-        pool.next = (pool.next + 1) % Self.poolSize
-        pools[name] = pool
-        return player
-    }
-
-    private func fire(_ name: String, volume: Float = 1, pan: Float = 0, rate: Float = 1) {
-        guard let sound = pooled(name) else { return }
-        sound.stop()
-        sound.currentTime = 0
-        sound.pan = pan
-        sound.volume = volume
-        sound.rate = rate
-        sound.play()
+    /// 429 드롭 화면에 들어갈 때: 오디오 엔진을 켜고 소리 파일을 미리 읽는다 (첫 소리에 화면이 멈칫하지 않게)
+    func warmPlinko() {
+        guard enabled, visible else { return }
+        drop.warm(["dropCharge", "dropLaunch", "dropGood", "dropPerfect", "dropGold", "dropSplit", "dropLand", "win", "bigWin",
+                   "dropMax", "dropPocket", "reel", "dropReach", "dropFever", "push"] + (0..<12).map { "dropPin\($0)" })
     }
 
     /// 429 드롭 소리. 소리 끄기·창 닫기면 아무것도 안 낸다 (충전음 루프는 `refreshPlayback`이 끊는다)
@@ -191,43 +162,26 @@ final class GameAudio {
         guard enabled, visible else { return }
         func pan(_ x: Int) -> Float { Float(max(-1, min(1, Double(x - PlinkoTable.cx) / Double(PlinkoTable.cx)))) }
         switch sound {
-        case .chargeStart:
-            guard let loop = chargeLoop() else { return }
-            loop.currentTime = 0
-            loop.rate = 0.45
-            loop.volume = 0.8
-            loop.numberOfLoops = -1
-            loop.play()
-        case .chargeLevel(let power):
-            players["dropCharge"]?.rate = Float(0.45 + 1.55 * Double(power) / 1000)
-        case .chargeStop: players["dropCharge"]?.stop()
-        case .launch: fire("dropLaunch")
-        case .good: fire("dropGood")
-        case .perfect: fire("dropPerfect")
-        case .pin(let row, let x): fire("dropPin\(min(11, max(0, row)))", pan: pan(x))
-        case .gold(let x): fire("dropGold", pan: pan(x))
-        case .split: fire("dropSplit")
-        case .lose(let x): fire("dropLand", pan: pan(x))
-        case .win(let mult, let x): fire("win", pan: pan(x), rate: mult >= 1.8 ? 1.26 : mult >= 1.3 ? 1.12 : 1)
-        case .big: fire("bigWin")
-        case .max: fire("dropMax")
-        case .pocket: fire("dropPocket")
+        case .chargeStart: drop.chargeStart()
+        case .chargeLevel(let power): drop.chargeRate(Float(0.45 + 1.55 * Double(power) / 1000))
+        case .chargeStop: drop.chargeStop()
+        case .launch: drop.play("dropLaunch")
+        case .good: drop.play("dropGood")
+        case .perfect: drop.play("dropPerfect")
+        case .pin(let row, let x): drop.play("dropPin\(min(11, max(0, row)))", pan: pan(x))
+        case .gold(let x): drop.play("dropGold", pan: pan(x))
+        case .split: drop.play("dropSplit")
+        case .lose(let x): drop.play("dropLand", pan: pan(x))
+        case .win(_, let x): drop.play("win", pan: pan(x))
+        case .big: drop.play("bigWin")
+        case .max: drop.play("dropMax")
+        case .pocket: drop.play("dropPocket")
         case .reelTick: break
-        case .reelStop: fire("reel")
-        case .reach: fire("dropReach")
-        case .fever: fire("dropFever")
-        case .refund: fire("push")
+        case .reelStop: drop.play("reel")
+        case .reach: drop.play("dropReach")
+        case .fever: drop.play("dropFever")
+        case .refund: drop.play("push")
         }
-    }
-
-    private func chargeLoop() -> AVAudioPlayer? {
-        if let existing = players["dropCharge"] { return existing }
-        guard let url = LoungeResources.bundle.url(forResource: "dropCharge", withExtension: "wav", subdirectory: "Sounds"),
-              let made = try? AVAudioPlayer(contentsOf: url) else { return nil }
-        made.enableRate = true
-        made.prepareToPlay()
-        players["dropCharge"] = made
-        return made
     }
 
     func play(_ effect: Effect, at time: Date?, volume: Float = 1, pan: Float = 0) {
@@ -252,5 +206,123 @@ struct GameSoundButton: View {
         .foregroundStyle(audio.enabled ? Theme.cream : Theme.muted)
         .accessibilityLabel(audio.enabled ? "게임 소리 끄기" : "게임 소리 켜기")
         .help(audio.enabled ? "게임 소리 끄기" : "게임 소리 켜기")
+    }
+}
+
+/// 429 드롭 소리: `AVAudioEngine` 한 대에 미리 읽어 둔 버퍼를 목소리 8개로 돌려 쓴다.
+/// `AVAudioPlayer`의 stop·play는 부를 때마다 메인 스레드를 수 ms씩 막아서, 틱(60ms)마다 핀 소리가 여러 번 나면
+/// 틱이 100ms 넘게 밀려 공이 버벅였다. 플레이어 노드에 버퍼를 예약하는 건 거의 막지 않는다.
+@MainActor
+final class DropAudio {
+    private static let voiceCount = 8
+    private static let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+    private let engine = AVAudioEngine()
+    private var voices: [AVAudioPlayerNode] = []
+    private var next = 0
+    private var buffers: [String: AVAudioPCMBuffer] = [:]
+    private let chargeNode = AVAudioPlayerNode()
+    private let chargeSpeed = AVAudioUnitVarispeed()
+    private var built = false
+
+    private func ready() -> Bool {
+        if !built {
+            built = true
+            for _ in 0..<Self.voiceCount {
+                let node = AVAudioPlayerNode()
+                engine.attach(node)
+                engine.connect(node, to: engine.mainMixerNode, format: Self.format)
+                voices.append(node)
+            }
+            engine.attach(chargeNode)
+            engine.attach(chargeSpeed)
+            engine.connect(chargeNode, to: chargeSpeed, format: Self.format)
+            engine.connect(chargeSpeed, to: engine.mainMixerNode, format: Self.format)
+        }
+        if !engine.isRunning {
+            do { try engine.start() } catch { return false }
+        }
+        // 노드는 늘 재생 중으로 둔다. 버퍼가 없으면 무음이고, 새 버퍼는 `.interrupts`로 바로 끼워 넣는다
+        // (`stop()`은 오디오 스레드를 기다리느라 부를 때마다 수 ms씩 막는다)
+        for v in voices where !v.isPlaying { v.play() }
+        if !chargeNode.isPlaying { chargeNode.play() }
+        return true
+    }
+
+    /// wav를 한 번 읽어 엔진 형식(44.1kHz 모노 float)으로 바꿔 둔다
+    private func buffer(_ name: String) -> AVAudioPCMBuffer? {
+        if let b = buffers[name] { return b }
+        guard let url = LoungeResources.bundle.url(forResource: name, withExtension: "wav", subdirectory: "Sounds"),
+              let file = try? AVAudioFile(forReading: url),
+              let raw = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+              (try? file.read(into: raw)) != nil else { return nil }
+        let out: AVAudioPCMBuffer
+        if raw.format == Self.format {
+            out = raw
+        } else {
+            guard let converter = AVAudioConverter(from: raw.format, to: Self.format),
+                  let converted = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(
+                      Double(raw.frameLength) * Self.format.sampleRate / raw.format.sampleRate) + 64) else { return nil }
+            let feed = Feed(raw)
+            converter.convert(to: converted, error: nil) { _, status in
+                if feed.done { status.pointee = .endOfStream; return nil }
+                feed.done = true
+                status.pointee = .haveData
+                return feed.buffer
+            }
+            out = converted
+        }
+        buffers[name] = out
+        return out
+    }
+
+    /// 변환기에 원본 버퍼를 한 번만 넘기기 위한 상자 (변환은 그 자리에서 동기로 끝난다)
+    private final class Feed: @unchecked Sendable {
+        let buffer: AVAudioPCMBuffer
+        var done = false
+        init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+    }
+
+    func warm(_ names: [String]) {
+        guard ready() else { return }
+        for n in names { _ = buffer(n) }
+    }
+
+    func play(_ name: String, volume: Float = 1, pan: Float = 0) {
+        guard ready(), let b = buffer(name) else { return }
+        let node = voices[next]
+        next = (next + 1) % voices.count
+        node.volume = volume
+        node.pan = pan
+        node.scheduleBuffer(b, at: nil, options: .interrupts)
+    }
+
+    func chargeStart() {
+        guard ready(), let b = buffer("dropCharge") else { return }
+        chargeNode.volume = 0.8
+        chargeSpeed.rate = 0.45
+        chargeNode.scheduleBuffer(b, at: nil, options: [.loops, .interrupts])
+    }
+
+    func chargeRate(_ rate: Float) {
+        guard built else { return }
+        chargeSpeed.rate = max(0.25, min(4, rate))
+    }
+
+    /// 루프를 멈춘다: 볼륨을 끄고 무음 버퍼로 바꿔 끼운다 (`stop()` 대신)
+    func chargeStop() {
+        guard built else { return }
+        chargeNode.volume = 0
+        if let silence = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: 1) {
+            silence.frameLength = 1
+            chargeNode.scheduleBuffer(silence, at: nil, options: .interrupts)
+        }
+    }
+
+    /// 소리 끄기·창 닫기: 드물게 불리니 확실히 멈춘다
+    func stopAll() {
+        guard built else { return }
+        for v in voices { v.stop() }
+        chargeNode.stop()
+        engine.pause()
     }
 }
