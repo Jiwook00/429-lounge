@@ -40,7 +40,7 @@ swift run lounge-scan                # 토큰 로그 파싱 결과
 | `Lounge429`                 | SwiftUI 메뉴바 앱 (`MenuBarExtra` window 스타일)                                         | Core, Net      |
 | `lounge-bot`, `lounge-scan` | 개발용 CLI                                                                               | Net / Core     |
 
-- 화면 상태: `LoungeStore`(지갑, 사용량, 칩 지급), `RouletteTable`·`BlackjackTable`(테이블 동기화). 모두 `@MainActor @Observable`
+- 화면 상태: `LoungeStore`(지갑, 사용량, 칩 지급), `RouletteTable`·`BlackjackTable`(테이블 동기화), `PlinkoTable`(429 드롭: 서버 경로를 60ms 틱으로 재생). 모두 `@MainActor @Observable`
 - 뷰는 값을 받는다 (`LoungeView`, `RouletteView`). 스냅샷 렌더링에 그대로 쓰기 위해서
 - 서버 로직은 `supabase/migrations/*.sql`의 Postgres 함수에 있다
 
@@ -60,7 +60,7 @@ UI를 바꾸면 스냅샷으로 직접 확인한다 (앱을 띄우지 않고 PNG
 
 ```sh
 swift build --product Lounge429
-.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-board-10|lobby-board-10-me|lobby-flip|lobby-live|bj-idle|bj-betting|bj-full|bj-dealing|bj-deal|bj-myturn|bj-turn|bj-dealer|bj-result|bj-help|bj-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-notice|update-sparkle|update-required]
+.build/debug/Lounge429 --snapshot /tmp/x.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-board-10|lobby-board-10-me|lobby-flip|lobby-live|bj-idle|bj-betting|bj-full|bj-dealing|bj-deal|bj-myturn|bj-turn|bj-dealer|bj-result|bj-help|bj-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|plinko-idle|plinko-charging|plinko-flying|plinko-win|plinko-big|plinko-max|plinko-pocket|plinko-fever|plinko-live|update|update-notice|update-sparkle|update-required]
 ```
 
 - `--table roulette-live`: 설정된 Supabase 서버의 룰렛 테이블에 앉아 25초 동안 상태 줄을 찍고 화면을 저장한다. `LOUNGE_E2E_BET=chips`면 빨강 50 + 7에 10, `golden`이면 홀에 황금 칩을 한 번 건다
@@ -70,6 +70,7 @@ swift build --product Lounge429
 - 블랙잭은 `lounge-bot --name 철수 --blackjack` 두세 개 + `--table bj-live`(25초 동안 상태 줄 출력 후 화면). `LOUNGE_E2E_BET=1`이면 앱 계정도 30칩 걸고 친다. 서버 함수는 `bj_tick`이 jsonb 하나로 판 전체를 돌려주고, 카드 도착(날아오는) 시각은 `BlackjackTable.apply`가 정한다
 - 소수결은 `lounge-bot --name 철수 --minority 0|1`로 봇이 고르고, `--table lobby-live`가 끝날 때 `minority ...`로 상태를 찍는다. 정산을 보려면 로컬 DB에서 `update minority_rounds set closes_at = now() where settled_at is null`
 - 라운지 벽화는 `lounge-bot --name 철수 --wall`(2~5초마다 옆 칸으로 걸어가며 칠함, 10개 쓰면 429 받고 대기)을 띄워 두고 앱에서 벽화를 연다. `--table wall-live`는 25초 동안 새 칸과 도착 지연을 찍는다(몇 초 안이면 Realtime). 서버 함수는 `pixel_board`(읽기) / `pixel_paint`(칠하기, 버킷 검사)이고 칩과 무관하다 ([ADR-0017](docs/madr/0017-lounge-wall-free-pixels.md))
+- 429 드롭은 `PlinkoTable`이 서버 응답의 경로(`js`)를 60ms 틱으로 재생한다. 지갑·지급 팝업·내 전광판 이벤트는 공이 닿을 때 반영하니, 로직을 건드리면 `--table plinko-live`(`LOUNGE_E2E_BET=1` 손으로 누르고 떼기 / `auto` / `golden`)로 25초 돌린 뒤 끝 줄의 "보이는 칩 = 서버 칩"과 `plinko_drops`의 `sum(payout - amount)`가 앱 칩 변화와 맞는지 본다. 봇은 `lounge-bot --name 철수 --plinko`. 장면 스냅샷은 `PlinkoFake`(서버 규칙을 옮긴 가짜 응답)로 시드 고정이라 같은 그림이 나온다. 효과음은 `python3 scripts/gen_drop_sounds.py`로 다시 굽는다
 - 이번 주 큰손은 `--table lobby-live`가 끝날 때 `board [...]`로 출력한다. 봇이 판을 돌리는 동안 두 번 찍어 순수익이 바뀌는지 본다
 - 잭팟 알림은 로컬 DB에 다른 회원 이름으로 `insert into lounge_events (kind, game, player_id, name, amount) select 'jackpot','slot',id,name,4290 from players where name='철수'`를 넣어 본다. 번들로 띄운 앱(`build-app.sh --open`)에서만 macOS 알림이 뜬다 (`swift run`·스냅샷은 번들 ID가 없어 건너뜀)
 - Presence 갱신은 같은 키로 "나감 + 들어옴"이 함께 온다 → 나감부터 처리해야 회원이 사라지지 않는다
