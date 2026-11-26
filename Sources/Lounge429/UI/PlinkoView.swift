@@ -1,12 +1,14 @@
 import LoungeNet
 import SwiftUI
 
-/// 429 드롭 (ADR-0018). 공을 쏘면 핀에 튕기며 내려가 배수 칸에 들어간다.
+/// 429 드롭 (ADR-0018, ADR-0019). 공을 쏘면 핀에 튕기며 내려가 배수 칸에 들어간다.
 /// 값은 `PlinkoTable`이 틱 단위로 재생한 결과를 그대로 그린다.
 struct PlinkoView: View {
     @Bindable var table: PlinkoTable
     let chips: Int
     var golden: Int = 0
+    /// VIP HOUR (429 리셋 전): 포켓 입구가 넓다
+    var vip: Bool = false
     var onBack: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,6 +38,7 @@ struct PlinkoView: View {
         .background(flashBg ? Theme.panel : Theme.bg)
         .foregroundStyle(Theme.cream)
         .onChange(of: reduceMotion, initial: true) { _, value in table.reduced = value }
+        .onChange(of: vip, initial: true) { _, value in table.vip = value }
     }
 
     // MARK: - 상단 / 하단
@@ -64,9 +67,14 @@ struct PlinkoView: View {
             Spacer()
             if let m = table.message {
                 Text(m).font(Fonts.small()).foregroundStyle(Theme.neon)
-            } else if golden > 0 {
-                PixelView(sprite: Sprites.goldChip, scale: 1)
-                Text("×\(golden)").font(Fonts.mono()).foregroundStyle(Theme.gold)
+            } else {
+                if table.vip {
+                    Text("VIP · 포켓↑").font(Fonts.small()).foregroundStyle(Theme.gold).glow(Theme.gold)
+                }
+                if golden > 0 {
+                    PixelView(sprite: Sprites.goldChip, scale: 1)
+                    Text("×\(golden)").font(Fonts.mono()).foregroundStyle(Theme.gold)
+                }
             }
         }
         .frame(height: 16)
@@ -82,7 +90,7 @@ struct PlinkoView: View {
             pocket(t: t)
             ForEach(0..<13, id: \.self) { i in bucket(i, t: t, fever: fever) }
             ForEach(table.pops) { pop in popView(pop, t: t) }
-            if let f = table.fever { feverBar(f, t: t) }
+            if let f = table.fever { feverBar(f, t: t) } else { letterRow(t: t) }
             if table.streak >= 2, !fever {
                 Text("\(table.streak)연속")
                     .font(Fonts.small()).foregroundStyle(Theme.cyan)
@@ -229,7 +237,7 @@ struct PlinkoView: View {
         let f = table.bucketFlash[i]
         let edge = i == 0 || i == 12 || i == 1 || i == 11
         let hot = f.map { $0.tier == .big || $0.tier == .max } ?? false
-        let label = fever ? PlinkoTable.mt(PlinkoTable.multipliers[i] * 2) : PlinkoTable.bucketLabels[i]
+        let label = fever ? PlinkoTable.feverLabels[i] : PlinkoTable.bucketLabels[i]
         return Text(label)
             .font(Fonts.small())
             .foregroundStyle(f != nil ? Theme.outline : tc)
@@ -256,7 +264,7 @@ struct PlinkoView: View {
     private func feverBar(_ f: PlinkoTable.FeverRun, t: Int) -> some View {
         let c = phase(t, 3) ? Theme.neon : Theme.gold
         return HStack {
-            Text("FEVER ×2 · 공 \(f.spawned)/\(f.n)")
+            Text("FEVER ×1.5 · 공 \(f.spawned)/\(f.n)")
             Spacer()
             Text("+" + PlinkoTable.fmt(f.total))
         }
@@ -268,6 +276,27 @@ struct PlinkoView: View {
         .position(x: boardW / 2, y: 9)
     }
 
+    /// 4·2·9 글자 (포켓 천장). FEVER가 아닌 포켓마다 하나 켜지고, 셋 다 켜지면 다음 포켓은 FEVER
+    private func letterRow(t: Int) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<PlinkoTable.letterChars.count, id: \.self) { i in
+                let lit = i < table.letters
+                let flashing = table.letterFlash.map { $0.index == i && t <= $0.until } ?? false
+                let on = flashing && phase(t, 2)
+                Text(PlinkoTable.letterChars[i])
+                    .font(Fonts.small())
+                    .foregroundStyle(on ? Theme.outline : lit ? Theme.gold : Theme.dim)
+                    .frame(width: 14, height: 14)
+                    .background(on ? Theme.gold : Theme.outline)
+                    .overlay(Rectangle().strokeBorder(lit ? Theme.gold : Theme.line, lineWidth: 2))
+                    .glow(flashing || (lit && table.letters == 2 && i < 2) ? Theme.gold : .clear, radius: 2)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("4·2·9 글자 \(min(table.letters, 3))개")
+        .position(x: 6 + 23, y: 10)
+    }
+
     private func reelView(_ r: PlinkoTable.Reel, t: Int) -> some View {
         var title = "스타트 포켓"
         var titleTone = Theme.gold
@@ -276,7 +305,7 @@ struct PlinkoView: View {
             titleTone = phase(t, 2) ? Theme.neon : Theme.gold
         }
         if r.doneAt != nil {
-            title = r.fever ? "FEVER!" : "아쉽다 · 20% 환급"
+            title = r.fever ? (table.fever?.ceiling == true ? "4·2·9 완성!" : "FEVER!") : "글자 하나 · 20% 환급"
             titleTone = r.fever ? Theme.neon : Theme.muted
         }
         return VStack(spacing: 4) {

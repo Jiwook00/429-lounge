@@ -21,3 +21,4 @@
 | [0016](0016-sparkle-updates.md)                  | Sparkle로 앱 안에서 서명된 업데이트 설치                                        | accepted |
 | [0017](0017-lounge-wall-free-pixels.md)          | 라운지 벽화: 칩과 무관한 32×32 공용 벽, 칠하기는 토큰 버킷(10개, 30초 충전)     | accepted |
 | [0018](0018-429-drop-plinko.md)                  | 429 드롭: 격자 플링코 + 파친코 포켓, 서버가 경로를 정하고 환수율은 DP로         | accepted |
+| [0019](0019-429-drop-letters-vip-fever.md)       | 429 드롭 2판: 4·2·9 포켓 천장, VIP HOUR 포켓 확장, FEVER 공 40개                | accepted |

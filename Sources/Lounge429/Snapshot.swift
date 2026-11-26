@@ -7,7 +7,10 @@ import SwiftUI
 private struct PlinkoLiveHost: View {
     let table: PlinkoTable
     let store: LoungeStore
-    var body: some View { PlinkoView(table: table, chips: store.chips, golden: store.golden()) }
+    var body: some View {
+        PlinkoView(table: table, chips: store.chips, golden: store.golden(),
+                   vip: (store.me?.goldenUntil ?? .distantPast) > .now)
+    }
 }
 
 @MainActor private var plinkoWindow: NSWindow?
@@ -84,12 +87,12 @@ enum Snapshot {
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
                                          minority: .open(closesAt: Self.kst(hour: 17), picked: false),
-                                         // lobby-whatsnew: 업데이트 뒤 "새로 들어온 것" 카드 (0.13.1 → 0.14.0)
+                                         // lobby-whatsnew: 업데이트 뒤 "새로 들어온 것" 카드 (0.14.1 → 0.15.0)
                                          // lobby-whatsnew-skip: 여러 버전을 건너뛰고 받았을 때 (가짜 0.15~0.17 문구, 0.14.0 → 0.17.0)
                                          // lobby-new: 카드를 닫은 뒤 NEW 라벨
-                                         whatsNewVersion: table == "lobby-whatsnew-skip" ? "0.17.0" : whatsNew ? "0.14.0" : AppInfo.version,
+                                         whatsNewVersion: table == "lobby-whatsnew-skip" ? "0.17.0" : whatsNew ? "0.15.0" : AppInfo.version,
                                          whatsNewNotes: table == "lobby-whatsnew-skip" ? Self.fakeNotes : WhatsNew.notes,
-                                         whatsNewSeenOverride: table == "lobby-whatsnew-skip" ? "0.14.0" : whatsNew ? "0.13.1" : nil,
+                                         whatsNewSeenOverride: table == "lobby-whatsnew-skip" ? "0.14.0" : whatsNew ? "0.14.1" : nil,
                                          newGamesOverride: table == "lobby-new" ? [WhatsNew.Game.plinko.rawValue] : whatsNew ? [] : nil,
                                          hideWhatsNew: table == "lobby-new"))
         } else if let table, table.hasPrefix("wall-") {
@@ -112,9 +115,11 @@ enum Snapshot {
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
         } else if let table, table.hasPrefix("plinko") {
-            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -fever
-            content = AnyView(PlinkoView(table: fakePlinko(store: store, me: me, mode: table), chips: store.chips,
-                                         golden: store.golden()))
+            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -ceiling | -fever | -vip
+            let vip = locked || table == "plinko-vip"
+            let plinko = fakePlinko(store: store, me: me, mode: table)
+            plinko.vip = vip
+            content = AnyView(PlinkoView(table: plinko, chips: store.chips, golden: vip ? 3 : store.golden(), vip: vip))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -453,7 +458,8 @@ enum Snapshot {
             }
             try? await Task.sleep(for: .milliseconds(500))
             print("끝 · 보이는 칩 \(table.shown(chips: store.chips)) / 서버 \(store.chips) · 시작 \(start) → 변화 \(store.chips - start) · 이번 판 \(table.sessionNet)")
-            write(AnyView(PlinkoView(table: table, chips: store.chips, golden: store.golden())), to: path)
+            write(AnyView(PlinkoView(table: table, chips: store.chips, golden: store.golden(),
+                                     vip: (store.me?.goldenUntil ?? .distantPast) > .now)), to: path)
             table.leave()
             exit(0)
         }
@@ -592,10 +598,12 @@ enum Snapshot {
     static func fakePlinko(store: LoungeStore, me: Player, mode: String) -> PlinkoTable {
         let table = PlinkoTable(store: store, seed: 429)
         func drop(_ lane: Int, grade: PlinkoDrop.Grade = .none, amount: Int64 = 100, forceCatch: Bool = false,
-                  reels: [String]? = nil, fever: Bool = false, matching: (PlinkoBall) -> Bool = { _ in true }) {
+                  reels: [String]? = nil, fever: Bool = false, ceiling: Bool = false, letters: Int = 0,
+                  matching: (PlinkoBall) -> Bool = { _ in true }) {
             let player = Player(id: me.id, name: me.name, chips: Int64(store.chips), goldenChips: me.goldenChips, goldenUntil: me.goldenUntil)
             table.preview(drop: PlinkoFake.drop(player: player, lane: lane, amount: amount, grade: grade,
-                                                forceCatch: forceCatch, reels: reels, fever: fever, matching: matching))
+                                                forceCatch: forceCatch, reels: reels, fever: fever, ceiling: ceiling,
+                                                letters: letters, matching: matching))
         }
         switch mode {
         case "plinko-charging":
@@ -625,9 +633,24 @@ enum Snapshot {
         case "plinko-pocket":
             drop(0, forceCatch: true) { $0.pocket }
             table.advance(38)
+        case "plinko-letters":
+            // 포켓 릴이 꽝으로 멈추고 두 번째 글자 "2"가 켜진 순간
+            table.previewLetters(1)
+            drop(0, forceCatch: true, reels: ["7", "BAR", "404"], letters: 2) { $0.pocket }
+            table.advance(46)
+        case "plinko-ceiling":
+            // 4·2 다음 포켓: 릴이 429 429 429로 멈추고 4·2·9 완성
+            table.previewLetters(2)
+            drop(0, forceCatch: true, fever: true, ceiling: true) { $0.pocket }
+            table.advance(58)
         case "plinko-fever":
             drop(0, forceCatch: true, fever: true) { $0.pocket }
-            table.advance(118)
+            table.advance(100)
+        case "plinko-vip":
+            // VIP HOUR: 포켓 입구가 늘 열려 있다
+            table.previewLetters(1)
+            drop(0) { $0.bucket != nil && $0.split == nil }
+            table.advance(12)
         default: break
         }
         return table

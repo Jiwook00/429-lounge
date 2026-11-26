@@ -11,15 +11,17 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     public let named: Bool
     /// 마지막으로 오늘의 칩을 받은 날짜 (한국 시간, YYYY-MM-DD)
     public let lastDaily: String?
+    /// 429 드롭의 4·2·9 글자 수 (0~2, ADR-0019)
+    public let plinkoLetters: Int
 
     enum CodingKeys: String, CodingKey {
         case id, name, chips, named
         case goldenChips = "golden_chips", goldenUntil = "golden_until"
-        case lastDaily = "last_daily"
+        case lastDaily = "last_daily", plinkoLetters = "plinko_letters"
     }
 
     public init(id: UUID, name: String, chips: Int64, goldenChips: Int = 0, goldenUntil: Date? = nil,
-                named: Bool = true, lastDaily: String? = nil) {
+                named: Bool = true, lastDaily: String? = nil, plinkoLetters: Int = 0) {
         self.id = id
         self.name = name
         self.chips = chips
@@ -27,6 +29,7 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
         self.goldenUntil = goldenUntil
         self.named = named
         self.lastDaily = lastDaily
+        self.plinkoLetters = plinkoLetters
     }
 
     public init(from decoder: any Decoder) throws {
@@ -38,6 +41,7 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
         goldenUntil = try c.decodeIfPresent(Date.self, forKey: .goldenUntil)
         named = try c.decodeIfPresent(Bool.self, forKey: .named) ?? true
         lastDaily = try c.decodeIfPresent(String.self, forKey: .lastDaily)
+        plinkoLetters = try c.decodeIfPresent(Int.self, forKey: .plinkoLetters) ?? 0
     }
 
     /// 지금 쓸 수 있는 황금 칩 개수 (만료됐으면 0)

@@ -33,7 +33,7 @@ enum PlinkoFake {
                 if jf > 12 { jf = j - 1 }
                 if jf < -12 { jf = j + 1 }
                 let bucket = (jf + 12) / 2
-                let mult = PlinkoTable.multipliers[bucket] * (rules.fever ? 2 : 1) + gold
+                let mult = PlinkoTable.multipliers[bucket] * (rules.fever ? PlinkoTable.feverMult : 1) + gold
                 return PlinkoBall(from: row, js: js, bucket: bucket, gold: gold, mult: mult,
                                   payout: Int64((Double(amount) * mult).rounded(.down)), split: splitRow, clone: clone)
             }
@@ -52,6 +52,7 @@ enum PlinkoFake {
     /// 조건에 맞는 한 판이 나올 때까지 시드를 바꿔 가며 뽑는다 (장면을 고정하기 위해)
     static func drop(player: Player, lane: Int, amount: Int64 = 100, grade: PlinkoDrop.Grade = .none,
                      forceCatch: Bool = false, reels: [String]? = nil, fever: Bool = false,
+                     ceiling: Bool = false, letters: Int = 0, vip: Bool = false,
                      matching: (PlinkoBall) -> Bool = { _ in true }) -> PlinkoDrop {
         var seed: UInt64 = 429
         while true {
@@ -67,13 +68,13 @@ enum PlinkoFake {
             var feverBalls: [PlinkoBall] = []
             if ball.pocket {
                 if fever {
-                    for _ in 0..<15 {
+                    for _ in 0..<40 {
                         let l = Int.random(in: -1...1, using: &rng)
                         let fb = launch(lane: l, dirs: [], rules: Rules(fever: true), amount: amount, rng: &rng)
                         feverBalls.append(fb)
                         total += fb.payout
                     }
-                    pocket = PlinkoPocket(reels: ["429", "429", "429"], fever: true, refund: 0)
+                    pocket = PlinkoPocket(reels: ["429", "429", "429"], fever: true, refund: 0, ceiling: ceiling)
                 } else {
                     let refund = amount / 5
                     total += refund
@@ -83,7 +84,7 @@ enum PlinkoFake {
             let after = Player(id: player.id, name: player.name, chips: player.chips - amount + total)
             return PlinkoDrop(ball: ball, pocket: pocket, feverBalls: feverBalls, payout: total,
                               topMult: ball.mult, fever: fever && ball.pocket, lane: lane, power: 500, grade: grade,
-                              amount: amount, player: after)
+                              amount: amount, letters: letters, vip: vip, player: after)
         }
     }
 }

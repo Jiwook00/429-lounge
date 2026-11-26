@@ -12,6 +12,13 @@ enum WhatsNew {
 
     /// 새 버전을 낼 때 여기에 한 줄 더한다 (회원에게 알릴 게 없으면 안 더해도 된다). 카피 톤은 DESIGN.md §11
     static let notes: [ReleaseNote] = [
+        ReleaseNote(version: "0.15.0",
+                    lines: [
+                        "429 드롭: 포켓마다 4·2·9 글자가 하나씩 켜져요",
+                        "셋째 포켓은 무조건 FEVER, 공 40개가 쏟아져요",
+                        "429에 걸린 동안엔 포켓이 늘 열려 있어요",
+                    ],
+                    game: Game.plinko.rawValue),
         ReleaseNote(version: "0.14.0",
                     lines: [
                         "429 드롭: 꾹 눌렀다 떼면 공이 핀을 타고 내려가요",

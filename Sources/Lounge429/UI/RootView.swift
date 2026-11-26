@@ -159,7 +159,8 @@ struct RootView: View {
                     .onAppear { wall.enter() }
                     .onDisappear { wall.leave() }
             case .plinko(let table):
-                PlinkoView(table: table, chips: store.chips, golden: store.golden()) {
+                PlinkoView(table: table, chips: store.chips, golden: store.golden(),
+                           vip: (store.me?.goldenUntil ?? .distantPast) > .now) {
                     table.leave()
                     go(.lounge)
                 }

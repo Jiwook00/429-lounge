@@ -68,11 +68,24 @@ public struct PlinkoPocket: Codable, Sendable, Equatable {
     public let fever: Bool
     /// 비일치일 때 돌려받는 칩
     public let refund: Int64
+    /// 4·2·9 글자를 다 모아서 확정된 FEVER (ADR-0019)
+    public let ceiling: Bool
 
-    public init(reels: [String], fever: Bool, refund: Int64) {
+    enum CodingKeys: String, CodingKey { case reels, fever, refund, ceiling }
+
+    public init(reels: [String], fever: Bool, refund: Int64, ceiling: Bool = false) {
         self.reels = reels
         self.fever = fever
         self.refund = refund
+        self.ceiling = ceiling
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reels = try c.decode([String].self, forKey: .reels)
+        fever = try c.decode(Bool.self, forKey: .fever)
+        refund = try c.decode(Int64.self, forKey: .refund)
+        ceiling = try c.decodeIfPresent(Bool.self, forKey: .ceiling) ?? false
     }
 
     /// 앞의 두 릴이 429면 리치 (셋째 릴이 늦게 멈춘다)
@@ -96,16 +109,20 @@ public struct PlinkoDrop: Codable, Sendable, Equatable {
     public let grade: Grade
     public let amount: Int64
     public let golden: Bool
+    /// 이 판 뒤 4·2·9 글자 수 (0~2)
+    public let letters: Int
+    /// VIP HOUR 판 (포켓 입구가 넓다)
+    public let vip: Bool
     public let player: Player
 
     enum CodingKeys: String, CodingKey {
-        case ball, pocket, payout, fever, lane, power, grade, amount, golden, player
+        case ball, pocket, payout, fever, lane, power, grade, amount, golden, letters, vip, player
         case feverBalls = "fever_balls", topMult = "top_mult"
     }
 
     public init(ball: PlinkoBall, pocket: PlinkoPocket? = nil, feverBalls: [PlinkoBall] = [], payout: Int64,
                 topMult: Double = 0, fever: Bool = false, lane: Int = 0, power: Int = 0, grade: Grade = .none,
-                amount: Int64, golden: Bool = false, player: Player) {
+                amount: Int64, golden: Bool = false, letters: Int = 0, vip: Bool = false, player: Player) {
         self.ball = ball
         self.pocket = pocket
         self.feverBalls = feverBalls
@@ -117,6 +134,8 @@ public struct PlinkoDrop: Codable, Sendable, Equatable {
         self.grade = grade
         self.amount = amount
         self.golden = golden
+        self.letters = letters
+        self.vip = vip
         self.player = player
     }
 
@@ -133,6 +152,8 @@ public struct PlinkoDrop: Codable, Sendable, Equatable {
         grade = try c.decodeIfPresent(Grade.self, forKey: .grade) ?? .none
         amount = try c.decode(Int64.self, forKey: .amount)
         golden = try c.decodeIfPresent(Bool.self, forKey: .golden) ?? false
+        letters = try c.decodeIfPresent(Int.self, forKey: .letters) ?? 0
+        vip = try c.decodeIfPresent(Bool.self, forKey: .vip) ?? false
         player = try c.decode(Player.self, forKey: .player)
     }
 }

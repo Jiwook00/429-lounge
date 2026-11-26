@@ -181,6 +181,7 @@ final class GameAudio {
         case .reach: drop.play("dropReach")
         case .fever: drop.play("dropFever")
         case .refund: drop.play("push")
+        case .letter: drop.play("dropGold")
         }
     }
 

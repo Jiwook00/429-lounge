@@ -48,6 +48,19 @@ import Testing
         #expect(d.payout == d.feverBalls.reduce(0) { $0 + $1.payout })
     }
 
+    /// 4·2·9를 다 모아 확정된 FEVER (ADR-0019). 공 경로는 줄였다
+    static let ceiling = #"""
+{"ball":{"js":[0,1,0,-1,0,1,0],"from":0,"gold":0,"mult":0,"clone":null,"split":null,"bucket":null,"payout":0,"pocket":true},"fever":true,"payout":90,"pocket":{"fever":true,"reels":["429","429","429"],"refund":0,"ceiling":true},"top_mult":1.2,"fever_balls":[{"js":[1,2,1,2,1,0,-1,0,1,0,1],"from":1,"gold":0,"mult":1.2,"clone":null,"split":null,"bucket":7,"payout":60,"pocket":false}],"letters":0,"vip":true,"lane":0,"power":500,"grade":"none","amount":50,"golden":false,"player":{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"철수","chips":4290,"golden_chips":1,"golden_until":"2026-11-27T03:00:00+00:00","named":true,"last_daily":"2026-11-26","plinko_letters":0}}
+"""#
+
+    @Test func lettersAndVip() throws {
+        let d = try Self.decode(Self.ceiling)
+        #expect(d.pocket?.ceiling == true && d.fever && d.vip && d.letters == 0 && d.player.plinkoLetters == 0)
+        // 옛 응답(글자·VIP 없음)은 0과 false
+        let old = try Self.decode(Self.pocket)
+        #expect(old.pocket?.ceiling == false && old.letters == 0 && !old.vip && old.player.plinkoLetters == 0)
+    }
+
     @Test func roundTrip() throws {
         let d = try Self.decode(Self.split)
         let again = try JSONDecoder().decode(PlinkoDrop.self, from: JSONEncoder().encode(d))
