@@ -25,7 +25,6 @@ struct PlinkoView: View {
         let shake = table.shakeOffset
         VStack(spacing: 10) {
             topBar(fever: fever)
-            sessionRow
             board(t: t, fever: fever)
             controls
             dropButton
@@ -71,23 +70,6 @@ struct PlinkoView: View {
             }
         }
         .frame(height: 16)
-    }
-
-    /// 이번 판 손익: 들어온 뒤 순이익. 이기면 초록, 지면 네온, 0이면 흐리게. 공이 닿으면 숫자가 굴러간다
-    private var sessionRow: some View {
-        let net = table.shownNet
-        let color = net > 0 ? Theme.green : net < 0 ? Theme.neon : Theme.muted
-        return HStack(alignment: .lastTextBaseline, spacing: 8) {
-            Text("이번 판").font(Fonts.small()).foregroundStyle(Theme.muted)
-            Text(PlinkoTable.signed(net))
-                .font(Fonts.bold(2))
-                .foregroundStyle(color)
-                .monospacedDigit()
-            Spacer()
-        }
-        .frame(height: 28)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("이번 판 손익 \(PlinkoTable.signed(table.sessionNet))칩")
     }
 
     // MARK: - 보드

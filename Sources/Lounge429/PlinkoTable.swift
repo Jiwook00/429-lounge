@@ -66,10 +66,8 @@ final class PlinkoTable {
     private(set) var beam: Beam?
     private(set) var reel: Reel?
     private(set) var fever: FeverRun?
-    /// 이번 판 손익: 이 화면에 들어온 뒤 순이익 (건 칩을 뺀 값). 들어올 때마다 0
+    /// 이 화면에 들어온 뒤 순이익 (건 칩을 뺀 값). 화면에는 안 보인다 (손익을 띄우면 그만두게 돼서 뺐다). `--table plinko-live` 확인용
     private(set) var sessionNet: Int64 = 0
-    /// 화면에 보이는 손익 (공이 닿으면 몇 틱에 걸쳐 굴러가듯 따라간다)
-    private(set) var shownNet: Int64 = 0
     private(set) var streak = 0
     var charging = false
     /// 누른 이벤트의 시각 (뗀 이벤트 시각과 비교해 보낼 파워를 정한다)
@@ -352,7 +350,6 @@ final class PlinkoTable {
     func enter() {
         closed = false
         sessionNet = 0
-        shownNet = 0
         guard driver == nil else { return }
         // 정해진 시각마다 (sleep 길이만큼 기다리면 작업 시간만큼 틱이 조금씩 늘어진다). 많이 밀리면 몰아서 돌지 않고 다시 맞춘다
         driver = Task { [weak self] in
@@ -427,7 +424,7 @@ final class PlinkoTable {
     private var needsStep: Bool {
         !balls.isEmpty || reel != nil || fever != nil || !pops.isEmpty || !coins.isEmpty || banner != nil || beam != nil
             || !pinFlash.isEmpty || !bucketFlash.isEmpty || shakeUntil >= tick || gradeUntil >= tick || perfectUntil >= tick
-            || shownNet != sessionNet || !reelQueue.isEmpty
+            || !reelQueue.isEmpty
     }
 
     /// 스냅샷용: 틱을 n번 돌린다
@@ -473,7 +470,6 @@ final class PlinkoTable {
         }
         if let b = banner, b.until < t { banner = nil }
         if let b = beam, b.until < t { beam = nil }
-        rollNet()
     }
 
     // MARK: 핀에 닿음
@@ -722,14 +718,6 @@ final class PlinkoTable {
         guard !drops[i].charged else { return 0 }
         drops[i].charged = true
         return drops[i].response.golden ? 0 : drops[i].response.amount
-    }
-
-    /// 보이는 손익이 실제 값을 따라간다: 남은 차이의 1/3씩 (최소 1칩), 6틱 안팎이면 도착
-    private func rollNet() {
-        let diff = sessionNet - shownNet
-        guard diff != 0 else { return }
-        let stepSize = max(1, abs(diff) / 3)
-        shownNet += diff > 0 ? min(diff, stepSize) : -min(-diff, stepSize)
     }
 
     /// 소수 첫째 자리까지 (정수면 소수점 없이)
