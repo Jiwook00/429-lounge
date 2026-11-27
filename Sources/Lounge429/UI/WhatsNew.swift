@@ -14,8 +14,9 @@ enum WhatsNew {
     static let notes: [ReleaseNote] = [
         ReleaseNote(version: "0.15.0",
                     lines: [
-                        "429 드롭: 포켓마다 4·2·9 글자가 하나씩 켜져요",
-                        "9까지 켜지면 다음 포켓은 FEVER, 공 40개가 쏟아져요",
+                        "429 드롭: 포켓마다 4·2·9가 켜지며 골드·분열 핀이 늘어요",
+                        "4·2·9가 다 켜지면 HOT, 다음 포켓까지 잘 터져요",
+                        "FEVER는 공 40개 · 칩은 10 · 50 · 100 · 200",
                         "429에 걸린 동안엔 포켓이 늘 열려 있어요",
                     ],
                     game: Game.plinko.rawValue),

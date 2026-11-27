@@ -104,12 +104,15 @@ struct PlinkoView: View {
         .padding(2)
         .background(fever ? Theme.outline : Theme.panel)
         .overlay(Rectangle().strokeBorder(boardBorder(t: t, fever: fever), lineWidth: 2))
-        .glow(fever || table.beam != nil ? (phase(t, 3) ? Theme.neon : Theme.gold) : .clear)
+        .glow(fever || table.beam != nil ? (phase(t, 3) ? Theme.neon : Theme.gold)
+              : table.hot ? (phase(t, 6) ? Theme.gold : Theme.neon) : .clear)
     }
 
     private func boardBorder(t: Int, fever: Bool) -> Color {
         if fever { return phase(t, 3) ? Theme.neon : Theme.gold }
-        return table.beam != nil ? Theme.neon : Theme.line
+        if table.beam != nil { return Theme.neon }
+        // HOT: 보드 테두리가 골드·네온으로 천천히 바뀐다 (FEVER보다 느리게)
+        return table.hot ? (phase(t, 6) ? Theme.gold : Theme.neon) : Theme.line
     }
 
     private func tone(_ tone: PlinkoTone) -> Color {
@@ -133,7 +136,9 @@ struct PlinkoView: View {
         if let beam = table.beam {
             rect(beam.x - 10, 0, 20, PlinkoTable.bucketY, Theme.neon.opacity(phase(t, 2) ? 0.24 : 0.12))
         }
-        // 핀
+        // 핀 (보드 레벨마다 골드·분열 핀이 늘어난다)
+        let gold = PlinkoTable.goldPins(level: table.boardLevel)
+        let split = PlinkoTable.splitPins(level: table.boardLevel)
         for r in 0..<12 {
             for j in stride(from: -(r + 2), through: r + 2, by: 2) {
                 let pin = PinPos(r: r, j: j)
@@ -142,8 +147,8 @@ struct PlinkoView: View {
                 var size = 2
                 var color = fever ? Theme.goldDark : Theme.dim
                 let guide = r == 0 && abs(j) == 2
-                if PlinkoTable.goldPins.contains(pin) { size = 4; color = Theme.gold }
-                else if PlinkoTable.splitPins.contains(pin) { size = 4; color = Theme.cyan }
+                if gold.contains(pin) { size = 4; color = Theme.gold }
+                else if split.contains(pin) { size = 4; color = Theme.cyan }
                 else if guide { size = 4; color = Theme.muted }
                 if let f = table.pinFlash[pin] { size += 2; color = tone(f.tone) }
                 rect(x - size / 2, y - size / 2, size, size, color)
@@ -201,8 +206,8 @@ struct PlinkoView: View {
         let flashing = table.pinFlash[PlinkoTable.pocketPin] != nil
         let on = flashing && phase(t, 2)
         let open = table.pocketOpen
-        // 4·2·9 대기: 포켓 테두리가 네온·골드로 맥박친다 (입구는 그대로, 잡을 확률은 같다)
-        let ready = table.letterReady
+        // HOT: 포켓 테두리도 네온·골드로 맥박친다 (입구는 그대로, 잡을 확률은 같다)
+        let ready = table.hot
         let rim = ready ? (phase(t, 3) ? Theme.neon : Theme.gold) : open && phase(t, 2) ? Theme.goldLight : Theme.gold
         return Text("429")
             .font(Fonts.small())
@@ -265,8 +270,8 @@ struct PlinkoView: View {
 
     private func feverBar(_ f: PlinkoTable.FeverRun, t: Int) -> some View {
         let c = phase(t, 3) ? Theme.neon : Theme.gold
-        // 4·2·9는 FEVER 내내 켜 두고, 끝나면 6틱마다 하나씩 끈다 (FEVER가 글자를 쓴 것)
-        let lit = f.endAt.map { max(0, PlinkoTable.letterChars.count - (t - $0) / 6) } ?? PlinkoTable.letterChars.count
+        // 모아 둔 4·2·9는 FEVER 내내 켜 두고, 끝나면 6틱마다 하나씩 끈다 (FEVER가 나면 0부터)
+        let lit = f.endAt.map { max(0, table.letters - (t - $0) / 6) } ?? table.letters
         return HStack(spacing: 6) {
             HStack(spacing: 2) {
                 ForEach(0..<PlinkoTable.letterChars.count, id: \.self) { i in
@@ -285,10 +290,10 @@ struct PlinkoView: View {
         .position(x: boardW / 2, y: 10)
     }
 
-    /// 4·2·9 글자 (포켓 천장). FEVER가 아닌 포켓마다 하나 켜지고, 셋 다 켜지면(대기) 다음 포켓은 FEVER 확정.
-    /// 대기 중엔 세 칸이 네온·골드로 번갈아 깜빡이고 옆에 `NEXT`
+    /// 4·2·9 글자 = 보드 레벨. FEVER가 아닌 포켓마다 하나 켜지며 핀이 늘고, 셋 다 켜지면 HOT(다음 포켓까지).
+    /// HOT 중엔 세 칸이 네온·골드로 번갈아 깜빡이고 옆에 `HOT`
     private func letterRow(t: Int) -> some View {
-        let ready = table.letterReady
+        let ready = table.hot
         let readyTone = phase(t, 3) ? Theme.neon : Theme.gold
         return HStack(spacing: 4) {
             HStack(spacing: 2) {
@@ -300,13 +305,13 @@ struct PlinkoView: View {
                 }
             }
             if ready {
-                Text("NEXT").font(Fonts.small()).foregroundStyle(readyTone).glow(readyTone, radius: 2)
+                Text("HOT").font(Fonts.small()).foregroundStyle(readyTone).glow(readyTone, radius: 2)
             }
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ready ? "4·2·9 완성 대기 · 다음 포켓은 FEVER" : "4·2·9 글자 \(table.letters)개")
-        .position(x: 6 + (ready ? 40 : 23), y: 10)
+        .accessibilityLabel(ready ? "4·2·9 HOT · 다음 포켓까지" : "4·2·9 글자 \(table.letters)개")
+        .position(x: 6 + (ready ? 37 : 23), y: 10)
     }
 
     /// 4·2·9 글자 한 칸 (14×14). 켜지면 tone(기본 골드), filled면 그 색으로 채워 반짝
@@ -321,14 +326,14 @@ struct PlinkoView: View {
     }
 
     private func reelView(_ r: PlinkoTable.Reel, t: Int) -> some View {
-        var title = r.ceiling ? "4·2·9 확정!" : "스타트 포켓"
-        var titleTone = r.ceiling ? (phase(t, 2) ? Theme.neon : Theme.gold) : Theme.gold
-        if !r.ceiling, r.reach, t >= r.stops[1], t < r.stops[2] {
+        var title = "스타트 포켓"
+        var titleTone = Theme.gold
+        if r.reach, t >= r.stops[1], t < r.stops[2] {
             title = "리치!"
             titleTone = phase(t, 2) ? Theme.neon : Theme.gold
         }
         if r.doneAt != nil {
-            title = r.fever ? (r.ceiling ? "4·2·9 FEVER!" : "FEVER!") : "글자 하나 · 20% 환급"
+            title = r.fever ? "FEVER!" : r.hotEnd ? "HOT 끝 · 20% 환급" : "글자 하나 · 20% 환급"
             titleTone = r.fever ? Theme.neon : Theme.muted
         }
         return VStack(spacing: 4) {
@@ -336,8 +341,7 @@ struct PlinkoView: View {
             HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { i in
                     let stopped = t >= r.stops[i]
-                    // 확정 판은 처음부터 429로 돌며 하나씩 선다
-                    let sym = stopped || r.ceiling ? r.result[i] : PlinkoTable.reelSymbols[(t + i * 2) % PlinkoTable.reelSymbols.count]
+                    let sym = stopped ? r.result[i] : PlinkoTable.reelSymbols[(t + i * 2) % PlinkoTable.reelSymbols.count]
                     let hot = stopped && r.doneAt != nil && r.fever
                     let slow = i == 2 && r.reach && !stopped
                     Text(sym)

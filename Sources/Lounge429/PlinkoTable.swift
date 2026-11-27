@@ -36,16 +36,29 @@ final class PlinkoTable {
     static let top = 30
     static let bucketY = top + 11 * vStep + 12
     static let maxBalls = 5
-    static let stakes: [Int64] = [50, 100, 200, 300]
+    static let stakes: [Int64] = [10, 50, 100, 200]
     static let multipliers: [Double] = [16, 5, 2, 1.4, 0.8, 0.5, 0.3, 0.5, 0.8, 1.4, 2, 5, 16]
     static let bucketLabels = ["16", "5", "2", "1.4", ".8", ".5", ".3", ".5", ".8", "1.4", "2", "5", "16"]
     /// FEVER 공은 배수 ×1.5 (서버 `plinko_path`와 같다)
     static let feverMult = 1.5
     static let feverLabels = ["24", "7.5", "3", "2.1", "1.2", ".75", ".45", ".75", "1.2", "2.1", "3", "7.5", "24"]
-    /// 4·2·9: FEVER가 아닌 포켓마다 한 글자, 셋 다 켜지면(대기) 다음 포켓은 FEVER 확정
+    /// 4·2·9 = 보드 레벨 (ADR-0019). FEVER가 아닌 포켓마다 한 글자 켜지며 핀이 늘고, 셋 다 켜지면 HOT(다음 포켓까지)
     static let letterChars = ["4", "2", "9"]
-    static let goldPins: Set<PinPos> = [PinPos(r: 8, j: -4), PinPos(r: 8, j: 4)]
-    static let splitPins: Set<PinPos> = [PinPos(r: 10, j: -8), PinPos(r: 10, j: 8)]
+    /// 레벨마다 새로 생기는 핀 (서버 `plinko_gold`·`plinko_split`과 같다). 앞 레벨 핀에 더해진다
+    static let goldByLevel: [Set<PinPos>] = [
+        [PinPos(r: 8, j: -4), PinPos(r: 8, j: 4)],
+        [PinPos(r: 6, j: -6), PinPos(r: 6, j: 6)],
+        [],
+        [PinPos(r: 9, j: -5), PinPos(r: 9, j: 5), PinPos(r: 7, j: -3), PinPos(r: 7, j: 3)],
+    ]
+    static let splitByLevel: [Set<PinPos>] = [
+        [PinPos(r: 10, j: -8), PinPos(r: 10, j: 8)],
+        [],
+        [PinPos(r: 9, j: -7), PinPos(r: 9, j: 7)],
+        [],
+    ]
+    static func goldPins(level: Int) -> Set<PinPos> { goldByLevel.prefix(level + 1).reduce([]) { $0.union($1) } }
+    static func splitPins(level: Int) -> Set<PinPos> { splitByLevel.prefix(level + 1).reduce([]) { $0.union($1) } }
     static let pocketPin = PinPos(r: 6, j: 0)
     static let reelSymbols = ["429", "7", "BAR", "200", "404"]
     static let tickInterval = Duration.milliseconds(60)
@@ -71,7 +84,7 @@ final class PlinkoTable {
     private(set) var beam: Beam?
     private(set) var reel: Reel?
     private(set) var fever: FeverRun?
-    /// 화면의 4·2·9 글자 수 (0~3). 서버 값은 응답에 먼저 오지만 포켓 릴이 멈출 때 켠다
+    /// 화면의 4·2·9 글자 수 = 보드 레벨 (0~3). 서버 값은 응답에 먼저 오지만 포켓 릴이 멈출 때 켠다
     private(set) var letters = 0
     /// 방금 켜진 글자 (반짝임용): 몇 번째 글자, 언제까지
     private(set) var letterFlash: (index: Int, until: Int)?
@@ -106,6 +119,8 @@ final class PlinkoTable {
         let source: PlinkoBall
         let fever: Bool
         let grade: PlinkoDrop.Grade
+        /// 서버가 이 공에 쓴 보드 레벨 (FEVER 공은 0)
+        let level: Int
         var seg = 0
         var sub = 0
         var trail: [(x: Int, y: Int)] = []
@@ -132,8 +147,8 @@ final class PlinkoTable {
         let reach: Bool
         let drop: Int
         var doneAt: Int?
-        /// 4·2·9 대기에서 들어온 확정 판: 릴이 처음부터 429로 돈다
-        var ceiling = false
+        /// HOT 보드가 이 포켓으로 끝났다 (FEVER가 아니고 글자가 0으로)
+        var hotEnd = false
     }
     struct FeverRun {
         var total: Int64 = 0
@@ -142,8 +157,6 @@ final class PlinkoTable {
         var next: Int
         let drop: Int
         var endAt: Int?
-        /// 4·2·9를 다 모아서 확정된 FEVER
-        let ceiling: Bool
     }
     enum Tier: Equatable { case lose, win, big, max }
 
@@ -301,7 +314,7 @@ final class PlinkoTable {
         let rec = DropRec(id: id, response: d, unlanded: d.payout, reelPending: false,
                           feverPending: d.fever, feverLeft: d.feverBalls.count)
         drops.append(rec)
-        spawn(PlinkoBallSpawn(ball: d.ball, drop: id, fever: false, grade: d.grade, lane: d.lane))
+        spawn(PlinkoBallSpawn(ball: d.ball, drop: id, fever: false, grade: d.grade, lane: d.lane, level: d.level))
         syncHold()
     }
 
@@ -314,6 +327,7 @@ final class PlinkoTable {
         let grade: PlinkoDrop.Grade
         /// 옆 레인이면 가이드 핀을 앞에 둔다 (nil이면 분열 공: 분열 핀에서 시작)
         let lane: Int?
+        var level = 0
         var originPin: PinPos?
         /// FEVER 공 비: 출발점을 첫 핀 위에서 이만큼 옮긴다
         var rain: (dx: Int, dy: Int)? = nil
@@ -339,7 +353,7 @@ final class PlinkoTable {
         let id = nextID
         nextID += 1
         balls.append(SimBall(id: id, drop: s.drop, stops: stops, originX: originX, originY: originY, fromTop: fromTop,
-                             source: s.ball, fever: s.fever, grade: s.grade))
+                             source: s.ball, fever: s.fever, grade: s.grade, level: s.fever ? 0 : s.level))
         if !s.fever, let i = drops.firstIndex(where: { $0.id == s.drop }) { drops[i].liveBalls += 1 }
     }
 
@@ -399,8 +413,7 @@ final class PlinkoTable {
             let unseen = drops.filter { $0.response.fever && $0.feverPending }
             if !unseen.isEmpty {
                 let total = unseen.reduce(Int64(0)) { $0 + $1.response.payout }
-                let ceiling = unseen.contains { $0.response.pocket?.ceiling == true }
-                store.announce((ceiling ? "4·2·9 완성 · " : "429 429 429 · ") + "FEVER +\(Self.fmt(total))칩", golden: true)
+                store.announce("429 429 429 · FEVER +\(Self.fmt(total))칩", golden: true)
             }
         }
         closed = true
@@ -466,8 +479,14 @@ final class PlinkoTable {
     /// 스냅샷용: 틱을 n번 돌린다
     func advance(_ n: Int) { for _ in 0..<n { step() } }
 
-    /// 4·2·9가 다 켜진 대기: 다음 포켓은 FEVER 확정
-    var letterReady: Bool { letters >= Self.letterChars.count && fever == nil }
+    /// 4·2·9가 다 켜진 HOT 보드 (다음 포켓까지)
+    var hot: Bool { letters >= Self.letterChars.count && fever == nil }
+
+    /// 그릴 보드 레벨: 화면의 글자와, 아직 날고 있는 공이 쓴 레벨 중 큰 것 (FEVER 중엔 기본 핀)
+    var boardLevel: Int {
+        let flying = balls.lazy.filter { !$0.fever && !$0.done }.map(\.level).max() ?? 0
+        return max(fever == nil ? letters : 0, flying)
+    }
 
     /// 스냅샷용: 이미 모은 글자 수
     func previewLetters(_ n: Int) { letters = n }
@@ -537,13 +556,13 @@ final class PlinkoTable {
         }
         var tone: PlinkoTone = fever != nil ? .gold : .neon
         var plain = true
-        if Self.goldPins.contains(pin) {
+        if Self.goldPins(level: b.level).contains(pin) {
             balls[i].goldHits += 1
             tone = .goldLight
             plain = false
             addPop(x: p.x, y: p.y - 12, text: "+0.3", tone: .gold)
             onSound?(.gold(x: p.x))
-        } else if Self.splitPins.contains(pin), !b.fever, !b.split, let clone = b.source.split == pin.r ? b.source.clone : nil {
+        } else if Self.splitPins(level: b.level).contains(pin), !b.fever, !b.split, let clone = b.source.split == pin.r ? b.source.clone : nil {
             tone = .cyan
             plain = false
             balls[i].split = true
@@ -565,7 +584,7 @@ final class PlinkoTable {
         for (i, j) in s.ball.js.enumerated() { stops.append(PinPos(r: s.ball.from + i, j: j)) }
         guard let pin = s.originPin, !stops.isEmpty else { return }
         var clone = SimBall(id: nextID, drop: s.drop, stops: stops, originX: Self.x(pin.j), originY: Self.y(pin.r) - 4,
-                            fromTop: false, source: s.ball, fever: false, grade: s.grade)
+                            fromTop: false, source: s.ball, fever: false, grade: s.grade, level: parent.level)
         clone.goldHits = parent.goldHits
         clone.split = true
         nextID += 1
@@ -635,8 +654,9 @@ final class PlinkoTable {
         let t = tick
         let reach = pocket.reach
         reel = Reel(start: t, result: pocket.reels,
-                    stops: pocket.ceiling ? [t + 12, t + 22, t + 34] : [t + 8, t + 14, t + (reach ? 34 : 22)],
-                    fever: pocket.fever, reach: reach, drop: id, doneAt: nil, ceiling: pocket.ceiling)
+                    stops: [t + 8, t + 14, t + (reach ? 34 : 22)],
+                    fever: pocket.fever, reach: reach, drop: id, doneAt: nil,
+                    hotEnd: !pocket.fever && rec.response.letters == 0)
         log?("reel \(pocket.reels.joined(separator: " ")) \(pocket.fever ? "FEVER" : "환급 \(pocket.refund)")\(reach ? " 리치" : "")")
     }
 
@@ -664,13 +684,11 @@ final class PlinkoTable {
         let pocket = drops[d].response.pocket
         if r.fever {
             let n = drops[d].response.feverBalls.count
-            let ceiling = pocket?.ceiling ?? false
-            fever = FeverRun(n: n, next: t + 10, drop: r.drop, ceiling: ceiling)
-            // FEVER 동안은 글자 셋이 다 켜져 있다 (끝나면 0부터)
-            letters = Self.letterChars.count
+            fever = FeverRun(n: n, next: t + 10, drop: r.drop)
+            // 글자는 FEVER 줄로 옮겨 가 있다가 FEVER가 끝나면 하나씩 꺼지고 0부터 (보드는 FEVER 동안 기본 핀)
             letterFlash = nil
             banner = Banner(kind: .fever, until: t + 24, big: "429 429 429",
-                            sub: (ceiling ? "4·2·9 완성 · " : "FEVER · ") + "공 \(n)개 · ×1.5")
+                            sub: "FEVER · 공 \(n)개 · ×1.5")
             shake(10)
             burst(x: Self.cx, y: Self.top + 6 * Self.vStep, n: 16)
             onSound?(.fever)
@@ -684,14 +702,19 @@ final class PlinkoTable {
             onSound?(.refund)
             let next = min(drops[d].response.letters, Self.letterChars.count)
             if next > letters {
+                // 글자가 켜지고 그 레벨의 새 핀이 반짝이며 생긴다
                 letterFlash = (next - 1, t + 20)
+                for pin in Self.goldByLevel[next] { pinFlash[pin] = Flash(until: t + 24, tone: .goldLight) }
+                for pin in Self.splitByLevel[next] { pinFlash[pin] = Flash(until: t + 24, tone: .cyan) }
                 if next == Self.letterChars.count {
-                    // 9까지 켜졌다: 다음 포켓은 FEVER 확정
+                    // HOT: 다음 포켓까지 보드가 달아오른다
                     shake(6)
                     onSound?(.reach)
                 } else {
                     onSound?(.letter)
                 }
+            } else if next < letters {
+                letterFlash = nil
             }
             letters = next
         }
@@ -717,7 +740,6 @@ final class PlinkoTable {
             if f.spawned >= f.n, !balls.contains(where: { $0.fever }) {
                 f.endAt = t
                 banner = Banner(kind: .feverEnd, until: t + 40, big: "+" + Self.fmt(f.total), sub: "FEVER 끝 · 공 \(f.n)개 합계")
-                letters = 0
                 letterFlash = nil
                 shake(12)
                 burst(x: Self.cx, y: Self.bucketY, n: 24)
@@ -727,6 +749,7 @@ final class PlinkoTable {
         }
         if let end = f.endAt, t > end + 40 {
             fever = nil
+            letters = 0
             startReelIfPossible()
         } else {
             fever = f

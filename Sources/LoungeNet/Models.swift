@@ -11,7 +11,7 @@ public struct Player: Codable, Sendable, Identifiable, Equatable {
     public let named: Bool
     /// 마지막으로 오늘의 칩을 받은 날짜 (한국 시간, YYYY-MM-DD)
     public let lastDaily: String?
-    /// 429 드롭의 4·2·9 글자 수 (0~3, 3이면 다음 포켓 FEVER 확정, ADR-0019)
+    /// 429 드롭의 4·2·9 글자 수 = 보드 레벨 (0~3, 3이면 HOT, ADR-0019)
     public let plinkoLetters: Int
 
     enum CodingKeys: String, CodingKey {

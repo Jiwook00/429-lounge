@@ -88,7 +88,7 @@ do {
 /// 429 드롭: 무작위 레인·파워로 공을 계속 던진다. 한 줄에 한 판 (분열·포켓·FEVER 포함)
 func dropPlinko() async throws -> Never {
     while true {
-        let amount = Int64([50, 50, 100, 200, 300].randomElement()!)
+        let amount = Int64([10, 50, 50, 100, 200].randomElement()!)
         let lane = Int.random(in: -1...1)
         let power = Int.random(in: 0...1000)
         do {

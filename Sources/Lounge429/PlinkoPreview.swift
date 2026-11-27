@@ -7,6 +7,8 @@ enum PlinkoFake {
     struct Rules {
         var forceCatch = false
         var fever = false
+        /// 보드 레벨 (FEVER 공은 0)
+        var level = 0
     }
 
     /// `plinko_path`: 줄마다 `dirs[r]`(없으면 난수)로 좌우를 정한다
@@ -20,9 +22,10 @@ enum PlinkoFake {
             if r == 6, j == 0, !rules.fever, rules.forceCatch {
                 return PlinkoBall(from: row, js: js, bucket: nil, gold: gold, pocket: true, split: splitRow, clone: clone)
             }
-            if r == 8, abs(j) == 4 { gold += 0.3 }
+            let lv = rules.fever ? 0 : rules.level
+            if PlinkoTable.goldPins(level: lv).contains(PinPos(r: r, j: j)) { gold += 0.3 }
             let d = r < dirs.count ? dirs[r] : (Bool.random(using: &rng) ? 1 : -1)
-            if r == 10, abs(j) == 8, !usedSplit, !rules.fever {
+            if PlinkoTable.splitPins(level: lv).contains(PinPos(r: r, j: j)), !usedSplit, !rules.fever {
                 usedSplit = true
                 splitRow = r
                 clone = path(j: j - d, row: r + 1, dirs: Array(repeating: 0, count: r + 1) + cloneDirs, rules: rules,
@@ -52,7 +55,7 @@ enum PlinkoFake {
     /// 조건에 맞는 한 판이 나올 때까지 시드를 바꿔 가며 뽑는다 (장면을 고정하기 위해)
     static func drop(player: Player, lane: Int, amount: Int64 = 100, grade: PlinkoDrop.Grade = .none,
                      forceCatch: Bool = false, reels: [String]? = nil, fever: Bool = false,
-                     ceiling: Bool = false, letters: Int = 0, vip: Bool = false,
+                     letters: Int = 0, level: Int = 0, vip: Bool = false,
                      matching: (PlinkoBall) -> Bool = { _ in true }) -> PlinkoDrop {
         var seed: UInt64 = 429
         while true {
@@ -60,7 +63,7 @@ enum PlinkoFake {
             var rng = SplitMix(seed: seed)
             let dirs = (0..<12).map { _ in Bool.random(using: &rng) ? 1 : -1 }
             let cloneDirs = (0..<12).map { _ in Bool.random(using: &rng) ? 1 : -1 }
-            let ball = launch(lane: lane, dirs: dirs, cloneDirs: cloneDirs, rules: Rules(forceCatch: forceCatch),
+            let ball = launch(lane: lane, dirs: dirs, cloneDirs: cloneDirs, rules: Rules(forceCatch: forceCatch, level: level),
                               amount: amount, rng: &rng)
             guard matching(ball) else { continue }
             var total = ball.payout + (ball.clone?.payout ?? 0)
@@ -74,7 +77,7 @@ enum PlinkoFake {
                         feverBalls.append(fb)
                         total += fb.payout
                     }
-                    pocket = PlinkoPocket(reels: ["429", "429", "429"], fever: true, refund: 0, ceiling: ceiling)
+                    pocket = PlinkoPocket(reels: ["429", "429", "429"], fever: true, refund: 0)
                 } else {
                     let refund = amount / 5
                     total += refund
@@ -84,7 +87,7 @@ enum PlinkoFake {
             let after = Player(id: player.id, name: player.name, chips: player.chips - amount + total)
             return PlinkoDrop(ball: ball, pocket: pocket, feverBalls: feverBalls, payout: total,
                               topMult: ball.mult, fever: fever && ball.pocket, lane: lane, power: 500, grade: grade,
-                              amount: amount, letters: letters, vip: vip, player: after)
+                              amount: amount, letters: letters, level: level, vip: vip, player: after)
         }
     }
 }

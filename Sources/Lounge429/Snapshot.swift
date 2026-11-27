@@ -115,7 +115,7 @@ enum Snapshot {
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
         } else if let table, table.hasPrefix("plinko") {
-            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -ready | -ceiling | -fever | -fever-end | -vip
+            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -hot | -fever | -fever-end | -vip
             let vip = locked || table == "plinko-vip"
             let plinko = fakePlinko(store: store, me: me, mode: table)
             plinko.vip = vip
@@ -598,12 +598,12 @@ enum Snapshot {
     static func fakePlinko(store: LoungeStore, me: Player, mode: String) -> PlinkoTable {
         let table = PlinkoTable(store: store, seed: 429)
         func drop(_ lane: Int, grade: PlinkoDrop.Grade = .none, amount: Int64 = 100, forceCatch: Bool = false,
-                  reels: [String]? = nil, fever: Bool = false, ceiling: Bool = false, letters: Int = 0,
+                  reels: [String]? = nil, fever: Bool = false, letters: Int = 0, level: Int = 0,
                   matching: (PlinkoBall) -> Bool = { _ in true }) {
             let player = Player(id: me.id, name: me.name, chips: Int64(store.chips), goldenChips: me.goldenChips, goldenUntil: me.goldenUntil)
             table.preview(drop: PlinkoFake.drop(player: player, lane: lane, amount: amount, grade: grade,
-                                                forceCatch: forceCatch, reels: reels, fever: fever, ceiling: ceiling,
-                                                letters: letters, matching: matching))
+                                                forceCatch: forceCatch, reels: reels, fever: fever,
+                                                letters: letters, level: level, matching: matching))
         }
         switch mode {
         case "plinko-charging":
@@ -634,20 +634,17 @@ enum Snapshot {
             drop(0, forceCatch: true) { $0.pocket }
             table.advance(38)
         case "plinko-letters":
-            // 포켓 릴이 꽝으로 멈추고 두 번째 글자 "2"가 켜진 순간
+            // 포켓 릴이 꽝으로 멈추고 "2"가 켜지며 파란 분열 핀이 생긴 순간
             table.previewLetters(1)
-            drop(0, forceCatch: true, reels: ["7", "BAR", "404"], letters: 2) { $0.pocket }
+            drop(0, forceCatch: true, reels: ["7", "BAR", "404"], letters: 2, level: 1) { $0.pocket }
             table.advance(46)
-        case "plinko-ceiling":
-            // 4·2·9 대기에서 들어온 포켓: 릴이 처음부터 429로 돌며 하나씩 서는 중
+        case "plinko-hot":
+            // 4·2·9 HOT: 핀이 다 늘어난 보드에서 공 둘이 내려가는 중
             table.previewLetters(3)
-            drop(0, forceCatch: true, fever: true, ceiling: true) { $0.pocket }
-            table.advance(44)
-        case "plinko-ready":
-            // 9까지 켜진 순간: NEXT FEVER, 포켓이 맥박친다
-            table.previewLetters(2)
-            drop(0, forceCatch: true, reels: ["7", "429", "BAR"], letters: 3) { $0.pocket }
-            table.advance(50)
+            drop(-1, level: 3) { $0.bucket != nil && $0.gold > 0 }
+            table.advance(14)
+            drop(1, level: 3) { $0.bucket != nil && $0.split != nil }
+            table.advance(20)
         case "plinko-fever":
             drop(0, forceCatch: true, fever: true) { $0.pocket }
             table.advance(100)
