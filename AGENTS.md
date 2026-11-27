@@ -92,6 +92,7 @@ swift build --product Lounge429
 - `ImageRenderer`는 메인 런루프가 필요하다. `dispatchMain()`으로 돌리면 멈춘다 (`NSApplication.run()` 사용)
 - 메뉴바 관리 앱(Bartender, Ice 등)이 새 아이콘을 숨김 영역에 넣을 수 있다
 - 서버 선택: `LOUNGE_SUPABASE_URL/KEY` → `LOUNGE_SERVER` → Info.plist `LoungeServer` → 로컬. Finder로 띄운 앱엔 환경변수가 없어서 배포 빌드는 Info.plist로 정한다 ([ADR-0007](docs/madr/0007-remote-supabase-zip-distribution.md))
+- 로컬 Supabase MCP는 `.mcp.json`의 `supabase-local`(`http://127.0.0.1:54321/mcp`, 로그인 없음). Studio가 서빙하므로 `config.toml`의 `[studio] enabled = true`를 유지하고 `supabase start` 후 쓴다. 마이그레이션은 MCP `apply_migration`이 아니라 `supabase migration new`로 파일을 남긴다
 - 원격 Auth 설정은 대시보드에서. `supabase config push`는 로컬 개발용 `config.toml`까지 덮어쓴다
 - `ImageRenderer`는 `TextField`를 못 그린다. 스냅샷에선 `\.snapshotting` 환경값으로 Text로 바꿔 그린다
 - 라운지 목록 = Presence(접속 중) + 명부(`named` 회원, `last_seen_at`). 앱은 `touch_seen`을 2분마다 ([ADR-0011](docs/madr/0011-lounge-roster-offline.md)). App Nap은 `AppDelegate`에서 막는다 (재워지면 하트비트가 밀려 Presence에서 빠진다)
