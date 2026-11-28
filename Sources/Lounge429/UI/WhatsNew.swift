@@ -7,7 +7,7 @@ import SwiftUI
 /// 카드를 닫을 때 그 카드의 새 게임들을 기억해 두고, 그 게임에 들어갈 때까지 타일에 `NEW` 라벨을 붙인다.
 enum WhatsNew {
     enum Game: String, CaseIterable {
-        case roulette, slot, plinko, blackjack, wall
+        case roulette, slot, plinko, blackjack, wall, poker
     }
 
     /// 새 버전을 낼 때 여기에 한 줄 더한다 (회원에게 알릴 게 없으면 안 더해도 된다). 카피 톤은 DESIGN.md §11

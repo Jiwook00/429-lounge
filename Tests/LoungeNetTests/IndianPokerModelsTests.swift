@@ -85,3 +85,254 @@ import Testing
         #expect(s.rejectedError?.errorDescription == "이미 지나간 차례예요")
     }
 }
+
+@Suite struct IndianPokerDisplayTests {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    func state(_ seats: [IPSeat], phase: IPHand.Phase = .betting) -> IPState {
+        IPState(now: now, table: IPTable(id: 1, capacity: seats.count), me: IPMe(member: true, seat: 1, handSeat: 1),
+                hand: IPHand(id: 1, handNo: 1, phase: phase, firstSeat: 1, startedAt: now),
+                seats: seats)
+    }
+
+    func seat(_ n: Int, put: Int64, folded: Bool = false, allIn: Bool = false, card: Int? = nil) -> IPSeat {
+        IPSeat(seat: n, playerId: UUID(), name: "\(n)", put: put, folded: folded, allIn: allIn, card: card)
+    }
+
+    @Test func noSidePotWithoutShortAllIn() {
+        #expect(state([seat(1, put: 40), seat(2, put: 40)]).pots == nil)
+        // 올인했지만 다른 사람이 더 안 냈으면 한 줄
+        #expect(state([seat(1, put: 40, allIn: true), seat(2, put: 40)]).pots == nil)
+    }
+
+    @Test func splitsAtLowestAllIn() {
+        // 시안 S05: 철수 올인 40, 민지 120, 나 40(콜 전), 도윤 폴드 10
+        let s = state([seat(1, put: 40, allIn: true), seat(2, put: 120), seat(3, put: 40), seat(4, put: 10, folded: true)])
+        guard let p = s.pots else { Issue.record("no pots"); return }
+        #expect(p.main == 40 + 40 + 40 + 10 && p.side == 80)
+        #expect(p.mainSeats == [1, 2, 3] && p.sideSeats == [2, 3] && p.cappedSeats == [1])
+    }
+
+    func done(_ seats: [IPSeat]) -> IPState { state(seats, phase: .done) }
+
+    @Test func sidePotWinnerIsAlsoAWinner() {
+        // 검증 재현: 10이 35 올인, 5가 60, 나(7)가 60 콜 → 메인 105는 10, 사이드 50은 나 (서버 지급과 같음)
+        let s = done([seat(1, put: 35, allIn: true, card: 10), seat(2, put: 60, card: 5), seat(3, put: 60, card: 7)])
+        #expect(s.awards == [IPAward(amount: 105, seats: [1], refund: false), IPAward(amount: 50, seats: [3], refund: false)])
+        #expect(s.winners == [1, 3])
+    }
+
+    @Test func awardsFollowADRExamples() {
+        // ADR-0023 예 1: B 100(이탈), C 50 올인, A 10(이탈) → C 110, B 50 환급
+        let one = done([seat(1, put: 10, folded: true, card: 9), seat(2, put: 100, folded: true, card: 8),
+                        seat(3, put: 50, allIn: true, card: 2)])
+        #expect(one.awards == [IPAward(amount: 110, seats: [3], refund: false), IPAward(amount: 50, seats: [2], refund: true)])
+        #expect(one.winners == [3])
+        // 예 2: A 10 · B 100 · C 50 올인 · D 100, B·D·A 이탈 → 지급 0/50/160/50
+        let two = done([seat(1, put: 10, folded: true, card: 9), seat(2, put: 100, folded: true, card: 8),
+                        seat(3, put: 50, allIn: true, card: 2), seat(4, put: 100, folded: true, card: 7)])
+        #expect(two.awards.map(\.amount) == [160, 50, 50] && two.awards.filter(\.refund).flatMap(\.seats) == [2, 4])
+    }
+
+    @Test func uncalledExcessIsARefundNotAWin() {
+        // 1이 100을 걸고 2가 40 올인으로 콜, 2가 이김 → 1의 초과 60은 환급, 1은 이긴 자리가 아님
+        let s = done([seat(1, put: 100, card: 3), seat(2, put: 40, allIn: true, card: 9)])
+        #expect(s.awards == [IPAward(amount: 80, seats: [2], refund: false), IPAward(amount: 60, seats: [1], refund: true)])
+        #expect(s.winners == [2])
+    }
+
+    @Test func tieSplitsTheSamePot() {
+        let s = done([seat(1, put: 30, card: 6), seat(2, put: 30, card: 6), seat(3, put: 10, folded: true, card: 9)])
+        #expect(s.awards == [IPAward(amount: 70, seats: [1, 2], refund: false)])
+    }
+
+    @Test func olderStatesSortFirst() {
+        func p(_ hand: Int64, _ phase: IPHand.Phase, _ turn: Int) -> IPProgress {
+            IPState(now: now, table: IPTable(id: 1, capacity: 2), me: IPMe(member: true),
+                    hand: IPHand(id: hand, handNo: 1, phase: phase, firstSeat: 1, turnNo: turn, startedAt: now)).progress
+        }
+        // 검증 재현: 차례 2 → 3 다음에 늦게 온 2, 끝난 판 다음에 늦게 온 진행 중 상태, 다음 판 다음에 늦게 온 지난 판
+        #expect(p(9, .betting, 2) < p(9, .betting, 3))
+        #expect(p(9, .betting, 4) < p(9, .done, 4))
+        #expect(p(9, .done, 4) < p(10, .betting, 1))
+        #expect(!(p(9, .betting, 3) < p(9, .betting, 3)))
+    }
+
+    @Test func sameTurnOrdersByServerTime() {
+        func s(_ at: TimeInterval) -> IPProgress {
+            IPState(now: Date(timeIntervalSince1970: at), table: IPTable(id: 1, capacity: 2), me: IPMe(member: true),
+                    hand: IPHand(id: 3, handNo: 1, phase: .betting, firstSeat: 1, turnNo: 2, startedAt: now)).progress
+        }
+        #expect(s(10) < s(10.5))
+        #expect(!(s(10.5) < s(10)))
+    }
+
+    @Test func skewTrustsTheFastestRoundTrip() {
+        var c = ClockSkew()
+        let t0 = Date(timeIntervalSince1970: 0)
+        // 빠른 왕복(0.1초): 서버가 로컬보다 5초 앞
+        c.add(server: t0.addingTimeInterval(5.05), sent: t0, received: t0.addingTimeInterval(0.1))
+        #expect(abs(c.offset - 5) < 0.001)
+        // 2.6초 늦게 도착한 응답은 시계를 되감지 않는다
+        c.add(server: t0.addingTimeInterval(6.05), sent: t0.addingTimeInterval(1), received: t0.addingTimeInterval(3.7))
+        #expect(abs(c.offset - 5) < 0.001)
+        // 창(30초)이 지나면 허용 왕복이 두 배(0.2초)로: 0.15초 표본을 받아들인다
+        c.add(server: t0.addingTimeInterval(45.075), sent: t0.addingTimeInterval(40), received: t0.addingTimeInterval(40.15))
+        #expect(abs(c.offset - 5) < 0.001)
+        c.add(server: t0.addingTimeInterval(47.1), sent: t0.addingTimeInterval(42), received: t0.addingTimeInterval(42.2))
+        #expect(abs(c.offset - 5) < 0.001)
+    }
+
+    @Test func winnersIgnoreFolded() {
+        let s = state([seat(1, put: 40, card: 8), seat(2, put: 40, card: 3), seat(3, put: 10, folded: true, card: 9)], phase: .done)
+        #expect(s.winners == [1])
+        let tie = state([seat(1, put: 20, card: 6), seat(2, put: 20, card: 6)], phase: .done)
+        #expect(tie.winners == [1, 2])
+        #expect(state([seat(1, put: 20, card: 6)]).winners.isEmpty)
+    }
+}
+
+@Suite struct IPJoinGateTests {
+    @Test func plainJoinSits() {
+        var g = IPJoinGate()
+        g.start()
+        let r1 = g.finish(table: 7, certain: true)
+        #expect(r1 == .sit(7))
+        #expect(!g.pending)
+    }
+
+    @Test func cancelWhileJoiningLeavesOnceWhenTheCommittedJoinArrives() {
+        // 검증 재현: 서버는 입장을 커밋, 응답이 3초 늦는 동안 종료·‹ 라운지
+        var g = IPJoinGate()
+        g.start()
+        let cancelled = g.cancel()
+        #expect(cancelled && g.pending)
+        let step = g.finish(table: 343, certain: true)
+        #expect(step == .leave(343))
+        #expect(!g.pending)
+    }
+
+    @Test func lobbySeesTheSeatFirstThenJoinArrivesWithoutDoubleLeave() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        // 종료 대기 중 조회가 먼저 자리를 찾음 → 이탈 한 번
+        let r2 = g.lobby(myTable: 343)
+        #expect(r2 == .leave(343))
+        #expect(g.pending)
+        // 늦은 입장 응답은 이미 낸 이탈과 같은 자리 → 다시 안 냄
+        let r3 = g.finish(table: 343, certain: true)
+        #expect(r3 == .none)
+        #expect(!g.pending)
+    }
+
+    @Test func uncertainJoinProbesOnceThenSettles() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r4 = g.finish(table: nil, certain: false)
+        #expect(r4 == .probe(after: 0))
+        #expect(g.pending)
+        let r5 = g.lobby(myTable: 343)
+        #expect(r5 == .leave(343))
+        #expect(!g.pending)
+        // 조회에 자리가 없으면 끝 (무한 재시도 없음)
+        var h = IPJoinGate()
+        h.start()
+        _ = h.cancel()
+        let r6 = h.finish(table: nil, certain: false)
+        #expect(r6 == .probe(after: 0))
+        let r7 = h.lobby(myTable: nil)
+        #expect(r7 == .none && !h.pending)
+    }
+
+    @Test func uncertainJoinWithoutCancelAdoptsTheSeat() {
+        var g = IPJoinGate()
+        g.start()
+        let r8 = g.finish(table: nil, certain: false)
+        #expect(r8 == .probe(after: 0))
+        let r9 = g.lobby(myTable: 9)
+        #expect(r9 == .sit(9))
+    }
+
+    @Test func rejectedJoinEndsTheCancel() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r10 = g.finish(table: nil, certain: true)
+        #expect(r10 == .none && !g.pending)
+        let again = g.cancel()
+        #expect(!again) // 입장 중이 아니면 취소할 것도 없다
+    }
+
+    @Test func onlyKnownServerRejectionsAreCertain() {
+        // 검증 재현: 커밋된 입장 응답이 JSON 본문이 있는 503 → SDK가 PostgrestError로, wrap이 LoungeError.server로 바꾼다
+        #expect(!IPJoinGate.isRejection(LoungeError.server("Service Unavailable")))
+        #expect(!IPJoinGate.isRejection(URLError(.timedOut)))
+        #expect(!IPJoinGate.isRejection(LoungeError.server("something_new")))
+        // 다른 자리가 이미 있다 → 조회해서 그 자리를 찾는다
+        #expect(!IPJoinGate.isRejection(LoungeError.server("already_at_table")))
+        for code in ["table_full", "table_closed", "no_table", "insufficient_chips", "not_named", "invalid_bots", "not_authenticated"] {
+            #expect(IPJoinGate.isRejection(LoungeError.server(code)))
+        }
+    }
+
+    @Test func jsonServiceUnavailableAfterCommitLeavesTheSeat() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let certain = IPJoinGate.isRejection(LoungeError.server("Service Unavailable"))
+        let r1 = g.finish(table: nil, certain: certain)
+        #expect(r1 == .probe(after: 0) && g.pending)
+        let r2 = g.lobby(myTable: 347)
+        #expect(r2 == .leave(347) && !g.pending)
+    }
+
+    @Test func knownRejectionDuringCancelEndsWithoutProbe() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r = g.finish(table: nil, certain: IPJoinGate.isRejection(LoungeError.server("table_full")))
+        #expect(r == .none && !g.pending && !g.unresolved)
+    }
+
+    @Test func failedProbeRetriesWithBackoffThenRecovers() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r0 = g.finish(table: nil, certain: false)
+        #expect(r0 == .probe(after: 0))
+        let r1 = g.probeFailed()
+        #expect(r1 == .probe(after: 1))
+        let r2 = g.probeFailed()
+        #expect(r2 == .probe(after: 2))
+        // 세 번째 조회가 성공해 자리를 찾음 → 이탈 한 번
+        let r3 = g.lobby(myTable: 347)
+        #expect(r3 == .leave(347) && !g.pending && !g.unresolved)
+        // 그 뒤 늦게 온 실패 보고는 아무것도 안 한다
+        let r4 = g.probeFailed()
+        #expect(r4 == .none)
+    }
+
+    @Test func failedProbesStopAtTheCap() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        var steps = [g.finish(table: nil, certain: false)]
+        for _ in 0..<6 { steps.append(g.probeFailed()) }
+        #expect(steps == [.probe(after: 0), .probe(after: 1), .probe(after: 2), .probe(after: 4), .none, .none, .none])
+        #expect(!g.pending && !g.unresolved)
+    }
+
+    @Test func cancelWhileResultIsUnknown() {
+        // 입장 응답이 사라진 뒤(조회 중) ‹ 라운지·종료 → 취소로 표시하고 조회가 찾은 자리를 이탈
+        var g = IPJoinGate()
+        g.start()
+        let r0 = g.finish(table: nil, certain: false)
+        #expect(r0 == .probe(after: 0))
+        let cancelled = g.cancel()
+        #expect(cancelled && g.pending)
+        let r1 = g.lobby(myTable: 5)
+        #expect(r1 == .leave(5))
+    }
+}

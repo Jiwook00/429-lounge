@@ -44,6 +44,10 @@ struct LoungeView: View {
     /// 블랙잭에 앉은 회원 수 (AI 제외)
     var blackjackSeated = 0
     var onBlackjack: () -> Void = {}
+    /// 인디언 포커 타일 아랫줄과 강조 (앉아 있거나 열린 테이블에 사람이 있음)
+    var pokerLine = "TABLE · 비어 있음"
+    var pokerHot = false
+    var onPoker: () -> Void = {}
     var onBoard: () -> Void = {}
     /// 라운지 벽화 타일 아랫줄 (남은 픽셀 / 429 카운트다운)
     var wallLine: (Date) -> String = { _ in "FREE" }
@@ -398,49 +402,56 @@ struct LoungeView: View {
         case .slot: onSlot()
         case .plinko: onPlinko()
         case .blackjack: onBlackjack()
+        case .poker: onPoker()
         case .wall: onWall()
         }
     }
 
+    /// 게임 타일 2×3: 룰렛 · 슬롯 / 429 드롭 · 블랙잭 / 라운지 벽화 · 인디언 포커
     private var games: some View {
-        VStack(spacing: 8) {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                Button { open(.roulette) } label: {
-                    // 홀짝 자리(첫 칸). 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
-                    GameTile(sprite: Sprites.roulette, title: "미니 룰렛",
-                             mode: !online ? "TABLE" : crowd.roulette > 0 ? "TABLE · \(crowd.roulette)명 앉음" : "TABLE · 비어 있음",
-                             soon: !online, live: online, hot: crowd.roulette > 0, label: newLabel(.roulette))
-                }
-                .buttonStyle(.plain)
-                .disabled(!online)
-                Button { open(.slot) } label: {
-                    GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO", soon: !online, live: online,
-                             badge: crowd.slot > 0 ? "\(crowd.slot)명" : nil, label: newLabel(.slot))
-                }
-                .buttonStyle(.plain)
-                .disabled(!online)
-                Button { open(.plinko) } label: {
-                    GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online,
-                             label: newLabel(.plinko))
-                }
-                .buttonStyle(.plain)
-                .disabled(!online)
-                Button { open(.blackjack) } label: {
-                    // AI 빼고 앉은 회원만 센다 (빈 자리는 딜 때 AI가 채움). 4명이면 만석이라 흐리게
-                    GameTile(sprite: Sprites.spade, title: "블랙잭",
-                             mode: !online ? "TABLE" : blackjackSeated >= 4 ? "TABLE · 4/4 만석" : "TABLE · \(blackjackSeated)/4",
-                             soon: !online, live: online && blackjackSeated < 4, hot: blackjackSeated > 0 && blackjackSeated < 4,
-                             label: newLabel(.blackjack))
-                }
-                .buttonStyle(.plain)
-                .disabled(!online)
+            Button { open(.roulette) } label: {
+                // 홀짝 자리(첫 칸). 1배 크기 타일은 좁아서 인원을 아래 줄에 쓴다 (사람이 있으면 더 강하게 발광)
+                GameTile(sprite: Sprites.roulette, title: "미니 룰렛",
+                         mode: !online ? "TABLE" : crowd.roulette > 0 ? "TABLE · \(crowd.roulette)명 앉음" : "TABLE · 비어 있음",
+                         soon: !online, live: online, hot: crowd.roulette > 0, label: newLabel(.roulette))
             }
+            .buttonStyle(.plain)
+            .disabled(!online)
+            Button { open(.slot) } label: {
+                GameTile(sprite: Sprites.seven, title: "슬롯", mode: "SOLO", soon: !online, live: online,
+                         badge: crowd.slot > 0 ? "\(crowd.slot)명" : nil, label: newLabel(.slot))
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
+            Button { open(.plinko) } label: {
+                GameTile(sprite: Sprites.plinko, title: "429 드롭", mode: "SOLO", soon: !online, live: online,
+                         label: newLabel(.plinko))
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
+            Button { open(.blackjack) } label: {
+                // AI 빼고 앉은 회원만 센다 (빈 자리는 딜 때 AI가 채움). 4명이면 만석이라 흐리게
+                GameTile(sprite: Sprites.spade, title: "블랙잭",
+                         mode: !online ? "TABLE" : blackjackSeated >= 4 ? "TABLE · 4/4 만석" : "TABLE · \(blackjackSeated)/4",
+                         soon: !online, live: online && blackjackSeated < 4, hot: blackjackSeated > 0 && blackjackSeated < 4,
+                         label: newLabel(.blackjack))
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
             Button { open(.wall) } label: {
                 // 칩과 무관한 무료 벽 (ADR-0017). 칩 게임(네온)과 구분해 초록 + BETA 라벨
                 let line = online ? wallLine(.now) : "FREE"
                 GameTile(sprite: Sprites.wall, title: "라운지 벽화", mode: line,
                          soon: !online, live: online, accent: Theme.green,
                          modeColor: line.hasPrefix("429") ? Theme.neon : nil, label: newLabel(.wall) ?? "BETA")
+            }
+            .buttonStyle(.plain)
+            .disabled(!online)
+            Button { open(.poker) } label: {
+                // 사람만 센다 (컴퓨터는 로비에서 숨김, ADR-0023). 소수결이 있던 자리
+                GameTile(sprite: Sprites.pokerCard, title: "인디언 포커", mode: online ? pokerLine : "TABLE",
+                         soon: !online, live: online, hot: online && pokerHot, label: newLabel(.poker))
             }
             .buttonStyle(.plain)
             .disabled(!online)

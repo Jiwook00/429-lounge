@@ -20,6 +20,8 @@ let package = Package(
             name: "Lounge429",
             dependencies: ["LoungeCore", "LoungeNet", .product(name: "Sparkle", package: "Sparkle")],
             resources: [.copy("Resources/Fonts"), .copy("Resources/Sounds")],
+            // 개발용 코드(LOUNGE_DEV): 디버그 빌드엔 늘, 릴리스 번들은 scripts/build-app.sh --dev일 때만 (-Xswiftc -DLOUNGE_DEV)
+            swiftSettings: [.define("LOUNGE_DEV", .when(configuration: .debug))],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         // 토큰 로그 파싱, 칩 경제 등 UI와 무관한 로직

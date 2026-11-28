@@ -70,6 +70,15 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 만화 5컷 테이블: 위 컷에 딜러, 아래 4컷이 자리. 10초 동안 걸고, 빈 자리는 AI가 채운다. 1번 자리부터 차례대로 히트 / 스탠드 / 더블다운(사람은 11초, 넘기면 스탠드). 첫 두 장으로 블랙잭을 이기면 일반 칩은 2.75배, 황금 칩은 2.5배를 받는다. 내 차례엔 내 컷이 커지고, 카드는 컷 사이로 사라졌다 나타나며 날아온다.
 
+### 인디언 포커
+
+카드 한 장씩, 내 카드만 나는 못 본다. 상대 이마의 카드를 보고 판마다 앤티 10칩 뒤 한 바퀴 순차 베팅(체크 · 베팅 · 콜 · 레이즈 · 폴드), 높은 숫자(1~10)가 이긴다.
+
+- 로비에서 열린 테이블에 직접 앉거나 컴퓨터 1~3명과 새 테이블을 만든다. 인원은 사람만 센다(사람 2 + 컴퓨터 2 = 2/4). 사람이 앉으면 다음 판부터 컴퓨터 자리를 차지한다
+- 차례마다 11초(서버 시계). 넘기면 자동 폴드, 연속 두 판이면 자리에서 빠진다. 레이즈는 직전에 올린 폭 이상, 칩이 모자라면 올인(메인 팟 / 사이드 팟)
+- 결과는 5초 동안 전원 카드 공개 후 다음 판이 자동으로. `‹ 라운지`는 일어나기(진행 중인 판은 폴드)
+- 팝오버를 닫아도 자리는 그대로이고, 내 차례가 오면 메뉴바 슬롯머신이 깜빡인다
+
 ### 429 슬롯
 
 SPIN은 요청, 결과는 HTTP 응답.
@@ -139,7 +148,7 @@ gh release create "$TAG" build/429-Lounge.zip build/appcast.xml --draft --verify
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|ip-lobby|ip-lobby-broke|ip-lobby-empty|ip-lobby-left|ip-wait|ip-deal|ip-myturn|ip-raise|ip-allin|ip-result|ip-check|ip-3p|ip-timeout|ip-side|ip-last|ip-leaving|ip-live|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
@@ -148,6 +157,7 @@ supabase db reset                                      # 마이그레이션 전�
 | `LOUNGE_FAKE_429=1` | 가짜 429 상태로 실행 (VIP HOUR, 황금 칩) |
 | `LOUNGE_DEBUG=1` | Realtime 이벤트 로그 |
 | `LOUNGE_E2E_BET=golden\|chips` | `--table roulette-live` 스냅샷에서 자동 베팅 |
+| `LOUNGE_POKER_WINDOW=1` | 개발용 빌드(`swift build`, `scripts/build-app.sh --dev`)만: 인디언 포커 화면을 일반 창에 (`LOUNGE_E2E_BET=1`이면 자동으로 앉아 한두 판) |
 | `LOUNGE_SERVER=remote` | 운영 서버(`LoungeConfig.remote`) 사용 |
 | `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` | 임의의 Supabase 사용 (가장 우선) |
 

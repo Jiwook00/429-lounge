@@ -86,6 +86,8 @@ enum Snapshot {
                                          dailyChipsAvailableAt: daily ? store.dailyChipsAvailableAt : nil,
                                          cardFace: back ? .back : .front, cardFrame: table == "lobby-flip" ? 1 : 0,
                                          name: "새벽코더", blackjackSeated: table == "lobby-busy" ? 2 : 0,
+                                         pokerLine: table == "lobby-busy" ? "TABLE · 3명 앉음" : "TABLE · 비어 있음",
+                                         pokerHot: table == "lobby-busy",
                                          // lobby-whatsnew: 업데이트 뒤 "새로 들어온 것" 카드 (0.14.1 → 0.15.0)
                                          // lobby-whatsnew-skip: 여러 버전을 건너뛰고 받았을 때 (가짜 0.15~0.17 문구, 0.14.0 → 0.17.0)
                                          // lobby-new: 카드를 닫은 뒤 NEW 라벨
@@ -102,6 +104,11 @@ enum Snapshot {
             // bj-help: 설명 카드 (뒤는 내 차례 판)
             content = AnyView(BlackjackView(table: fakeBlackjack(store: store, me: me, mode: table == "bj-help" ? "bj-myturn" : table),
                                             chips: store.chips, golden: store.golden(), showHelp: table == "bj-help"))
+        } else if let table, table.hasPrefix("ip-") {
+            // ip-lobby | -lobby-broke | -lobby-empty | -lobby-left | -wait | -deal | -myturn | -raise | -allin | -result
+            // | -check | -3p | -timeout: 인디언 포커 (시안 S01~S10) / -side (사이드 팟을 받은 결과) | -last (마지막 행동 알림) | -leaving
+            let broke = table == "ip-lobby-broke"
+            content = AnyView(IndianPokerView(table: fakePoker(store: store, me: me, mode: table), chips: broke ? 6 : 1_240))
         } else if let table, table.hasPrefix("roulette-") {
             // roulette-idle | -betting | -golden | -alone | -spin | -cut-near | -cut-edge | -cut-land | -closed | -win | -void | -help
             content = AnyView(RouletteView(table: fakeRoulette(store: store, me: me, mode: table == "roulette-help" ? "roulette-betting" : table),
@@ -218,6 +225,204 @@ enum Snapshot {
             table.preview(arrivals: ["d-2": at(-1.0)])
         }
         return table
+    }
+
+    /// 인디언 포커 가짜 테이블: 시안(S01~S10)과 같은 판. 나는 지우, 철수·도윤은 사람, 민지는 컴퓨터
+    static func fakePoker(store: LoungeStore, me: Player, mode: String) -> IndianPokerTable {
+        let table = IndianPokerTable()
+        table.store = store
+        let now = Date()
+        let at = { (s: TimeInterval) in now.addingTimeInterval(s) }
+        let cs = UUID(), dy = UUID()
+        switch mode {
+        case "ip-lobby", "ip-lobby-broke", "ip-lobby-left":
+            table.preview(lobby: IPLobby(now: now, tables: [
+                .init(id: 1, capacity: 4, humans: 2, names: ["철수", "도윤"], handNo: 12),
+                .init(id: 2, capacity: 3, humans: 1, names: ["민지"], handNo: nil),
+                .init(id: 3, capacity: 2, humans: 1, names: ["도윤"], handNo: nil),
+                .init(id: 4, capacity: 4, humans: 4, names: ["하준", "서아", "윤호", "다은"], handNo: 30),
+            ]), leftNotice: mode == "ip-lobby-left" ? .away : nil)
+            return table
+        case "ip-lobby-empty":
+            table.preview(lobby: IPLobby(now: now, tables: []))
+            return table
+        default: break
+        }
+
+        func seat(_ n: Int, _ name: String, id: UUID?, chips: Int64? = nil, put: Int64 = 10, bet: Int64 = 0,
+                  folded: Bool = false, allIn: Bool = false, action: IPSeat.Action? = nil, amount: Int64? = nil,
+                  card: Int?, payout: Int64? = nil) -> IPSeat {
+            IPSeat(seat: n, playerId: id, name: name, chips: chips ?? (id == nil ? nil : 800), put: put, bet: bet, folded: folded,
+                   allIn: allIn, lastAction: action, lastAmount: amount, card: card, payout: payout,
+                   net: payout.map { $0 - put })
+        }
+        func hand(_ phase: IPHand.Phase = .betting, turn: Int?, deadline: TimeInterval = 8, started: TimeInterval = -3,
+                  bet: Int64 = 0, minRaise: Int64 = 10, pot: Int64, next: TimeInterval? = nil) -> IPHand {
+            IPHand(id: 7, handNo: 7, phase: phase, firstSeat: 1, turnSeat: turn, turnNo: 4,
+                   turnStartedAt: turn == nil ? nil : at(started), turnDeadline: turn == nil ? nil : at(deadline),
+                   currentBet: bet, minRaise: minRaise, pot: pot, startedAt: at(-20), settledAt: phase == .done ? at(-0.5) : nil,
+                   nextAt: next.map(at))
+        }
+        func state(_ cap: Int, mySeat: Int?, members: [IPMember], hand: IPHand?, seats: [IPSeat]) -> IPState {
+            IPState(now: now, table: IPTable(id: 1, capacity: cap),
+                    me: IPMe(member: true, seat: members.first { $0.playerId == me.id }?.seat, handSeat: mySeat),
+                    members: members, hand: hand, seats: seats)
+        }
+        let jw = IPMember(seat: 4, playerId: me.id, name: "지우")
+        let fourP = [IPMember(seat: 1, playerId: cs, name: "철수"), IPMember(seat: 3, playerId: dy, name: "도윤"), jw]
+        func alert(_ seat: Int, _ name: String, _ a: IPSeat.Action, _ amount: Int64? = nil, allIn: Bool = false,
+                   ago: TimeInterval = 0.3) -> IndianPokerTable.Alert {
+            .init(seat: seat, name: name, action: a, amount: amount, allIn: allIn, at: at(-ago))
+        }
+
+        switch mode {
+        case "ip-wait":
+            // 혼자 앉은 테이블, 직전 판이 끝나고 다음 판 3초 전 (시안 S02)
+            let s = state(4, mySeat: nil, members: [IPMember(seat: 1, playerId: me.id, name: "지우")],
+                          hand: hand(.done, turn: nil, pot: 40, next: 2.6),
+                          seats: [seat(1, "캐시봇", id: nil, card: 4, payout: 0), seat(2, "민지", id: nil, card: 8, payout: 40),
+                                  seat(3, "도윤", id: nil, card: 2, payout: 0), seat(4, "하준", id: nil, card: 5, payout: 0)])
+            table.preview(state: s)
+        case "ip-deal":
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(turn: 1, deadline: 12.5, started: 1.5, pot: 40),
+                          seats: [seat(1, "철수", id: cs, card: 7), seat(2, "민지", id: nil, card: 3),
+                                  seat(3, "도윤", id: dy, card: 9), seat(4, "지우", id: me.id, chips: 1_230, card: nil)])
+            table.preview(state: s)
+        case "ip-myturn", "ip-raise":
+            // 4인: 철수 베팅 30, 민지 콜, 도윤 폴드, 내 차례 (시안 S03 / S04)
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(turn: 4, bet: 30, minRaise: 30, pot: 100),
+                          seats: [seat(1, "철수", id: cs, put: 40, bet: 30, action: .bet, amount: 30, card: 7),
+                                  seat(2, "민지", id: nil, put: 40, bet: 30, action: .call, amount: 30, card: 3),
+                                  seat(3, "도윤", id: dy, folded: true, action: .fold, amount: 0, card: 9),
+                                  seat(4, "지우", id: me.id, chips: 1_230, card: nil)])
+            table.preview(state: s, alert: mode == "ip-raise" ? nil : alert(3, "도윤", .fold),
+                          raising: mode == "ip-raise" ? 60 : nil)
+        case "ip-allin":
+            // 철수 올인 40, 민지 레이즈 120 → 메인 팟 / 사이드 팟 (시안 S05)
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(turn: 4, deadline: 9, bet: 120, minRaise: 80, pot: 200),
+                          seats: [seat(1, "철수", id: cs, chips: 0, put: 50, bet: 40, allIn: true, action: .bet, amount: 40, card: 7),
+                                  seat(2, "민지", id: nil, put: 130, bet: 120, action: .raise, amount: 120, card: 3),
+                                  seat(3, "도윤", id: dy, folded: true, action: .fold, amount: 0, card: 9),
+                                  seat(4, "지우", id: me.id, chips: 1_230, card: nil)])
+            table.preview(state: s, alert: alert(2, "민지", .raise, 120, ago: 2))
+        case "ip-side":
+            // 검증 재현: 철수 10이 35 올인, 민지 5가 60, 나 7이 60 콜 → 메인 105는 철수, 사이드 50은 나
+            let s = state(3, mySeat: 3, members: [IPMember(seat: 1, playerId: cs, name: "철수"), IPMember(seat: 3, playerId: me.id, name: "지우")],
+                          hand: hand(.done, turn: nil, pot: 155, next: 4.2),
+                          seats: [seat(1, "철수", id: cs, chips: 105, put: 35, bet: 25, allIn: true, action: .bet, amount: 25, card: 10,
+                                       payout: 105),
+                                  seat(2, "민지", id: nil, put: 60, bet: 50, action: .raise, amount: 50, card: 5, payout: 0),
+                                  seat(3, "지우", id: me.id, chips: 1_230, put: 60, bet: 50, action: .call, amount: 50, card: 7,
+                                       payout: 50)])
+            table.preview(state: s)
+        case "ip-last":
+            // 판을 끝낸 마지막 콜: 결과가 나와도 1.5초 동안 판돈 패널에 행동 알림
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(.done, turn: nil, pot: 130, next: 4.8),
+                          seats: [seat(1, "철수", id: cs, put: 40, bet: 30, action: .call, amount: 30, card: 7, payout: 0),
+                                  seat(2, "민지", id: nil, put: 40, bet: 30, action: .call, amount: 30, card: 3, payout: 0),
+                                  seat(3, "도윤", id: dy, folded: true, action: .fold, amount: 0, card: 9, payout: 0),
+                                  seat(4, "지우", id: me.id, chips: 1_320, put: 40, bet: 30, action: .bet, amount: 30, card: 8,
+                                       payout: 130)])
+            table.preview(state: s, alert: alert(2, "민지", .call, 30, ago: 0.2))
+        case "ip-leaving":
+            // 일어나기를 보냈지만 서버가 아직 확인 못 함 (다시 시도 중)
+            let s = state(2, mySeat: 2, members: [IPMember(seat: 2, playerId: me.id, name: "지우")],
+                          hand: hand(turn: 1, pot: 20), seats: [seat(1, "민지", id: nil, card: 6), seat(2, "지우", id: me.id, card: nil)])
+            table.preview(state: s, leaving: 3)
+        case "ip-result":
+            // 8이 제일 높음, 도윤 9는 폴드 (시안 S06)
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(.done, turn: nil, pot: 130, next: 4.6),
+                          seats: [seat(1, "철수", id: cs, put: 40, bet: 30, action: .call, amount: 30, card: 7, payout: 0),
+                                  seat(2, "민지", id: nil, put: 40, bet: 30, action: .call, amount: 30, card: 3, payout: 0),
+                                  seat(3, "도윤", id: dy, folded: true, action: .fold, amount: 0, card: 9, payout: 0),
+                                  seat(4, "지우", id: me.id, chips: 1_320, put: 40, bet: 30, action: .bet, amount: 30, card: 8,
+                                       payout: 130)])
+            table.preview(state: s)
+        case "ip-check":
+            // 2인: 민지 체크, 나는 체크 · 베팅 (시안 S07)
+            let s = state(2, mySeat: 2, members: [IPMember(seat: 2, playerId: me.id, name: "지우")],
+                          hand: hand(turn: 2, deadline: 9.6, pot: 20),
+                          seats: [seat(1, "민지", id: nil, action: .check, amount: 0, card: 6),
+                                  seat(2, "지우", id: me.id, chips: 1_230, card: nil)])
+            table.preview(state: s, alert: alert(1, "민지", .check))
+        case "ip-3p":
+            // 3인: 철수 베팅 20, 민지(컴퓨터) 고르는 중
+            let s = state(3, mySeat: 3, members: [IPMember(seat: 1, playerId: cs, name: "철수"),
+                                                  IPMember(seat: 3, playerId: me.id, name: "지우")],
+                          hand: hand(turn: 2, deadline: 2, bet: 20, minRaise: 20, pot: 50),
+                          seats: [seat(1, "철수", id: cs, put: 30, bet: 20, action: .bet, amount: 20, card: 5),
+                                  seat(2, "민지", id: nil, card: 10),
+                                  seat(3, "지우", id: me.id, chips: 1_230, card: nil)])
+            table.preview(state: s, alert: alert(1, "철수", .bet, 20, ago: 0.8))
+        default: // ip-timeout
+            // 내가 11초를 넘겨 자동 폴드, 지금은 철수 차례 (시안 S08)
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(turn: 1, deadline: 6.6, bet: 30, minRaise: 30, pot: 70),
+                          seats: [seat(1, "철수", id: cs, card: 7), seat(2, "민지", id: nil, card: 3),
+                                  seat(3, "도윤", id: dy, put: 40, bet: 30, action: .bet, amount: 30, card: 9),
+                                  seat(4, "지우", id: me.id, chips: 1_230, folded: true, action: .timeout, amount: 0, card: nil)])
+            table.preview(state: s, alert: alert(4, "지우", .timeout))
+        }
+        return table
+    }
+
+    /// 실서버 인디언 포커에 앉아 `seconds` 동안 상태를 찍고 마지막 화면을 저장한다.
+    /// 앉은 테이블이 있으면 거기로, 없으면 자리 있는 테이블, 그것도 없으면 컴퓨터 2명과 새 테이블.
+    /// LOUNGE_E2E_BET=1이면 내 차례에 체크·콜(가끔 레이즈) / fold면 늘 폴드 / idle이면 아무것도 안 함(시간 초과 확인)
+    static func renderPokerLive(to path: String, seconds: Int) {
+        Task { @MainActor in
+            let store = LoungeStore(live: false)
+            await store.connect()
+            guard let me = store.me else { print("connect failed"); exit(1) }
+            print("signed in as \(me.name) · chips \(me.chips)")
+            // 닉네임이 없으면 테이블에 못 앉는다 (로컬 테스트 계정)
+            if !me.named, await store.rename("지우") != nil { _ = await store.rename("지우\(Int.random(in: 10...99))") }
+            let table = store.poker
+            table.watching = true
+            await table.refreshLobby()
+            if !table.seated {
+                if let open = table.lobby?.tables.first(where: { !$0.full }) {
+                    await table.join(open.id)
+                } else {
+                    await table.create()
+                }
+            }
+            print("table \(table.tableID.map(String.init) ?? "-") · \(table.message ?? "ok")")
+            let play = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"] ?? ""
+            var last = ""
+            var acted = ""
+            let start = store.chips
+            for _ in 0..<(seconds * 4) {
+                try? await Task.sleep(for: .milliseconds(250))
+                let now = Date()
+                if let h = table.hand, let o = table.options(at: now), !play.isEmpty, play != "idle", acted != "\(h.id):\(h.turnNo)",
+                   !table.busy {
+                    acted = "\(h.id):\(h.turnNo)"
+                    try? await Task.sleep(for: .seconds(1))
+                    if play == "fold" { await table.act(.fold) }
+                    else if o.canRaise, Int.random(in: 0..<4) == 0 {
+                        table.openRaise(at: .now)
+                        await table.confirmRaise(at: .now)
+                    } else { await table.act(o.canCheck ? .check : .call) }
+                    print("act → \(table.mySeat?.lastAction?.rawValue ?? "?") \(table.mySeat?.lastAmount ?? 0) · \(table.message ?? "ok")")
+                }
+                guard let s = table.state, let h = s.hand else { continue }
+                let seats = s.seats.map { x in
+                    "\(x.seat):\(x.name)\(x.bot ? "(컴)" : "") \(x.card.map(String.init) ?? "?")\(x.folded ? "✕" : "") put \(x.put)\(x.lastAction.map { " " + $0.rawValue } ?? "")\(x.net.map { " net \($0)" } ?? "")"
+                }.joined(separator: " | ")
+                let line = "#\(h.handNo) \(h.phase.rawValue) turn \(h.turnSeat.map(String.init) ?? "-")/\(h.turnNo) pot \(h.pot) | \(seats)"
+                if line != last { print(line); last = line }
+                if let a = table.currentAlert(at: now), line.isEmpty { print(a) }
+            }
+            await store.refreshMe()
+            print("chips \(start) → \(store.chips) (\(store.chips - start >= 0 ? "+" : "")\(store.chips - start))")
+            write(AnyView(IndianPokerView(table: table, chips: store.chips)), to: path)
+            if ProcessInfo.processInfo.environment["LOUNGE_POKER_STAY"] == nil {
+                print(await table.leaveAndWait(timeout: 20) ? "left table" : "leave not confirmed")
+            }
+            exit(0)
+        }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
     }
 
     /// 미니 룰렛 가짜 판: 시안과 같은 판 (나 7에 50 · 빨강 50, 철수 홀 100, 영희 9 50 · 빨강 50)

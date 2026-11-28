@@ -21,6 +21,7 @@ enum Entry {
                 if table == "roulette-live" { Snapshot.renderRouletteLive(to: args[i + 1], seconds: 25) }
                 if table == "lobby-live" { Snapshot.renderLobbyLive(to: args[i + 1], seconds: 20) }
                 if table == "bj-live" { Snapshot.renderBlackjackLive(to: args[i + 1], seconds: 25) }
+                if table == "ip-live" { Snapshot.renderPokerLive(to: args[i + 1], seconds: 40) }
                 if table == "wall-live" { Snapshot.renderWallLive(to: args[i + 1], seconds: 25) }
                 if table == "plinko-live" { Snapshot.renderPlinkoLive(to: args[i + 1], seconds: 25) }
                 if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 8) }
@@ -42,8 +43,8 @@ struct Lounge429App: App {
                 { updater.checkForUpdates(nil) }
             })
         } label: {
-            // 다른 회원의 잭팟이면 VIP ↔ 평소로 깜빡인다
-            Image(nsImage: Sprites.menuBarIcon(vip: store.vip != store.jackpotFlash, busy: store.tableBusy))
+            // 다른 회원의 잭팟, 인디언 포커 내 차례(포커 화면을 안 보고 있을 때)면 VIP ↔ 평소로 깜빡인다
+            Image(nsImage: Sprites.menuBarIcon(vip: store.vip != (store.jackpotFlash || store.poker.flash), busy: store.tableBusy))
             Text(store.chips.formatted(.number))
         }
         .menuBarExtraStyle(.window)
@@ -69,6 +70,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         activity = ProcessInfo.processInfo.beginActivity(
             options: .userInitiatedAllowingIdleSystemSleep, reason: "라운지 접속 유지")
         if Notifier.available { UNUserNotificationCenter.current().delegate = self }
+    }
+
+    /// 종료 전에 인디언 포커 자리에서 일어난다. 서버가 이탈을 확인할 때까지 최대 5초 기다리고,
+    /// 그래도 안 되면(오프라인) 그냥 종료한다 → 서버 규칙대로 차례 11초가 지나면 폴드, 연속 2판이면 자리에서 빠진다
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 입장 요청이 처리 중이어도 (서버가 커밋했을 수 있어서) 그 결과를 받아 일어난다
+        guard let poker = IndianPokerTable.current, poker.seated || poker.joinPending else { return .terminateNow }
+        Task { @MainActor in
+            _ = await poker.leaveAndWait(timeout: 5)
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// 팝오버를 열어 둔 상태(앱이 앞)에서도 배너를 띄운다
