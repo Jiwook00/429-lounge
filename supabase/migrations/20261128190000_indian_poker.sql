@@ -113,10 +113,15 @@ revoke all on public.ip_cards from public, anon, authenticated;
 -- 진행 (내부용). p_base = 이 일이 일어난 시각 (마감에서 이어 계산)
 -- ============================================================
 
--- 판 정산. 사이드팟: 접지 않은 사람들이 낸 금액 단계마다 팟을 나눠, 그 단계까지 낸 사람 중 높은 카드가 가져간다.
--- 접은 사람이 낸 칩은 판돈에 남는다. 단 이탈로 접은 사람이 접지 않은 누구보다 많이 냈으면(정상 진행에선 안 생김),
--- 남은 누구도 콜하지 못한 그 초과분은 낸 사람에게 돌려준다 (올인 상한이 우선: 올인한 사람은 낸 만큼만 딴다).
+-- 판 정산. 사이드팟: 접지 않은 사람들이 낸 금액 단계(레벨)마다 팟을 나눠, 그 레벨까지 낸 접지 않은 사람 중 높은 카드가 가져간다.
+-- 접은 사람이 낸 칩도 판돈에 남아, 자격자가 있는 레벨에서는 그대로 승자에게 간다.
+-- 올인 상한 우선: 자격자(접지 않고 그 레벨까지 낸 사람)가 한 명도 없는 레벨의 칩은 마지막 생존자가 가져가지 않고,
+--   그 레벨에 칩을 낸 사람들에게 각자 낸 만큼 돌려준다. 접지 않은 사람의 최고 기여액(lmax)을 넘는 레벨이 바로 그런
+--   레벨이라, 기여액을 lmax에서 잘라 넘는 만큼을 각자에게 환불하는 것으로 처리한다. 혼자 더 낸 미콜 초과분 환불은
+--   이 규칙의 특수한 경우다 (정상 진행에선 이 레벨이 생기지 않고, 이탈로 접은 사람이 남은 누구보다 많이 냈을 때만 생김).
+--   예: A 10 · B 100 · C 50(올인) · D 100, B·D·A 이탈 → C가 10+50+50+50 = 160, B·D는 50씩 환불, A 0.
 -- 동점이면 나누고, 나눠 떨어지지 않는 칩은 첫 행동 자리부터 한 칩씩.
+-- 연속 2판 시간 초과인 사람은 판이 끝나며 자리에서 빼고, 그래서 사람이 아무도 없으면 테이블을 바로 닫는다.
 create function public.ip_settle(p_hand bigint, p_base timestamptz)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -136,7 +141,8 @@ begin
   select capacity into cap from ip_tables where id = h.table_id;
 
   select max(put) into lmax from ip_hand_seats where hand_id = p_hand and not folded;
-  update ip_hand_seats set payout = put - least(put, lmax) where hand_id = p_hand; -- 아무도 못 받은 초과분 환불
+  -- 자격자가 없는 레벨(lmax 위)의 칩은 그 레벨에 낸 사람에게 각자 낸 만큼 환불
+  update ip_hand_seats set payout = put - least(put, lmax) where hand_id = p_hand;
 
   for lv in select distinct put from ip_hand_seats where hand_id = p_hand and not folded order by put loop
     select sum(least(put, lv) - least(put, prev)) into slice from ip_hand_seats where hand_id = p_hand;
@@ -165,6 +171,10 @@ begin
   -- 연속 2판 시간 초과로 폴드된 사람은 이 판이 끝나며 자리에서 뺀다 (이탈·끊김은 차례 타이머로만 판단)
   update ip_members set left_at = p_base, left_reason = 'away'
   where table_id = h.table_id and left_at is null and timeouts >= 2;
+  -- 마지막 사람까지 빠졌으면 바로 닫는다 (ip_leave로 마지막 사람이 나갈 때와 같음): 결과 5초 동안 입장·다음 판이 없다
+  if not exists (select 1 from ip_members where table_id = h.table_id and left_at is null) then
+    update ip_tables set status = 'closed', closed_at = p_base where id = h.table_id and status = 'open';
+  end if;
 end $$;
 
 -- 더 행동할 사람이 없어 바로 공개·정산해야 하는지 (ip_next_turn, 차례 밖 이탈이 같이 쓴다)

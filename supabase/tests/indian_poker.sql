@@ -450,6 +450,77 @@ begin
 end $$;
 
 
+-- ============ 재검증 반영: 자격자 없는 상위 레벨 환불, 마지막 사람 away 뒤 닫힘 ============
+do $$
+declare a uuid; b uuid; c uuid; d uuid; t bigint; h ip_hands; r text; k int; before bigint;
+begin
+  for k in 1..2 loop
+    -- 사람 넷, B 90 베팅(100), C 40 올인 콜(50), D 콜. case 1: D는 잔액 80이라 올인 콜(80) / case 2: D도 100
+    a := ipt.mk('재검A' || k, 1000); b := ipt.mk('재검B' || k, 1000); c := ipt.mk('재검C' || k, 1000); d := ipt.mk('재검D' || k, 1000);
+    t := ipt.create_(a, 3)::bigint;
+    perform ipt.join_(b, t); perform ipt.join_(c, t); perform ipt.join_(d, t); perform ipt.finish(t);
+    update players set chips = 50 where id = c;
+    if k = 1 then update players set chips = 80 where id = d; end if;
+    select sum(chips) into before from players where id in (a, b, c, d);
+    perform ipt.next_hand(t); perform ipt.cards(t, array[7, 8, 10, 9]);
+    r := ipt.act(b, t, 'bet', 90) || '/' || ipt.act(c, t, 'call') || '/' || ipt.act(d, t, 'call');
+    perform ipt.leave_(b, t);
+    if k = 2 then perform ipt.leave_(d, t); end if;
+    perform ipt.leave_(a, t);
+    h := ipt.hand(t);
+    if k = 1 then
+      -- 기여 A10 · B100 · C50 · D80. 남은 C·D 중 D 최고 80 위(20)는 B에게 환불, 50까지는 C, 50~80은 D
+      perform ipt.chk('재검 case 1: 지급 0/20/160/60', h.phase = 'done'
+        and (select array_agg(payout order by seat) from ip_hand_seats where hand_id = h.id) = array[0, 20, 160, 60]::bigint[],
+        r || ' ' || (select array_agg(payout order by seat) from ip_hand_seats where hand_id = h.id)::text);
+    else
+      -- 기여 A10 · B100 · C50 · D100, B→D→A 이탈. 50 위 레벨은 자격자(접지 않은 사람)가 없어 B·D에게 50씩 환불
+      perform ipt.chk('재검 case 2: 자격자 없는 상위 레벨은 기여자 환불, 지급 0/50/160/50', h.phase = 'done'
+        and (select array_agg(put order by seat) from ip_hand_seats where hand_id = h.id) = array[10, 100, 50, 100]::bigint[]
+        and (select array_agg(payout order by seat) from ip_hand_seats where hand_id = h.id) = array[0, 50, 160, 50]::bigint[],
+        r || ' ' || (select array_agg(payout order by seat) from ip_hand_seats where hand_id = h.id)::text);
+    end if;
+    perform ipt.chk('재검 case ' || k || ': 칩 합계 보존', (select sum(chips) from players where id in (a, b, c, d)) = before);
+  end loop;
+end $$;
+
+do $$
+declare a uuid; b uuid; t bigint; h ip_hands; st jsonb; r text;
+begin
+  -- 마지막 사람이 두 번째 연속 시간 초과로 빠지면 그 판 정산과 함께 닫힌다 (늦은 행동이 만료를 정산하는 경우)
+  a := ipt.mk('재검잠수', 1000); b := ipt.mk('재검입장', 1000);
+  t := ipt.create_(a, 1)::bigint;
+  perform ip_advance(t, (ipt.hand(t)).turn_deadline);       -- 1판 시간 초과 1
+  perform ipt.next_hand(t);
+  h := ipt.hand(t);
+  if h.turn_seat = 2 then perform ip_apply(h.id, 2::smallint, 'check', null, h.turn_deadline); end if;
+  h := ipt.hand(t);
+  update ip_hands set turn_deadline = clock_timestamp() - interval '0.1 seconds' where id = h.id;
+  st := ipt.act_at(a, t, h.id, h.turn_no, 'bet', 20);       -- 늦은 행동 → 시간 초과 2 → away
+  perform ipt.chk('마지막 사람 away → 그 판 정산과 함께 닫힘',
+    st ->> 'rejected' = 'stale_turn' and st -> 'hand' ->> 'phase' = 'done' and st -> 'table' ->> 'status' = 'closed'
+    and st -> 'me' ->> 'left_reason' = 'away', (st -> 'table')::text || (st -> 'me')::text);
+  r := ipt.join_(b, t);
+  perform ipt.chk('닫힌 뒤(결과 5초 안) 입장 거절', r = 'table_closed', r);
+  perform ip_advance(t, (ipt.hand(t)).next_at);
+  perform ipt.chk('닫힌 테이블에 다음 판이 열리지 않음', (ipt.hand(t)).hand_no = 2 and (select status from ip_tables where id = t) = 'closed');
+
+  -- 늦은 행동 없이 tick·입장이 먼저 와도 같다: 입장이 잠금을 잡고 만료부터 정산하므로 닫힌 테이블로 거절
+  a := ipt.mk('재검잠수2', 1000); b := ipt.mk('재검입장2', 1000);
+  t := ipt.create_(a, 1)::bigint;
+  perform ip_advance(t, (ipt.hand(t)).turn_deadline);
+  perform ipt.next_hand(t);
+  h := ipt.hand(t);
+  if h.turn_seat = 2 then perform ip_apply(h.id, 2::smallint, 'check', null, h.turn_deadline); end if;
+  update ip_hands set turn_deadline = clock_timestamp() - interval '0.1 seconds' where id = (ipt.hand(t)).id;
+  r := ipt.join_(b, t);  -- 거절 예외라 이 호출의 정산은 롤백되지만, 다음 호출이 같은 결과로 다시 정산한다
+  perform ipt.chk('만료 직후 입장: 정산·닫힘이 먼저라 거절', r = 'table_closed', r);
+  st := ipt.tick(b, t);
+  perform ipt.chk('이어진 tick도 닫힘, 판 2에서 끝 (새 회원 없음)', st -> 'table' ->> 'status' = 'closed'
+    and (st -> 'hand' ->> 'hand_no')::int = 2 and st -> 'hand' ->> 'phase' = 'done' and (st -> 'me' ->> 'member')::boolean = false);
+end $$;
+
+
 -- ============ 5. 컴퓨터 판단끼리 시뮬레이션 ============
 -- 사람 자리도 컴퓨터 판단(ip_decide)으로 친다. 사람은 잔액이 적어 올인·사이드팟이 자주 나온다.
 -- 확인: 판마다 지급 합 = 낸 칩 합, 올인한 사람은 자기 금액만큼만 땀, 칩 음수 없음, 행동이 모두 규칙 안,
