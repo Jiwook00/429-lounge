@@ -1,4 +1,5 @@
 import Foundation
+import LoungeCore
 import LoungeNet
 import Observation
 
@@ -13,7 +14,7 @@ final class BlackjackTable {
     static let dealGap: TimeInterval = 0.3
     /// 봇·딜러가 여러 장 칠 때 사이 간격 (서버 연출 시간 0.6초/장과 맞춤)
     static let drawGap: TimeInterval = 0.6
-    static let stakes: [Int64] = [10, 30, 50, 100]
+    static let stakes = BetStake.units
 
     let room: String
     private(set) var state: BJState?
@@ -23,7 +24,9 @@ final class BlackjackTable {
     private(set) var acceptedAction: BJSeat.Action?
     private(set) var actionRequestedAt: Date?
     private(set) var resultReceivedAt: Date?
-    var stake: Int64 = 30
+    /// 이번 판 베팅액. 칩 단위를 반복해 눌러 늘린다 (상한 `BetStake.maxAmount`)
+    var betStake = BetStake()
+    var stake: Int64 { betStake.amount }
     var useGolden = false
 
     /// 서버 시각 - 로컬 시각

@@ -106,7 +106,7 @@ struct RouletteView: View {
     // MARK: - 위 / 아래 줄
 
     private func topBar(_ phase: RouletteTable.Phase) -> some View {
-        let seated = phase == .idle ? 0 : table.players().count
+        let seated = table.seated(phase == .idle ? [] : table.players().map(\.id))
         return HStack(spacing: 8) {
             Button(action: onBack) {
                 Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
