@@ -364,11 +364,93 @@ extension IPState {
                       cappedSeats: live.filter { $0.allIn && $0.put <= cap }.map(\.seat))
     }
 
-    /// 끝난 판에서 이긴 자리: 접지 않은 자리 중 가장 높은 카드 (동점이면 여럿)
+    /// 끝난 판에서 팟을 받은 자리 (메인이든 사이드든). 환급만 받은 자리는 빼고, 자리 번호 순
     public var winners: [Int] {
+        Array(Set(awards.filter { !$0.refund }.flatMap(\.seats))).sorted()
+    }
+
+    /// 끝난 판의 팟별 결과. 서버 정산(ip_settle)과 같은 단계 나눔: 접지 않은 자리가 낸 금액 단계마다 팟을 나누고,
+    /// 그 단계까지 낸 접지 않은 자리 중 높은 카드가 가져간다(동점이면 나눔). 혼자만 낸 단계와
+    /// 접지 않은 자리의 최고 금액 위로 접은 자리가 낸 칩은 낸 사람에게 환급(`refund`).
+    /// 메인 팟이 맨 앞, 같은 사람이 가져간 이웃 단계는 합친다
+    public var awards: [IPAward] {
         guard hand?.phase == .done else { return [] }
         let live = seats.filter { !$0.folded }
-        guard let top = live.compactMap(\.card).max() else { return [] }
-        return live.filter { $0.card == top }.map(\.seat)
+        let levels = Array(Set(live.map(\.put))).sorted()
+        var out: [IPAward] = []
+        func add(_ amount: Int64, _ who: [Int], refund: Bool) {
+            guard amount > 0, !who.isEmpty else { return }
+            if let last = out.last, last.seats == who, last.refund == refund {
+                out[out.count - 1] = IPAward(amount: last.amount + amount, seats: who, refund: refund)
+            } else {
+                out.append(IPAward(amount: amount, seats: who, refund: refund))
+            }
+        }
+        var prev: Int64 = 0
+        for level in levels {
+            let payers = seats.filter { $0.put > prev }
+            let amount = payers.reduce(Int64(0)) { $0 + min($1.put, level) - prev }
+            let eligible = live.filter { $0.put >= level }
+            let top = eligible.compactMap(\.card).max()
+            let takers = eligible.filter { $0.card == top }.map(\.seat)
+            // 이 단계에 낸 사람이 가져가는 사람 하나뿐이면 이긴 게 아니라 돌려받은 것
+            let refund = payers.count == 1 && takers == [payers[0].seat]
+            add(amount, takers, refund: refund)
+            prev = level
+        }
+        // 접지 않은 자리 최고 금액 위로 접은 자리가 낸 칩: 낸 만큼 환급
+        for seat in seats where seat.folded && seat.put > prev {
+            out.append(IPAward(amount: seat.put - prev, seats: [seat.seat], refund: true))
+        }
+        return out
+    }
+
+    /// 단조 증가하는 진행 위치. 늦게 도착한 오래된 응답(이전 판·이전 차례·끝나기 전)을 버리는 데 쓴다
+    public var progress: IPProgress {
+        IPProgress(hand: hand?.id ?? 0, phase: hand?.phase == .done ? 1 : 0, turn: hand?.turnNo ?? 0)
+    }
+}
+
+/// 끝난 판에서 팟 하나(또는 환급)를 누가 얼마 받았는지
+public struct IPAward: Sendable, Equatable {
+    public let amount: Int64
+    public let seats: [Int]
+    /// 이긴 게 아니라 낸 칩을 돌려받음
+    public let refund: Bool
+}
+
+/// (판 ID, 단계, 차례 번호) 순서. 같은 테이블에서 이 값이 더 작은 상태는 이미 지나간 상태다
+public struct IPProgress: Sendable, Comparable {
+    public let hand: Int64
+    public let phase: Int
+    public let turn: Int
+
+    public static func < (a: IPProgress, b: IPProgress) -> Bool {
+        (a.hand, a.phase, a.turn) < (b.hand, b.phase, b.turn)
+    }
+}
+
+/// 서버 시각 − 로컬 시각 추정. 응답마다 덮어쓰면 늦게 도착한 응답이 시계를 되감으므로
+/// 왕복 시간이 가장 짧았던 표본을 믿는다(왕복의 절반을 빼서 보정). 시계가 흐를 수 있어
+/// 30초가 지나면 허용 왕복 시간을 두 배로 늘려 새 표본을 받아들인다
+public struct ClockSkew: Sendable, Equatable {
+    public private(set) var offset: TimeInterval = 0
+    private var bestRTT: TimeInterval = .infinity
+    private var bestAt: Date = .distantPast
+
+    public static let window: TimeInterval = 30
+
+    public init() {}
+
+    public mutating func add(server: Date, sent: Date, received: Date) {
+        let rtt = max(0, received.timeIntervalSince(sent))
+        if received.timeIntervalSince(bestAt) > Self.window {
+            bestRTT = bestRTT.isFinite ? bestRTT * 2 : .infinity
+            bestAt = received
+        }
+        guard rtt <= bestRTT else { return }
+        offset = server.timeIntervalSince(sent.addingTimeInterval(rtt / 2))
+        bestRTT = rtt
+        bestAt = received
     }
 }

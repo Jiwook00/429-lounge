@@ -148,7 +148,7 @@ gh release create "$TAG" build/429-Lounge.zip build/appcast.xml --draft --verify
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|ip-lobby|ip-lobby-broke|ip-lobby-empty|ip-lobby-left|ip-wait|ip-deal|ip-myturn|ip-raise|ip-allin|ip-result|ip-check|ip-3p|ip-timeout|ip-live|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|ip-lobby|ip-lobby-broke|ip-lobby-empty|ip-lobby-left|ip-wait|ip-deal|ip-myturn|ip-raise|ip-allin|ip-result|ip-check|ip-3p|ip-timeout|ip-side|ip-last|ip-leaving|ip-live|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 
@@ -157,7 +157,7 @@ supabase db reset                                      # 마이그레이션 전�
 | `LOUNGE_FAKE_429=1` | 가짜 429 상태로 실행 (VIP HOUR, 황금 칩) |
 | `LOUNGE_DEBUG=1` | Realtime 이벤트 로그 |
 | `LOUNGE_E2E_BET=golden\|chips` | `--table roulette-live` 스냅샷에서 자동 베팅 |
-| `LOUNGE_POKER_WINDOW=1` | 개발용: 앱을 띄울 때 인디언 포커 화면을 일반 창에 (`LOUNGE_E2E_BET=1`이면 자동으로 앉아 한두 판) |
+| `LOUNGE_POKER_WINDOW=1` | 개발용 빌드(`swift build`, `scripts/build-app.sh --dev`)만: 인디언 포커 화면을 일반 창에 (`LOUNGE_E2E_BET=1`이면 자동으로 앉아 한두 판) |
 | `LOUNGE_SERVER=remote` | 운영 서버(`LoungeConfig.remote`) 사용 |
 | `LOUNGE_SUPABASE_URL`, `LOUNGE_SUPABASE_KEY` | 임의의 Supabase 사용 (가장 우선) |
 

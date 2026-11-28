@@ -106,7 +106,7 @@ enum Snapshot {
                                             chips: store.chips, golden: store.golden(), showHelp: table == "bj-help"))
         } else if let table, table.hasPrefix("ip-") {
             // ip-lobby | -lobby-broke | -lobby-empty | -lobby-left | -wait | -deal | -myturn | -raise | -allin | -result
-            // | -check | -3p | -timeout: 인디언 포커 (시안 S01~S10)
+            // | -check | -3p | -timeout: 인디언 포커 (시안 S01~S10) / -side (사이드 팟을 받은 결과) | -last (마지막 행동 알림) | -leaving
             let broke = table == "ip-lobby-broke"
             content = AnyView(IndianPokerView(table: fakePoker(store: store, me: me, mode: table), chips: broke ? 6 : 1_240))
         } else if let table, table.hasPrefix("roulette-") {
@@ -305,6 +305,30 @@ enum Snapshot {
                                   seat(3, "도윤", id: dy, folded: true, action: .fold, amount: 0, card: 9),
                                   seat(4, "지우", id: me.id, chips: 1_230, card: nil)])
             table.preview(state: s, alert: alert(2, "민지", .raise, 120, ago: 2))
+        case "ip-side":
+            // 검증 재현: 철수 10이 35 올인, 민지 5가 60, 나 7이 60 콜 → 메인 105는 철수, 사이드 50은 나
+            let s = state(3, mySeat: 3, members: [IPMember(seat: 1, playerId: cs, name: "철수"), IPMember(seat: 3, playerId: me.id, name: "지우")],
+                          hand: hand(.done, turn: nil, pot: 155, next: 4.2),
+                          seats: [seat(1, "철수", id: cs, chips: 105, put: 35, bet: 25, allIn: true, action: .bet, amount: 25, card: 10,
+                                       payout: 105),
+                                  seat(2, "민지", id: nil, put: 60, bet: 50, action: .raise, amount: 50, card: 5, payout: 0),
+                                  seat(3, "지우", id: me.id, chips: 1_230, put: 60, bet: 50, action: .call, amount: 50, card: 7,
+                                       payout: 50)])
+            table.preview(state: s)
+        case "ip-last":
+            // 판을 끝낸 마지막 콜: 결과가 나와도 1.5초 동안 판돈 패널에 행동 알림
+            let s = state(4, mySeat: 4, members: fourP, hand: hand(.done, turn: nil, pot: 130, next: 4.8),
+                          seats: [seat(1, "철수", id: cs, put: 40, bet: 30, action: .call, amount: 30, card: 7, payout: 0),
+                                  seat(2, "민지", id: nil, put: 40, bet: 30, action: .call, amount: 30, card: 3, payout: 0),
+                                  seat(3, "도윤", id: dy, folded: true, action: .fold, amount: 0, card: 9, payout: 0),
+                                  seat(4, "지우", id: me.id, chips: 1_320, put: 40, bet: 30, action: .bet, amount: 30, card: 8,
+                                       payout: 130)])
+            table.preview(state: s, alert: alert(2, "민지", .call, 30, ago: 0.2))
+        case "ip-leaving":
+            // 일어나기를 보냈지만 서버가 아직 확인 못 함 (다시 시도 중)
+            let s = state(2, mySeat: 2, members: [IPMember(seat: 2, playerId: me.id, name: "지우")],
+                          hand: hand(turn: 1, pot: 20), seats: [seat(1, "민지", id: nil, card: 6), seat(2, "지우", id: me.id, card: nil)])
+            table.preview(state: s, leaving: 3)
         case "ip-result":
             // 8이 제일 높음, 도윤 9는 폴드 (시안 S06)
             let s = state(4, mySeat: 4, members: fourP, hand: hand(.done, turn: nil, pot: 130, next: 4.6),
@@ -392,7 +416,9 @@ enum Snapshot {
             await store.refreshMe()
             print("chips \(start) → \(store.chips) (\(store.chips - start >= 0 ? "+" : "")\(store.chips - start))")
             write(AnyView(IndianPokerView(table: table, chips: store.chips)), to: path)
-            if ProcessInfo.processInfo.environment["LOUNGE_POKER_STAY"] == nil { await table.leave() }
+            if ProcessInfo.processInfo.environment["LOUNGE_POKER_STAY"] == nil {
+                print(await table.leaveAndWait(timeout: 20) ? "left table" : "leave not confirmed")
+            }
             exit(0)
         }
         NSApplication.shared.setActivationPolicy(.prohibited)

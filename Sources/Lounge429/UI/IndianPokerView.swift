@@ -22,6 +22,8 @@ struct IndianPokerView: View {
                 topBar
                 if !table.seated {
                     lobby
+                } else if table.leaving != nil {
+                    leavingScreen
                 } else if table.waiting {
                     waitingRoom(now)
                 } else {
@@ -69,6 +71,22 @@ struct IndianPokerView: View {
         .padding(.vertical, 3)
         .background(Theme.bg)
         .overlay(Rectangle().strokeBorder(border ?? color, lineWidth: 2))
+    }
+
+    // MARK: - 나가는 중
+
+    /// 서버가 이탈을 확인할 때까지. 실패하면 앱이 1·2·4·8초 간격으로 다시 보낸다
+    private var leavingScreen: some View {
+        VStack(spacing: 10) {
+            notice(title: "나가는 중이에요",
+                   text: "서버가 자리 정리를 확인하면 로비로 돌아가요. 연결이 끊겼으면 돌아오는 대로 다시 일어나요.",
+                   color: Theme.gold)
+            if table.leaveAttempts > 1 {
+                Text("다시 시도 \(table.leaveAttempts - 1)번째 · 확인될 때까지 계속").font(Fonts.small()).foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            note("확인되기 전에 다음 판이 시작되면 앤티가 빠지고 시간이 지나 폴드될 수 있어요.")
+        }
     }
 
     // MARK: - 로비
@@ -283,7 +301,7 @@ struct IndianPokerView: View {
             Text("앤티 10 · 카드 1~10").font(Fonts.small()).foregroundStyle(Theme.muted)
         }
         walletRow(right: "앤티 10 · 판 시작 때 빠져요", now: now)
-        Button { Task { await table.leave() } } label: {
+        Button { table.leave() } label: {
             Text("나가기").font(Fonts.bold()).frame(maxWidth: .infinity, minHeight: 44).pixelBox()
         }
         .buttonStyle(.plain)
@@ -434,9 +452,19 @@ struct IndianPokerView: View {
 
     private func potPanel(_ now: Date) -> some View {
         let s = table.state
-        let alert = done(now) ? nil : table.currentAlert(at: now)
+        // 판을 끝낸 마지막 행동(콜·체크·폴드)도 1.5초 보여 준 뒤 결과 문구로
+        let alert = table.currentAlert(at: now)
+        let won = done(now) ? (s?.awards.filter { !$0.refund } ?? []) : []
         return VStack(alignment: .leading, spacing: 4) {
-            if let s, let pots = s.pots, !done(now) {
+            if let s, won.count > 1 {
+                // 사이드 팟이 따로 나간 판: 팟마다 누가 가져갔는지
+                ForEach(Array(won.enumerated()), id: \.offset) { i, award in
+                    if i > 0 { DashLine(color: Theme.feltLine).padding(.vertical, 2) }
+                    potRow(label: i == 0 ? "메인 팟" : "사이드 팟", value: award.amount, color: i == 0 ? Theme.gold : Theme.cyan,
+                           alert: i == 0 ? alert : nil, now: now)
+                    if i == 0, let alert { alertChip(alert).frame(minHeight: 22) } else { detail(takers(award, in: s)) }
+                }
+            } else if let s, let pots = s.pots, !done(now) {
                 potRow(label: "메인 팟", value: pots.main, color: Theme.gold, alert: alert, now: now)
                 if let alert { alertChip(alert).frame(minHeight: 22) } else {
                     detail(eligible(pots.mainSeats, in: s) + " 가져갈 수 있어요")
@@ -509,6 +537,15 @@ struct IndianPokerView: View {
         if table.dealing(at: now) { return "앤티 \(IndianPoker.ante) × \(s.seats.count) · 카드 나눠 주는 중" }
         let bets = max(0, h.pot - s.anteTotal)
         return "앤티 \(s.anteTotal.formatted(.number)) · 베팅 \(bets.formatted(.number))"
+    }
+
+    /// "철수 10이 가져가요" / "나 · 민지 6 동점 · 나눠 가져요"
+    private func takers(_ award: IPAward, in s: IPState) -> String {
+        let cards = award.seats.compactMap { w in s.seats.first { $0.seat == w }?.card }
+        let names = award.seats.map { displayName($0, in: s) }.joined(separator: " · ")
+        guard let card = cards.first else { return "" }
+        if award.seats.count > 1 { return "\(names) \(card) 동점 · 나눠 가져요" }
+        return "\(names) \(Josa.subject("\(card)")) 가져가요"
     }
 
     /// 결과 한 줄: 접어서 못 이긴 더 높은 카드가 있으면 그걸, 아니면 누가 무엇으로 가져갔는지
@@ -616,15 +653,21 @@ struct IndianPokerView: View {
         return "내 카드는 나만 못 봐요"
     }
 
+    /// 내 결과 문구는 내가 받은 금액(서버 지급) 기준. 사이드 팟만 받았으면 그렇게 말한다
     private func myResult(_ mine: IPSeat, in s: IPState) -> String {
         let card = mine.card.map(String.init) ?? "?"
         if mine.folded { return "폴드했어요 · 내 카드는 \(card)" }
-        let winners = s.winners
-        if winners.contains(mine.seat) {
-            if winners.count > 1 { return "\(card) 동점 · 판돈을 나눠요" }
-            return "\(Josa.subject(card)) 제일 높았어요 · 판돈 \((s.hand?.pot ?? 0).formatted(.number))"
+        let won = s.awards.filter { !$0.refund }
+        let mineWon = won.enumerated().filter { $0.element.seats.contains(mine.seat) }
+        let got = (mine.payout ?? 0).formatted(.number)
+        if let first = mineWon.first {
+            if won.count > 1, mineWon.count == 1 {
+                return "\(first.offset == 0 ? "메인 팟" : "사이드 팟")을 받았어요 · \(got)칩"
+            }
+            if first.element.seats.count > 1 { return "\(card) 동점 · 나눠서 \(got)칩" }
+            return "\(Josa.subject(card)) 제일 높았어요 · \(got)칩"
         }
-        if let w = winners.first, let top = s.seats.first(where: { $0.seat == w }) {
+        if let w = won.first?.seats.first, let top = s.seats.first(where: { $0.seat == w }) {
             return "\(top.name) \(top.card.map(String.init) ?? "?")에 졌어요 · 내 카드 \(card)"
         }
         return "내 카드 \(card)"

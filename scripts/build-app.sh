@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 # 429 Lounge.app 번들 생성.
-# 사용법: scripts/build-app.sh [--remote] [--dist] [--open]
+# 사용법: scripts/build-app.sh [--remote] [--dist] [--dev] [--open]
 #   --remote  운영 서버(LoungeConfig.remote)에 붙는 앱
 #   --dist    배포용: --remote + 유니버설(arm64/x86_64) + 서명된 zip·appcast
+#   --dev     개발용 코드(LOUNGE_DEV: 인디언 포커 개발 창 LOUNGE_POKER_WINDOW 등)를 넣는다. --dist와 함께 못 씀
 #   --open    빌드 후 재실행
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="0.16.0"
-SERVER="local"; DIST=0; OPEN=0
+SERVER="local"; DIST=0; OPEN=0; DEV=0
 for arg in "$@"; do
     case "$arg" in
         --remote) SERVER="remote" ;;
         --dist)   SERVER="remote"; DIST=1 ;;
         --open)   OPEN=1 ;;
+        --dev)    DEV=1 ;;
         *) echo "알 수 없는 옵션: $arg" >&2; exit 1 ;;
     esac
 done
 
 # 배포 앱만 진짜 번들 ID를 쓴다. 로컬 빌드는 .dev로 나눠서 설정(UserDefaults)을 따로 둔다
 # (같은 ID면 개발 중에 닫은 "새로 들어온 것" 카드가 배포 앱에서도 본 걸로 남는다)
+if [[ $DIST == 1 && $DEV == 1 ]]; then echo "--dev는 배포 빌드(--dist)에 넣을 수 없어요" >&2; exit 1; fi
+# 개발용 코드는 --dev일 때만 컴파일한다 (배포 빌드에는 코드 자체가 없음)
+DEFS=()
+if [[ $DEV == 1 ]]; then DEFS=(-Xswiftc -DLOUNGE_DEV); fi
+
 if [[ $DIST == 1 ]]; then BUNDLE_ID="co.dwook.lounge429"; else BUNDLE_ID="co.dwook.lounge429.dev"; fi
 
 if [[ $DIST == 1 ]]; then
@@ -28,7 +35,7 @@ if [[ $DIST == 1 ]]; then
 else
     ARCH=()
 fi
-swift build -c release --product Lounge429 ${ARCH[@]+"${ARCH[@]}"}
+swift build -c release --product Lounge429 ${ARCH[@]+"${ARCH[@]}"} ${DEFS[@]+"${DEFS[@]}"}
 BIN="$(swift build -c release --show-bin-path ${ARCH[@]+"${ARCH[@]}"})"
 APP="build/429 Lounge.app"
 REPO_URL="https://github.com/Jiwook00/429-lounge"
@@ -95,7 +102,7 @@ if [[ $DIST == 1 ]]; then
 fi
 
 codesign --force --deep --sign - "$APP" >/dev/null
-echo "built: $APP ($SERVER, $(lipo -archs "$APP/Contents/MacOS/Lounge429"))"
+echo "built: $APP ($SERVER$([[ $DEV == 1 ]] && echo ", dev"), $(lipo -archs "$APP/Contents/MacOS/Lounge429"))"
 
 if [[ $DIST == 1 ]]; then
     STAGING="$(mktemp -d build/sparkle.XXXXXX)"

@@ -24,6 +24,8 @@ final class IndianPokerTable {
     static let quietRejections: Set<String> = ["stale_turn", "not_your_turn", "not_started"]
 
     weak var store: LoungeStore?
+    /// 실행 중인 앱의 테이블 (앱 종료 때 일어나기). 스냅샷·도구는 nil
+    static weak var current: IndianPokerTable?
 
     /// 열린 테이블 목록. 포커 화면(로비)을 볼 때와 팝오버를 열 때 읽는다
     private(set) var lobby: IPLobby?
@@ -35,8 +37,16 @@ final class IndianPokerTable {
     /// 자리에서 빠진 이유 (로비 위 안내). 다시 앉으면 지운다
     private(set) var leftNotice: IPMe.LeftReason?
     private(set) var alert: Alert?
-    /// 서버 시각 − 로컬 시각
-    private(set) var skew: TimeInterval = 0
+    /// 서버 시각 − 로컬 시각 (가장 짧은 왕복 표본 기준이라 늦게 온 응답이 시계를 되감지 않는다)
+    private var clock = ClockSkew()
+    var skew: TimeInterval { clock.offset }
+    /// 일어나는 중인 테이블. 서버가 이탈(`me.member == false`)을 돌려줄 때까지 다시 시도하고,
+    /// 그동안은 자리 칸·버튼을 막고 로비·tick 응답이 이 자리를 되살리지 못하게 한다
+    private(set) var leaving: Int64?
+    /// 이탈을 몇 번 시도했는지 (실패하면 백오프: 1·2·4·8초)
+    private(set) var leaveAttempts = 0
+    /// 마지막으로 이탈을 끝낸 테이블과 그 시각. 그 전에 보낸 로비 응답의 `my_table`은 무시한다
+    private var leftTable: (id: Int64, at: Date)?
     /// 메뉴바 깜빡임 (내 차례인데 포커 화면을 안 보고 있을 때)
     private(set) var flash = false
     /// 새 테이블 컴퓨터 수
@@ -75,9 +85,9 @@ final class IndianPokerTable {
     func local(_ server: Date) -> Date { server.addingTimeInterval(-skew) }
     func server(_ local: Date) -> Date { local.addingTimeInterval(skew) }
 
-    /// 지금 내 차례(버튼을 켤 때)인지. 딜 연출 2초와 마감 뒤엔 false
-    func myTurn(at now: Date) -> Bool { state?.isMyTurn(at: server(now)) ?? false }
-    func options(at now: Date) -> IPOptions? { state?.myOptions(at: server(now)) }
+    /// 지금 내 차례(버튼을 켤 때)인지. 딜 연출 2초와 마감 뒤, 일어나는 중엔 false
+    func myTurn(at now: Date) -> Bool { leaving == nil && (state?.isMyTurn(at: server(now)) ?? false) }
+    func options(at now: Date) -> IPOptions? { leaving == nil ? state?.myOptions(at: server(now)) : nil }
 
     /// 딜 연출 중 (첫 차례 시작 전)
     func dealing(at now: Date) -> Bool {
@@ -97,16 +107,19 @@ final class IndianPokerTable {
 
     /// 라운지 타일용 + 앉은 테이블 확인
     func refreshLobby() async {
+        let sent = Date()
         guard let store, store.me != nil, let l = try? await store.net.ipLobby() else { return }
-        applyLobby(l)
+        applyLobby(l, sent: sent)
     }
 
-    private func applyLobby(_ l: IPLobby) {
+    /// 로비 응답의 `my_table`로 앉은 테이블을 되찾는다 (앱을 다시 켰을 때). 일어나는 중이거나,
+    /// 이탈을 끝내기 전에 보낸 요청의 응답이면 그 자리를 되살리지 않는다
+    private func applyLobby(_ l: IPLobby, sent: Date) {
         lobby = l
-        if tableID == nil, let mine = l.myTable {
-            tableID = mine
-            kick()
-        }
+        guard tableID == nil, leaving == nil, let mine = l.myTable else { return }
+        if let left = leftTable, left.id == mine, sent <= left.at { return }
+        tableID = mine
+        kick()
     }
 
     /// 루프가 없으면 시작하고, 자고 있으면 깨운다
@@ -125,10 +138,16 @@ final class IndianPokerTable {
         while !Task.isCancelled {
             guard let store else { return }
             var wake: TimeInterval = 5
-            if let id = tableID {
+            if let id = leaving {
+                // 일어나기: 서버가 확인할 때까지 tick 대신 이탈만 다시 보낸다
+                listen(table: nil)
+                wake = await tryLeave(id)
+                if leaving == nil { continue }
+            } else if let id = tableID {
                 listen(table: id)
                 do {
-                    apply(try await store.net.ipTick(table: id))
+                    let sent = Date()
+                    apply(try await store.net.ipTick(table: id), sent: sent)
                     wake = nextWake()
                     if message == "연결이 끊겼어요" { message = nil }
                 } catch {
@@ -138,7 +157,8 @@ final class IndianPokerTable {
             } else if watching {
                 listen(table: 0)
                 do {
-                    applyLobby(try await store.net.ipLobby())
+                    let sent = Date()
+                    applyLobby(try await store.net.ipLobby(), sent: sent)
                     if message == "연결이 끊겼어요" { message = nil }
                 } catch {
                     message = "연결이 끊겼어요"
@@ -177,15 +197,23 @@ final class IndianPokerTable {
 
     // MARK: - 상태 반영
 
-    func apply(_ s: IPState, at now: Date = .now) {
-        skew = s.now.timeIntervalSince(now)
+    /// 서버 상태를 반영한다. `sent`는 요청을 보낸 시각(시계 보정용, 없으면 왕복 0으로 본다).
+    /// 같은 테이블에서 지금 보이는 것보다 오래된 상태(이전 판·이전 차례·끝나기 전)는 버린다 → 결과·차례·판돈이 되감기지 않음
+    @discardableResult
+    func apply(_ s: IPState, sent: Date? = nil, at now: Date = .now) -> Bool {
+        // 지금 앉은 테이블의 응답만 (일어난 뒤 늦게 온 행동 응답 등은 버린다)
+        guard tableID == s.table.id else { return false }
+        if let old = state, old.table.id == s.table.id, s.progress < old.progress { return false }
+        // 일어나는 중이면 아직 앉아 있다는 응답으로 되살리지 않는다 (이탈 응답은 tryLeave가 처리)
+        if leaving != nil, s.me.member { return false }
+        clock.add(server: s.now, sent: sent ?? now, received: now)
         let old = state
         let fresh = s.hand?.id != old?.hand?.id
         state = s
 
         if !s.me.member || s.table.status == .closed {
             detach(reason: s.me.member ? nil : s.me.leftReason)
-            return
+            return true
         }
 
         if fresh {
@@ -211,11 +239,13 @@ final class IndianPokerTable {
         if let h = s.hand, h.phase == .done, settledSeen != h.id, let mine = s.mySeat {
             settledSeen = h.id
             if old?.hand?.id == h.id {
-                if (mine.net ?? 0) > 0 { onSound?(.collect) } else if (mine.net ?? 0) == 0, !mine.folded { onSound?(.push) }
+                // 사이드 팟만 받아 순수익이 마이너스여도 팟을 받았으면 이긴 소리
+                if s.winners.contains(mine.seat) { onSound?(s.winners.count > 1 && (mine.net ?? 0) == 0 ? .push : .collect) }
             }
             Task { await store?.refreshMe() }
         }
         updateFlash()
+        return true
     }
 
     /// 지난 상태와 비교해 새로 행동한 자리를 알림으로. 한 번에 여럿이면 지금 차례 바로 앞 자리(가장 최근)
@@ -253,7 +283,9 @@ final class IndianPokerTable {
     }
 
     private func detach(reason: IPMe.LeftReason?) {
+        if let id = tableID { leftTable = (id, Date()) }
         tableID = nil
+        leaving = nil
         if reason == .away || reason == .broke { leftNotice = reason }
         raising = false
         alert = nil
@@ -274,7 +306,7 @@ final class IndianPokerTable {
     }
 
     private func enter(_ call: @escaping @MainActor (LoungeClient) async throws -> IPState) async {
-        guard let store, !busy else { return }
+        guard let store, !busy, leaving == nil else { return }
         busy = true
         defer { busy = false }
         do {
@@ -283,6 +315,7 @@ final class IndianPokerTable {
             message = nil
             tableID = s.table.id
             state = nil
+            leftTable = nil
             apply(s)
             kick()
         } catch {
@@ -292,18 +325,56 @@ final class IndianPokerTable {
         await store.refreshMe()
     }
 
-    /// 일어나기. 진행 중인 판이면 폴드 (낸 칩은 판돈에 남음)
-    func leave() async {
-        guard let store, let id = tableID else { return }
-        tableID = nil
-        state = nil
+    /// 일어나기 시작. 진행 중인 판이면 폴드 (낸 칩은 판돈에 남음).
+    /// 서버가 이탈을 확인해야 끝난다: 실패하면 루프가 백오프로 다시 보내고, 그동안 화면은 "나가는 중"
+    func leave() {
+        guard let id = tableID, leaving == nil else { return }
+        leaving = id
+        leaveAttempts = 0
         raising = false
         alert = nil
-        listen(table: nil)
         updateFlash()
-        _ = try? await store.net.ipLeave(table: id)
-        await store.refreshMe()
-        await refreshLobby()
+        kick()
+    }
+
+    /// 일어나고 서버가 확인할 때까지 기다린다 (앱 종료·개발 도구). 시간 안에 못 끝내면 false
+    @discardableResult
+    func leaveAndWait(timeout: TimeInterval) async -> Bool {
+        leave()
+        let end = Date().addingTimeInterval(timeout)
+        while leaving != nil, Date() < end { try? await Task.sleep(for: .milliseconds(100)) }
+        return leaving == nil
+    }
+
+    /// 이탈 한 번 시도. 성공하면 자리를 비우고 0, 실패하면 다음 시도까지 기다릴 초
+    private func tryLeave(_ id: Int64) async -> TimeInterval {
+        guard let store else { return 2 }
+        leaveAttempts += 1
+        do {
+            let s = try await store.net.ipLeave(table: id)
+            if !s.me.member || s.table.status == .closed {
+                leaving = nil
+                tableID = nil
+                state = nil
+                leftTable = (id, Date())
+                message = nil
+                Task {
+                    await store.refreshMe()
+                    await refreshLobby()
+                }
+                updateFlash()
+                return 0
+            }
+        } catch {
+            if case LoungeError.server("no_table") = error {
+                leaving = nil
+                tableID = nil
+                state = nil
+                return 0
+            }
+        }
+        message = "나가는 중 · 연결이 돌아오면 바로 일어나요"
+        return min(8, pow(2, Double(leaveAttempts - 1)))
     }
 
     /// 내 차례 행동. 판 ID·차례 번호를 같이 보내 지난 차례로 늦게 도착하면 서버가 거절한다 (그땐 새 상태만 조용히)
@@ -312,8 +383,9 @@ final class IndianPokerTable {
         busy = true
         defer { busy = false }
         do {
+            let sent = Date()
             let s = try await store.net.ipAction(table: id, hand: h.id, turn: h.turnNo, action, amount: amount)
-            apply(s)
+            apply(s, sent: sent)
             if let code = s.rejected, !Self.quietRejections.contains(code) {
                 message = s.rejectedError?.localizedDescription
             } else {
@@ -345,10 +417,9 @@ final class IndianPokerTable {
 
     // MARK: - 메뉴바 깜빡임
 
-    /// 내 차례인데 포커 화면을 보고 있지 않으면 0.3초마다 깜빡인다 (동작 줄이기면 켠 채로). 차례가 끝나면 멈춘다
+    /// 내 차례인데 팝오버가 닫혀 있으면 0.3초마다 깜빡인다 (동작 줄이기면 켠 채로). 차례가 끝나거나 팝오버를 열면 멈춘다
     func updateFlash() {
-        let looking = watching && (store?.viewing ?? false)
-        let should = seated && !looking && myTurn(at: .now)
+        let should = seated && !(store?.viewing ?? false) && myTurn(at: .now)
         guard should != (flashTask != nil) else { return }
         flashTask?.cancel()
         flashTask = nil
@@ -356,7 +427,7 @@ final class IndianPokerTable {
         guard should else { return }
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         flashTask = Task { [weak self] in
-            while let self, !Task.isCancelled, self.myTurn(at: .now), !(self.watching && (self.store?.viewing ?? false)) {
+            while let self, !Task.isCancelled, self.myTurn(at: .now), !(self.store?.viewing ?? false) {
                 self.flash = still || !self.flash
                 try? await Task.sleep(for: .seconds(0.3))
             }
@@ -369,12 +440,15 @@ final class IndianPokerTable {
 
     /// 스냅샷: 서버 없이 상태를 넣는다
     func preview(lobby: IPLobby? = nil, state: IPState? = nil, alert: Alert? = nil, message: String? = nil,
-                 leftNotice: IPMe.LeftReason? = nil, raising: Int64? = nil) {
+                 leftNotice: IPMe.LeftReason? = nil, raising: Int64? = nil, leaving attempts: Int? = nil) {
+        if let attempts, let state {
+            leaving = state.table.id
+            leaveAttempts = attempts
+        }
         if let lobby { self.lobby = lobby }
         if let state {
             tableID = state.me.member ? state.table.id : nil
             self.state = state
-            skew = 0
         }
         self.alert = alert
         self.message = message

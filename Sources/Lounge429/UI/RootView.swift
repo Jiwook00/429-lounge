@@ -85,6 +85,7 @@ struct RootView: View {
     /// 라운지 타일 아랫줄: 앉아 있으면 그 테이블, 아니면 열린 테이블에 앉은 사람 수 (컴퓨터 제외)
     private var pokerLine: String {
         let poker = store.poker
+        if poker.leaving != nil { return "TABLE · 나가는 중" }
         if poker.seated { return "TABLE · 앉아 있음" }
         let humans = poker.lobby?.tables.reduce(0) { $0 + $1.humans } ?? 0
         return humans > 0 ? "TABLE · \(humans)명 앉음" : "TABLE · 비어 있음"
@@ -153,14 +154,17 @@ struct RootView: View {
             case .poker(let table):
                 // 팝오버를 닫아도 자리는 그대로 (tick은 store가 이어 간다). ‹ 라운지는 일어나기
                 IndianPokerView(table: table, chips: store.chips) {
-                    if table.seated { Task { await table.leave() } }
+                    if table.seated { table.leave() }
                     go(.lounge)
                 }
                 .onAppear {
                     table.onSound = { GameAudio.shared.play($0, at: .now) }
                     table.watching = true
                 }
-                .onDisappear { table.watching = false }
+                .onDisappear {
+                    table.watching = false
+                    table.onSound = nil // 포커 화면 밖에선 포커 소리를 내지 않는다 (내 차례 알림은 메뉴바 깜빡임만)
+                }
             case .wall(let wall):
                 PixelWallView(wall: wall) { go(.lounge) }
                     .onAppear { wall.enter() }

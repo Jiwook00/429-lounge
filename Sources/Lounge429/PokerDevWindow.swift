@@ -2,7 +2,9 @@ import AppKit
 import LoungeNet
 import SwiftUI
 
-/// 개발용: `LOUNGE_POKER_WINDOW=1`로 띄운 앱(번들 포함)에서 인디언 포커 화면을 일반 창에 연다.
+#if LOUNGE_DEV
+/// 개발용 빌드에만 들어간다(`swift build` 디버그, `scripts/build-app.sh --dev`). `--dist` 배포 빌드엔 코드 자체가 없다.
+/// `LOUNGE_POKER_WINDOW=1`로 띄운 앱에서 인디언 포커 화면을 일반 창에 연다.
 /// 메뉴바 팝오버를 자동화로 누를 수 없을 때 실제 앱(같은 store, 같은 tick 루프, 같은 메뉴바 아이콘)으로 확인하기 위한 것.
 /// 환경변수가 없으면 아무것도 하지 않는다 (Finder로 띄운 앱엔 환경변수가 없다).
 /// `LOUNGE_E2E_BET=1`이면 자리를 잡고(앉은 테이블 → 자리 있는 테이블 → 새 테이블) 내 차례에 4초 기다렸다 체크·콜한다
@@ -60,8 +62,10 @@ enum PokerDevWindow {
         await store.refreshMe()
         print("hands \(finished.count) · chips \(start) → \(store.chips)")
         if ProcessInfo.processInfo.environment["LOUNGE_POKER_STAY"] == nil {
-            await table.leave()
-            print("left table")
+            // 서버가 이탈을 확인할 때까지 (실패하면 백오프로 다시 시도)
+            let t0 = Date()
+            let ok = await table.leaveAndWait(timeout: 120)
+            print(ok ? "left table (시도 \(table.leaveAttempts)번, \(Int(Date().timeIntervalSince(t0)))초)" : "leave not confirmed")
         }
     }
 }
@@ -72,7 +76,8 @@ private struct PokerDevHost: View {
 
     var body: some View {
         IndianPokerView(table: table, chips: store.chips) {
-            if table.seated { Task { await table.leave() } }
+            if table.seated { table.leave() }
         }
     }
 }
+#endif

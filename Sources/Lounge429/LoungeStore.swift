@@ -113,12 +113,15 @@ final class LoungeStore {
     init(live: Bool = true) {
         poker.store = self
         guard live else { return }
+        IndianPokerTable.current = poker
         Task {
             await connect()
             await poll()
         }
-        // 개발용: LOUNGE_POKER_WINDOW=1이면 포커 화면을 일반 창에 (환경변수가 없으면 아무것도 안 함)
+        #if LOUNGE_DEV
+        // 개발용 빌드만: LOUNGE_POKER_WINDOW=1이면 포커 화면을 일반 창에 (환경변수가 없으면 아무것도 안 함)
         if PokerDevWindow.enabled { Task { PokerDevWindow.open(store: self) } }
+        #endif
         Task { await watchUpdates() }
     }
 
