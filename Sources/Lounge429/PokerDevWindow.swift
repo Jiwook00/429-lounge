@@ -13,10 +13,24 @@ import SwiftUI
 enum PokerDevWindow {
     private static var window: NSWindow?
 
-    static var enabled: Bool { ProcessInfo.processInfo.environment["LOUNGE_POKER_WINDOW"] == "1" }
+    static var enabled: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return env["LOUNGE_POKER_WINDOW"] == "1" || env["LOUNGE_ROOT_WINDOW"] == "1"
+    }
 
     static func open(store: LoungeStore) {
         guard enabled, window == nil else { return }
+        // LOUNGE_ROOT_WINDOW=1: 메뉴바 팝오버와 같은 RootView를 창에 (LOUNGE_TAP_POKER=초 뒤 라운지의 인디언 포커 타일과 같은 경로로 진입)
+        if ProcessInfo.processInfo.environment["LOUNGE_ROOT_WINDOW"] == "1" {
+            let w = NSWindow(contentRect: NSRect(x: 200, y: 120, width: 340, height: 760),
+                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            w.title = "429 Lounge (개발 · RootView)"
+            w.contentView = NSHostingView(rootView: RootView(store: store))
+            w.makeKeyAndOrderFront(nil)
+            window = w
+            print("root window \(w.windowNumber)")
+            return
+        }
         let table = store.poker
         let host = NSHostingView(rootView: PokerDevHost(store: store, table: table))
         let w = NSWindow(contentRect: NSRect(x: 200, y: 120, width: 340, height: 760),

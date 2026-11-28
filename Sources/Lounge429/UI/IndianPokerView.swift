@@ -21,7 +21,7 @@ struct IndianPokerView: View {
             VStack(spacing: 10) {
                 topBar
                 if !table.seated {
-                    lobby
+                    if table.creating { createScreen } else { lobby }
                 } else if table.leaving != nil {
                     leavingScreen
                 } else if table.waiting {
@@ -44,11 +44,19 @@ struct IndianPokerView: View {
 
     private var topBar: some View {
         HStack(spacing: 8) {
-            Button(action: onBack) {
-                Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
+            if table.creating && !table.seated {
+                Button { table.creating = false } label: {
+                    Text("‹ 로비").font(Fonts.small()).foregroundStyle(Theme.muted)
+                }
+                .buttonStyle(.plain)
+                .help("열린 테이블 목록으로")
+            } else {
+                Button(action: onBack) {
+                    Text("‹ 라운지").font(Fonts.small()).foregroundStyle(Theme.muted)
+                }
+                .buttonStyle(.plain)
+                .help(table.seated ? "자리에서 일어나 라운지로 (이번 판은 폴드)" : "라운지로")
             }
-            .buttonStyle(.plain)
-            .help(table.seated ? "자리에서 일어나 라운지로 (이번 판은 폴드)" : "라운지로")
             GameSoundButton()
             Spacer()
             Text("인디언 포커").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
@@ -113,7 +121,11 @@ struct IndianPokerView: View {
         } else {
             ForEach(tables) { t in lobbyRow(t) }
         }
-        createBox(empty: tables.isEmpty)
+        if broke {
+            brokeCreateBox
+        } else if !tables.isEmpty {
+            moreBox
+        }
         if let m = table.message {
             Text(m).font(Fonts.small()).foregroundStyle(Theme.neon).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -169,10 +181,12 @@ struct IndianPokerView: View {
     private var emptyLobby: some View {
         VStack(spacing: 8) {
             PokerCard(face: .back)
-            Text("지금 열린 테이블이 없어요").font(Fonts.bold())
-            Text("새 테이블을 만들면 컴퓨터가 먼저 자리에 앉아 있어요. 사람이 오면 다음 판부터 자리를 내줘요.")
+            Text("열린 테이블이 없어요").font(Fonts.bold())
+            Text("만들면 혼자여도 바로 시작해요")
                 .font(Fonts.body()).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            if !broke {
+                createButton("새 테이블 만들기", fill: Theme.neon, border: Theme.neonDeep).padding(.top, 2)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 14)
@@ -180,52 +194,110 @@ struct IndianPokerView: View {
         .overlay(Rectangle().strokeBorder(Theme.line, style: StrokeStyle(lineWidth: 2, dash: [4, 4])))
     }
 
-    @ViewBuilder
-    private func createBox(empty: Bool) -> some View {
-        if broke {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("새 테이블 만들기").font(Fonts.bold()).foregroundStyle(Theme.muted)
-                Text("칩이 부족해요 · 앤티 10칩 필요").font(Fonts.bold()).foregroundStyle(Theme.muted)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .pixelBox()
+    /// 로비 아래: 자리가 없으면 새 테이블로 (만들기 화면을 연다)
+    private var moreBox: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("자리가 없나요?").font(Fonts.bold()).foregroundStyle(Theme.gold)
+                Text("혼자여도 바로 시작해요").font(Fonts.small()).foregroundStyle(Theme.muted)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .pixelBox()
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("새 테이블 만들기").font(Fonts.bold()).foregroundStyle(Theme.gold)
-                    Spacer()
-                    if !empty { Text("자리가 없을 때").font(Fonts.small()).foregroundStyle(Theme.muted) }
-                }
-                Text("컴퓨터 몇 명과 앉을까요?").font(Fonts.body())
-                HStack(spacing: 6) {
-                    ForEach(Array(IndianPoker.botRange), id: \.self) { n in
-                        let on = table.bots == n
-                        Button { table.bots = n } label: {
-                            Text("\(n)명").font(Fonts.bold()).foregroundStyle(on ? Theme.gold : Theme.cream)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .pixelBox(fill: on ? Theme.goldBg : Theme.panel, border: on ? Theme.gold : Theme.line)
+            Spacer(minLength: 0)
+            Button { table.creating = true } label: {
+                Text("새 테이블 만들기").font(Fonts.bold()).foregroundStyle(Theme.bg)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 44)
+                    .pixelBox(fill: Theme.gold, border: Theme.goldDark)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .pixelBox(fill: Theme.goldBg, border: Theme.gold)
+    }
+
+    private var brokeCreateBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("새 테이블 만들기").font(Fonts.bold()).foregroundStyle(Theme.muted)
+            Text("칩이 부족해요 · 앤티 10칩 필요").font(Fonts.bold()).foregroundStyle(Theme.muted)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .pixelBox()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .pixelBox()
+    }
+
+    private func createButton(_ title: String, fill: Color, border: Color) -> some View {
+        Button { table.creating = true } label: {
+            Text(title).font(Fonts.bold()).foregroundStyle(Theme.bg)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .pixelBox(fill: fill, border: border)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 새 테이블 만들기
+
+    /// 최대 인원 2·3·4(기본 4)를 고르면 자리 미리보기(나 + 봇 칸)가 바뀐다. 만들면 혼자여도 바로 시작
+    private var createScreen: some View {
+        VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("새 테이블 만들기").font(Fonts.bold()).foregroundStyle(Theme.gold)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("최대 인원").font(Fonts.body())
+                    HStack(spacing: 6) {
+                        ForEach(Array(IndianPoker.seatRange), id: \.self) { n in
+                            let on = table.maxSeats == n
+                            Button { table.chooseSeats(n) } label: {
+                                Text("\(n)명").font(Fonts.bold()).foregroundStyle(on ? Theme.gold : Theme.cream)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .pixelBox(fill: on ? Theme.goldBg : Theme.panel, border: on ? Theme.gold : Theme.line)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(table.busy || table.joinPending)
+                            .accessibilityLabel("최대 \(n)명")
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                Text(empty ? "나 + 컴퓨터 \(table.bots) = \(table.bots + 1)석"
-                    : "나 + 컴퓨터 \(table.bots) = \(table.bots + 1)석 · 사람이 앉으면 다음 판부터 컴퓨터가 자리를 내줘요")
-                    .font(Fonts.small()).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    ForEach(0..<table.maxSeats, id: \.self) { i in seatPreview(mine: i == 0) }
+                }
+                .frame(maxWidth: .infinity, minHeight: 84)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("나와 봇 \(table.maxSeats - 1)자리")
+                Text("혼자여도 바로 시작해요").font(Fonts.bold()).frame(maxWidth: .infinity)
                 Button { Task { await table.create() } } label: {
-                    Text(empty ? "새 테이블 만들기" : "만들고 앉기").font(Fonts.bold()).foregroundStyle(Theme.bg)
+                    Text("만들고 앉기").font(Fonts.bold()).foregroundStyle(Theme.bg)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .pixelBox(fill: Theme.neon, border: Theme.neonDeep)
                 }
                 .buttonStyle(.plain)
-                .disabled(table.busy)
+                .disabled(table.busy || broke)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .pixelBox(fill: Theme.goldBg, border: Theme.gold)
+            if let m = table.message {
+                Text(m).font(Fonts.small()).foregroundStyle(Theme.neon).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            note("입장하면 판마다 앤티 10칩이 자동으로 빠져요.")
         }
+    }
+
+    /// 만들기 미리보기 칸 64×72: 나(골드 실선) / 봇(흐린 점선)
+    private func seatPreview(mine: Bool) -> some View {
+        Text(mine ? "나" : "봇")
+            .font(mine ? Fonts.bold(2) : Fonts.bold())
+            .foregroundStyle(mine ? Theme.gold : Theme.muted)
+            .frame(width: 64, height: 72)
+            .background(mine ? Theme.goldBg : Theme.bg)
+            .overlay {
+                if mine {
+                    Rectangle().strokeBorder(Theme.gold, lineWidth: 2)
+                } else {
+                    Rectangle().strokeBorder(Theme.dim, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+                }
+            }
     }
 
     private func note(_ text: String) -> some View {
@@ -243,17 +315,30 @@ struct IndianPokerView: View {
         let name: String
         let mine: Bool
         let bot: Bool
+        /// 이번 판엔 없고 다음 판부터 앉는 사람 (봇 자리를 받음)
+        let joining: Bool
     }
 
+    /// 대기 화면 자리: 앉은 사람은 사람으로(다음 판부터 앉는 사람은 "합류"), 나머지는 이번 판 봇
     private var waitSeats: [WaitSeat] {
         guard let s = table.state else { return [] }
+        let inHand = Set(s.seats.compactMap(\.playerId))
         return (1...max(1, s.table.capacity)).map { n in
             if let m = s.members.first(where: { $0.seat == n }) {
-                return WaitSeat(id: n, name: m.name, mine: m.playerId == table.myID, bot: false)
+                let mine = m.playerId == table.myID
+                return WaitSeat(id: n, name: m.name, mine: mine, bot: false, joining: !mine && !inHand.contains(m.playerId))
             }
-            let name = s.seats.first { $0.seat == n && $0.bot }?.name ?? "컴퓨터"
-            return WaitSeat(id: n, name: name, mine: false, bot: true)
+            let name = s.seats.first { $0.seat == n && $0.bot }?.name ?? "봇"
+            return WaitSeat(id: n, name: name, mine: false, bot: true, joining: false)
         }
+    }
+
+    /// 대기 화면 한 줄: 혼자면 봇과 먼저 친다, 사람이 합류했으면 그 사람이 봇 자리를 받았다
+    private var waitLine: String {
+        let seats = waitSeats
+        if let joined = seats.last(where: \.joining) { return "\(Josa.subject(joined.name)) 앉았어요 · 봇 한 자리를 내줬어요" }
+        if seats.filter({ !$0.bot }).count <= 1 { return "봇과 먼저 치는 중 · 사람이 오면 다음 판부터 자리를 비켜요" }
+        return "다음 판부터 봇 한 자리에 앉아요"
     }
 
     @ViewBuilder
@@ -267,7 +352,9 @@ struct IndianPokerView: View {
                 ForEach(waitSeats) { seat in
                     VStack(spacing: 4) {
                         nameRow(seat.name, bot: seat.bot)
-                        PokerCard(face: .seat(seat.mine ? "나" : "?", mine: seat.mine))
+                        PokerCard(face: seat.mine ? .seat("나", mine: true) : seat.bot ? .seat("봇", mine: false) : .person("사람"),
+                                  seatHeight: 84)
+                        if seat.joining { tag("합류", .joined) }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -275,7 +362,7 @@ struct IndianPokerView: View {
             VStack(spacing: 2) {
                 if let next {
                     Text("\(max(1, Int(next.rounded(.up))))").font(Fonts.bold(2)).foregroundStyle(Theme.neon).glow(Theme.neon)
-                    caption("다음 판 곧 시작 · 앤티 10칩 자동")
+                    caption("다음 판 시작 · 앤티 10칩 자동")
                 } else if s?.hand == nil {
                     caption("곧 시작 · 앤티 10칩 자동")
                 } else {
@@ -284,19 +371,14 @@ struct IndianPokerView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        VStack(alignment: .leading, spacing: 4) {
-            Text("사람이 앉으면").font(Fonts.bold()).foregroundStyle(Theme.cyan)
-            (Text("다음 판부터 컴퓨터 한 자리를 사람이 차지해요. 로비에는 사람 수만 보여요: ")
-                + Text("\(humans)/\(cap)").font(Fonts.bold()).foregroundStyle(Theme.gold))
-                .font(Fonts.body()).fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .pixelBox(fill: Theme.panel, border: Theme.cyan)
+        Text(waitLine).font(Fonts.bold()).foregroundStyle(Theme.cyan)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .pixelBox(fill: Theme.panel, border: Theme.cyan)
         HStack(spacing: 6) {
-            pill("앉은 사람 \(humans)", color: Theme.cyan, dot: true)
-            pill("컴퓨터 \(max(0, cap - humans))", color: Theme.muted, border: Theme.line)
+            pill("사람 \(humans)/\(cap)", color: Theme.cyan, dot: true)
             Spacer()
             Text("앤티 10 · 카드 1~10").font(Fonts.small()).foregroundStyle(Theme.muted)
         }
@@ -329,8 +411,9 @@ struct IndianPokerView: View {
         HStack(spacing: 4) {
             Text(name).font(Fonts.bold()).lineLimit(1)
             if bot {
-                Text("컴").font(Fonts.small())
+                Text("봇").font(Fonts.small())
                     .padding(.horizontal, 3)
+                    .padding(.vertical, 2)
                     .background(Theme.outline.opacity(0.6))
                     .overlay(Rectangle().strokeBorder(Theme.muted, lineWidth: 1))
                     .fixedSize()
@@ -394,7 +477,7 @@ struct IndianPokerView: View {
         return true
     }
 
-    private enum TagStyle { case gold, cream, dashed, allIn, turn, wait, up, down }
+    private enum TagStyle { case gold, cream, dashed, allIn, turn, wait, up, down, joined }
 
     private func statusTag(_ seat: IPSeat, now: Date) -> some View {
         let (text, style) = status(seat, now: now)
@@ -436,6 +519,7 @@ struct IndianPokerView: View {
         case .wait: (Theme.muted, .clear, Theme.outline.opacity(0.7), false, false)
         case .up: (Theme.green, Theme.green, Theme.outline.opacity(0.7), true, false)
         case .down: (Theme.muted, Theme.dim, Theme.outline.opacity(0.7), false, false)
+        case .joined: (Theme.cyan, Theme.cyan, Theme.outline.opacity(0.7), false, false)
         }
         return Text(text)
             .font(bold ? Fonts.bold() : Fonts.small())

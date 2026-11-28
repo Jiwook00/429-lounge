@@ -449,7 +449,7 @@ struct LoungeView: View {
             .buttonStyle(.plain)
             .disabled(!online)
             Button { open(.poker) } label: {
-                // 사람만 센다 (컴퓨터는 로비에서 숨김, ADR-0023). 소수결이 있던 자리
+                // 사람만 센다 (봇은 로비에서 숨김, ADR-0023). 소수결이 있던 자리
                 GameTile(sprite: Sprites.pokerCard, title: "인디언 포커", mode: online ? pokerLine : "TABLE",
                          soon: !online, live: online, hot: online && pokerHot, label: newLabel(.poker))
             }

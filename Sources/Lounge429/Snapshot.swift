@@ -107,6 +107,7 @@ enum Snapshot {
         } else if let table, table.hasPrefix("ip-") {
             // ip-lobby | -lobby-broke | -lobby-empty | -lobby-left | -wait | -deal | -myturn | -raise | -allin | -result
             // | -check | -3p | -timeout: 인디언 포커 (시안 S01~S10) / -side (사이드 팟을 받은 결과) | -last (마지막 행동 알림) | -leaving
+            // | -create | -create-2 (새 테이블 최대 인원 4 / 2, 시안 S11 · S12) | -wait-join (사람 합류, 시안 S13)
             let broke = table == "ip-lobby-broke"
             content = AnyView(IndianPokerView(table: fakePoker(store: store, me: me, mode: table), chips: broke ? 6 : 1_240))
         } else if let table, table.hasPrefix("roulette-") {
@@ -227,7 +228,7 @@ enum Snapshot {
         return table
     }
 
-    /// 인디언 포커 가짜 테이블: 시안(S01~S10)과 같은 판. 나는 지우, 철수·도윤은 사람, 민지는 컴퓨터
+    /// 인디언 포커 가짜 테이블: 시안(S01~S10)과 같은 판. 나는 지우, 철수·도윤은 사람, 민지는 봇
     static func fakePoker(store: LoungeStore, me: Player, mode: String) -> IndianPokerTable {
         let table = IndianPokerTable()
         table.store = store
@@ -238,13 +239,19 @@ enum Snapshot {
         case "ip-lobby", "ip-lobby-broke", "ip-lobby-left":
             table.preview(lobby: IPLobby(now: now, tables: [
                 .init(id: 1, capacity: 4, humans: 2, names: ["철수", "도윤"], handNo: 12),
-                .init(id: 2, capacity: 3, humans: 1, names: ["민지"], handNo: nil),
-                .init(id: 3, capacity: 2, humans: 1, names: ["도윤"], handNo: nil),
+                .init(id: 2, capacity: 3, humans: 1, names: ["민지"], handNo: 5),
+                .init(id: 3, capacity: 2, humans: 1, names: ["도윤"], handNo: 3),
                 .init(id: 4, capacity: 4, humans: 4, names: ["하준", "서아", "윤호", "다은"], handNo: 30),
             ]), leftNotice: mode == "ip-lobby-left" ? .away : nil)
             return table
         case "ip-lobby-empty":
             table.preview(lobby: IPLobby(now: now, tables: []))
+            return table
+        case "ip-create", "ip-create-2":
+            // 새 테이블 만들기: 최대 인원 4(기본) / 2 (시안 S11 · S12)
+            table.preview(lobby: IPLobby(now: now, tables: []))
+            table.creating = true
+            table.chooseSeats(mode == "ip-create" ? 4 : 2)
             return table
         default: break
         }
@@ -279,6 +286,14 @@ enum Snapshot {
         case "ip-wait":
             // 혼자 앉은 테이블, 직전 판이 끝나고 다음 판 3초 전 (시안 S02)
             let s = state(4, mySeat: nil, members: [IPMember(seat: 1, playerId: me.id, name: "지우")],
+                          hand: hand(.done, turn: nil, pot: 40, next: 2.6),
+                          seats: [seat(1, "캐시봇", id: nil, card: 4, payout: 0), seat(2, "민지", id: nil, card: 8, payout: 40),
+                                  seat(3, "도윤", id: nil, card: 2, payout: 0), seat(4, "하준", id: nil, card: 5, payout: 0)])
+            table.preview(state: s)
+        case "ip-wait-join":
+            // 혼자 봇과 치던 테이블에 철수가 합류: 다음 판부터 봇 한 자리를 받는다 (시안 S13)
+            let s = state(4, mySeat: nil, members: [IPMember(seat: 1, playerId: me.id, name: "지우"),
+                                                    IPMember(seat: 4, playerId: cs, name: "철수")],
                           hand: hand(.done, turn: nil, pot: 40, next: 2.6),
                           seats: [seat(1, "캐시봇", id: nil, card: 4, payout: 0), seat(2, "민지", id: nil, card: 8, payout: 40),
                                   seat(3, "도윤", id: nil, card: 2, payout: 0), seat(4, "하준", id: nil, card: 5, payout: 0)])
@@ -346,7 +361,7 @@ enum Snapshot {
                                   seat(2, "지우", id: me.id, chips: 1_230, card: nil)])
             table.preview(state: s, alert: alert(1, "민지", .check))
         case "ip-3p":
-            // 3인: 철수 베팅 20, 민지(컴퓨터) 고르는 중
+            // 3인: 철수 베팅 20, 민지(봇) 고르는 중
             let s = state(3, mySeat: 3, members: [IPMember(seat: 1, playerId: cs, name: "철수"),
                                                   IPMember(seat: 3, playerId: me.id, name: "지우")],
                           hand: hand(turn: 2, deadline: 2, bet: 20, minRaise: 20, pot: 50),
@@ -365,8 +380,10 @@ enum Snapshot {
         return table
     }
 
+    #if LOUNGE_DEV
+    // 개발용 빌드만(디버그, build-app.sh --dev): 실서버 테이블에 앉고 닉네임이 없으면 "지우"로 정하는 등 계정을 건드려서 배포 빌드엔 넣지 않는다
     /// 실서버 인디언 포커에 앉아 `seconds` 동안 상태를 찍고 마지막 화면을 저장한다.
-    /// 앉은 테이블이 있으면 거기로, 없으면 자리 있는 테이블, 그것도 없으면 컴퓨터 2명과 새 테이블.
+    /// 앉은 테이블이 있으면 거기로, 없으면 자리 있는 테이블, 그것도 없으면 봇 2명과 새 테이블.
     /// LOUNGE_E2E_BET=1이면 내 차례에 체크·콜(가끔 레이즈) / fold면 늘 폴드 / idle이면 아무것도 안 함(시간 초과 확인)
     static func renderPokerLive(to path: String, seconds: Int) {
         Task { @MainActor in
@@ -378,6 +395,8 @@ enum Snapshot {
             if !me.named, await store.rename("지우") != nil { _ = await store.rename("지우\(Int.random(in: 10...99))") }
             let table = store.poker
             table.watching = true
+            // LOUNGE_POKER_SEATS=2~4: 새 테이블을 만들 때 최대 인원 (기본 4)
+            if let n = ProcessInfo.processInfo.environment["LOUNGE_POKER_SEATS"].flatMap(Int.init) { table.chooseSeats(n) }
             await table.refreshLobby()
             if !table.seated {
                 if let open = table.lobby?.tables.first(where: { !$0.full }) {
@@ -407,7 +426,7 @@ enum Snapshot {
                 }
                 guard let s = table.state, let h = s.hand else { continue }
                 let seats = s.seats.map { x in
-                    "\(x.seat):\(x.name)\(x.bot ? "(컴)" : "") \(x.card.map(String.init) ?? "?")\(x.folded ? "✕" : "") put \(x.put)\(x.lastAction.map { " " + $0.rawValue } ?? "")\(x.net.map { " net \($0)" } ?? "")"
+                    "\(x.seat):\(x.name)\(x.bot ? "(봇)" : "") \(x.card.map(String.init) ?? "?")\(x.folded ? "✕" : "") put \(x.put)\(x.lastAction.map { " " + $0.rawValue } ?? "")\(x.net.map { " net \($0)" } ?? "")"
                 }.joined(separator: " | ")
                 let line = "#\(h.handNo) \(h.phase.rawValue) turn \(h.turnSeat.map(String.init) ?? "-")/\(h.turnNo) pot \(h.pot) | \(seats)"
                 if line != last { print(line); last = line }
@@ -424,6 +443,7 @@ enum Snapshot {
         NSApplication.shared.setActivationPolicy(.prohibited)
         NSApplication.shared.run()
     }
+    #endif
 
     /// 미니 룰렛 가짜 판: 시안과 같은 판 (나 7에 50 · 빨강 50, 철수 홀 100, 영희 9 50 · 빨강 50)
     static func fakeRoulette(store: LoungeStore, me: Player, mode: String) -> RouletteTable {

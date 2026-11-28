@@ -6,8 +6,10 @@ struct PokerCard: View {
     enum Face: Equatable {
         case front(Int)
         case back
-        /// 대기 화면 자리 표시 ("나" / "?")
+        /// 대기 화면 자리 표시 ("나" / "봇")
         case seat(String, mine: Bool)
+        /// 대기 화면에서 사람이 앉은 자리 (시안 실선)
+        case person(String)
     }
 
     static let size = CGSize(width: 88, height: 108)
@@ -16,6 +18,8 @@ struct PokerCard: View {
     let face: Face
     var folded = false
     var winner = false
+    /// 대기 화면 자리 칸 높이 (카드 앞·뒷면은 늘 88×108)
+    var seatHeight: CGFloat = PokerCard.size.height
 
     var body: some View {
         Group {
@@ -23,6 +27,7 @@ struct PokerCard: View {
             case .front(let n): front(n)
             case .back: back
             case .seat(let text, let mine): seat(text, mine: mine)
+            case .person(let text): person(text)
             }
         }
         .saturation(folded ? 0.3 : 1)
@@ -37,7 +42,8 @@ struct PokerCard: View {
         switch face {
         case .front(let n): "카드 \(n)"
         case .back: "뒷면 카드"
-        case .seat(let text, _): text
+        case .seat(let text, _): text == "나" ? "내 자리" : "봇 자리"
+        case .person(let text): "\(text) 자리"
         }
     }
 
@@ -127,10 +133,10 @@ struct PokerCard: View {
 
     private func seat(_ text: String, mine: Bool) -> some View {
         Text(text)
-            .font(mine ? Fonts.bold() : Fonts.body())
+            .font(mine ? Fonts.bold(2) : Fonts.body())
             .foregroundStyle(mine ? Theme.gold : Theme.cream)
             .frame(maxWidth: .infinity)
-            .frame(height: Self.size.height)
+            .frame(height: seatHeight)
             .background(shape.fill(Theme.outline.opacity(0.35)))
             .overlay {
                 if mine {
@@ -139,6 +145,16 @@ struct PokerCard: View {
                     shape.strokeBorder(Theme.feltLine, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
                 }
             }
+    }
+
+    private func person(_ text: String) -> some View {
+        Text(text)
+            .font(Fonts.bold())
+            .foregroundStyle(Theme.cyan)
+            .frame(maxWidth: .infinity)
+            .frame(height: seatHeight)
+            .background(shape.fill(Theme.bg))
+            .overlay(shape.strokeBorder(Theme.cyan, lineWidth: 2))
     }
 }
 
