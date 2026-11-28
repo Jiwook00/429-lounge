@@ -15,16 +15,6 @@ enum Notifier {
         return (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])) ?? false
     }
 
-    /// 내가 참가한 소수결 결과
-    static func minority(_ text: String, question: String) {
-        guard available else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "소수결 결과 · \(question)"
-        content.body = text
-        let request = UNNotificationRequest(identifier: "minority-\(question)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
-    }
-
     static func jackpot(_ event: LoungeEvent) {
         guard available else { return }
         let content = UNMutableNotificationContent()

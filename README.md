@@ -66,10 +66,6 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 0~12, 13칸짜리 룰렛. 누군가 칩을 놓으면 12초 동안 회원들이 같은 판에 건다. 칸을 누르면 바로 걸리고, 숫자 하나는 12배, 빨강·검정 / 홀·짝 / 1–6·7–12는 2배. 공이 6초 동안 칸을 건너뛰다 멈추고, **0이 나오면 무효 판**이라 건 칩을 모두 돌려받는다. 결과와 정산은 전부 서버에서.
 
-### 소수결
-
-평일 8시, 11시, 14시에 질문이 올라온다 ("탭 vs 스페이스"). 둘 중 하나에 50칩을 걸고, 3시간 뒤 **적게 고른 쪽**이 진 사람 칩을 나눠 갖는다. 3명이 안 모이거나 동점, 전원 일치면 무효. 결과가 나오면 누가 뭘 골랐는지 공개된다.
-
 ### 블랙잭
 
 만화 5컷 테이블: 위 컷에 딜러, 아래 4컷이 자리. 10초 동안 걸고, 빈 자리는 AI가 채운다. 1번 자리부터 차례대로 히트 / 스탠드 / 더블다운(사람은 11초, 넘기면 스탠드). 첫 두 장으로 블랙잭을 이기면 일반 칩은 2.75배, 황금 칩은 2.5배를 받는다. 내 차례엔 내 컷이 커지고, 카드는 컷 사이로 사라졌다 나타나며 날아온다.
@@ -143,7 +139,7 @@ gh release create "$TAG" build/429-Lounge.zip build/appcast.xml --draft --verify
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|minority-open|minority-picked|minority-closed|minority-result-win|minority-result-lose|minority-result-void|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

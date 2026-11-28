@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: deprecated
 date: 2026-11-20
 ---
 
 # 소수결: 걸어 두고 나중에 확인하는 게임
+
+> 은퇴했다 ([ADR-0022](0022-retire-minority.md)). 아래는 결정 당시 기록이다.
 
 ## 배경과 문제
 
