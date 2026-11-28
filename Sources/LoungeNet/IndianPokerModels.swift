@@ -434,8 +434,8 @@ public struct IPProgress: Sendable, Comparable {
 }
 
 /// 입장 요청(ip_create·ip_join)과 일어나기·종료가 겹칠 때의 판단.
-/// 서버가 입장을 커밋했는데 응답이 늦는 동안 일어나면, 응답(또는 응답이 불확실할 때 `ip_lobby`의 `my_table` 조회)을
-/// 기다렸다가 그 자리를 이탈한다. 이탈은 자리마다 한 번만 내고(`issued`), 조회도 응답이 불확실할 때 한 번만 한다
+/// 서버가 입장을 커밋했는데 응답이 늦거나 사라진 동안 일어나면, 응답(또는 `ip_lobby`의 `my_table` 조회)을
+/// 기다렸다가 그 자리를 이탈한다. 이탈은 자리마다 한 번만 내고(`issued`), 조회가 실패하면 정해진 횟수만 다시 한다
 public struct IPJoinGate: Sendable, Equatable {
     public enum Step: Sendable, Equatable {
         case none
@@ -443,14 +443,33 @@ public struct IPJoinGate: Sendable, Equatable {
         case sit(Int64)
         /// 그 테이블에서 일어나기 시작
         case leave(Int64)
-        /// 입장 결과를 모르니 ip_lobby로 서버 좌석을 한 번 조회
-        case probe
+        /// 입장 결과를 모르니 `after`초 뒤 ip_lobby로 서버 좌석을 조회
+        case probe(after: TimeInterval)
+    }
+
+    /// 서버가 입장을 확실히 거절한 코드 (ip_join·ip_create가 RAISE하는 것. 예외면 트랜잭션이 롤백돼 자리가 없다).
+    /// `already_at_table`은 다른 자리가 이미 있다는 뜻이라 넣지 않는다 → 조회해서 그 자리를 찾는다.
+    /// 그 밖의 오류(5xx·네트워크·시간 초과·디코딩 실패·JSON 본문이 있는 5xx의 알 수 없는 메시지)는 결과를 모르는 것
+    public static let rejections: Set<String> = [
+        "not_authenticated", "not_named", "insufficient_chips", "invalid_bots", "no_table", "table_closed", "table_full",
+    ]
+    /// 조회 실패 뒤 다시 조회하는 횟수 상한 (1·2·4초 뒤, 합쳐 약 7초)
+    public static let maxProbes = 4
+
+    /// 입장 오류가 서버의 확실한 거절인지
+    public static func isRejection(_ error: any Error) -> Bool {
+        guard case LoungeError.server(let code) = error else { return false }
+        return rejections.contains(code)
     }
 
     /// 입장 요청을 보냈고 응답을 아직 못 받음
     public private(set) var joining = false
     /// 입장 중에 일어나기·종료를 눌렀음 (결과가 나올 때까지 유지)
     public private(set) var cancelled = false
+    /// 입장 결과를 모름 (조회로 확인할 때까지)
+    public private(set) var unresolved = false
+    /// 이번 입장에서 한 조회 횟수
+    public private(set) var probes = 0
     /// 이번 입장에서 이미 이탈을 낸 테이블 (같은 자리에 두 번 내지 않게)
     public private(set) var issued: Int64?
 
@@ -462,17 +481,19 @@ public struct IPJoinGate: Sendable, Equatable {
     public mutating func start() {
         joining = true
         cancelled = false
+        unresolved = false
+        probes = 0
         issued = nil
     }
 
-    /// 입장 중이면 취소로 표시한다(응답이 오면 이탈). 입장 중이 아니면 false
+    /// 입장 중이거나 결과를 모르면 취소로 표시한다(결과가 나오면 이탈). 아니면 false
     public mutating func cancel() -> Bool {
-        guard joining else { return false }
+        guard joining || unresolved else { return false }
         cancelled = true
         return true
     }
 
-    /// 입장 응답. `table`은 앉은 테이블(거절이면 nil), `certain == false`는 응답을 못 받음(네트워크 오류·시간 초과)
+    /// 입장 응답. `table`은 앉은 테이블(거절이면 nil), `certain == false`는 결과를 모름 (`isRejection`이 아닌 오류)
     public mutating func finish(table: Int64?, certain: Bool) -> Step {
         joining = false
         if let table {
@@ -480,18 +501,38 @@ public struct IPJoinGate: Sendable, Equatable {
             if !cancelled { return .sit(table) }
             return issue(table)
         }
-        if !certain { return .probe }
+        if !certain {
+            unresolved = true
+            probes = 1
+            return .probe(after: 0)
+        }
         cancelled = false
         return .none
+    }
+
+    /// 조회가 실패했을 때: 횟수 안이면 1·2·4초 뒤 다시, 넘으면 포기(서버 규칙: 차례 11초 폴드, 연속 2판이면 자리에서 빠짐)
+    public mutating func probeFailed() -> Step {
+        guard unresolved else { return .none }
+        guard probes < Self.maxProbes else {
+            unresolved = false
+            cancelled = false
+            return .none
+        }
+        probes += 1
+        return .probe(after: Double(1 << (probes - 2)))
     }
 
     /// 로비 조회 결과 (`my_table`)
     public mutating func lobby(myTable: Int64?) -> Step {
         guard let table = myTable else {
             // 입장 응답까지 끝났는데 서버에 자리가 없으면 취소할 것도 없다
-            if !joining { cancelled = false }
+            if !joining {
+                cancelled = false
+                unresolved = false
+            }
             return .none
         }
+        unresolved = false
         guard cancelled else { return .sit(table) }
         if !joining { cancelled = false }
         return issue(table)

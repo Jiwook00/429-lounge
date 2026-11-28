@@ -231,7 +231,7 @@ import Testing
         g.start()
         _ = g.cancel()
         let r4 = g.finish(table: nil, certain: false)
-        #expect(r4 == .probe)
+        #expect(r4 == .probe(after: 0))
         #expect(g.pending)
         let r5 = g.lobby(myTable: 343)
         #expect(r5 == .leave(343))
@@ -241,7 +241,7 @@ import Testing
         h.start()
         _ = h.cancel()
         let r6 = h.finish(table: nil, certain: false)
-        #expect(r6 == .probe)
+        #expect(r6 == .probe(after: 0))
         let r7 = h.lobby(myTable: nil)
         #expect(r7 == .none && !h.pending)
     }
@@ -250,7 +250,7 @@ import Testing
         var g = IPJoinGate()
         g.start()
         let r8 = g.finish(table: nil, certain: false)
-        #expect(r8 == .probe)
+        #expect(r8 == .probe(after: 0))
         let r9 = g.lobby(myTable: 9)
         #expect(r9 == .sit(9))
     }
@@ -263,5 +263,76 @@ import Testing
         #expect(r10 == .none && !g.pending)
         let again = g.cancel()
         #expect(!again) // 입장 중이 아니면 취소할 것도 없다
+    }
+
+    @Test func onlyKnownServerRejectionsAreCertain() {
+        // 검증 재현: 커밋된 입장 응답이 JSON 본문이 있는 503 → SDK가 PostgrestError로, wrap이 LoungeError.server로 바꾼다
+        #expect(!IPJoinGate.isRejection(LoungeError.server("Service Unavailable")))
+        #expect(!IPJoinGate.isRejection(URLError(.timedOut)))
+        #expect(!IPJoinGate.isRejection(LoungeError.server("something_new")))
+        // 다른 자리가 이미 있다 → 조회해서 그 자리를 찾는다
+        #expect(!IPJoinGate.isRejection(LoungeError.server("already_at_table")))
+        for code in ["table_full", "table_closed", "no_table", "insufficient_chips", "not_named", "invalid_bots", "not_authenticated"] {
+            #expect(IPJoinGate.isRejection(LoungeError.server(code)))
+        }
+    }
+
+    @Test func jsonServiceUnavailableAfterCommitLeavesTheSeat() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let certain = IPJoinGate.isRejection(LoungeError.server("Service Unavailable"))
+        let r1 = g.finish(table: nil, certain: certain)
+        #expect(r1 == .probe(after: 0) && g.pending)
+        let r2 = g.lobby(myTable: 347)
+        #expect(r2 == .leave(347) && !g.pending)
+    }
+
+    @Test func knownRejectionDuringCancelEndsWithoutProbe() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r = g.finish(table: nil, certain: IPJoinGate.isRejection(LoungeError.server("table_full")))
+        #expect(r == .none && !g.pending && !g.unresolved)
+    }
+
+    @Test func failedProbeRetriesWithBackoffThenRecovers() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r0 = g.finish(table: nil, certain: false)
+        #expect(r0 == .probe(after: 0))
+        let r1 = g.probeFailed()
+        #expect(r1 == .probe(after: 1))
+        let r2 = g.probeFailed()
+        #expect(r2 == .probe(after: 2))
+        // 세 번째 조회가 성공해 자리를 찾음 → 이탈 한 번
+        let r3 = g.lobby(myTable: 347)
+        #expect(r3 == .leave(347) && !g.pending && !g.unresolved)
+        // 그 뒤 늦게 온 실패 보고는 아무것도 안 한다
+        let r4 = g.probeFailed()
+        #expect(r4 == .none)
+    }
+
+    @Test func failedProbesStopAtTheCap() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        var steps = [g.finish(table: nil, certain: false)]
+        for _ in 0..<6 { steps.append(g.probeFailed()) }
+        #expect(steps == [.probe(after: 0), .probe(after: 1), .probe(after: 2), .probe(after: 4), .none, .none, .none])
+        #expect(!g.pending && !g.unresolved)
+    }
+
+    @Test func cancelWhileResultIsUnknown() {
+        // 입장 응답이 사라진 뒤(조회 중) ‹ 라운지·종료 → 취소로 표시하고 조회가 찾은 자리를 이탈
+        var g = IPJoinGate()
+        g.start()
+        let r0 = g.finish(table: nil, certain: false)
+        #expect(r0 == .probe(after: 0))
+        let cancelled = g.cancel()
+        #expect(cancelled && g.pending)
+        let r1 = g.lobby(myTable: 5)
+        #expect(r1 == .leave(5))
     }
 }

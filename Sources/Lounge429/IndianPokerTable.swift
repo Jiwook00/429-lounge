@@ -50,9 +50,11 @@ final class IndianPokerTable {
     /// 입장 요청과 일어나기·종료가 겹칠 때 (입장이 커밋됐는데 응답이 늦는 동안 취소)
     private var gate = IPJoinGate()
     /// 입장 요청이 진행 중이거나, 입장 중에 취소해서 결과(이탈)를 기다리는 중
-    var joinPending: Bool { gate.joining || gate.pending }
+    var joinPending: Bool { gate.joining || gate.pending || gate.unresolved }
     /// 입장 중에 일어나기·종료를 눌러 결과를 기다리는 중 (라운지 타일 "나가는 중")
     var cancellingJoin: Bool { gate.pending }
+    /// 입장 응답(실패)을 받은 시각. 그 전에 보낸 로비 조회는 입장 결과 판단에 쓰지 않는다
+    private var joinFinishedAt: Date?
     /// 메뉴바 깜빡임 (내 차례인데 포커 화면을 안 보고 있을 때)
     private(set) var flash = false
     /// 새 테이블 컴퓨터 수
@@ -125,7 +127,20 @@ final class IndianPokerTable {
         lobby = l
         if let left = leftTable, left.id == l.myTable, sent <= left.at { return }
         guard tableID == nil || gate.pending, leaving == nil || gate.pending else { return }
+        // 입장 결과를 모르는 동안엔 입장 응답(실패)을 받은 뒤에 보낸 조회만 믿는다 (그 전 조회는 커밋 전일 수 있음)
+        if gate.unresolved, let finished = joinFinishedAt, sent < finished { return }
         follow(gate.lobby(myTable: l.myTable))
+    }
+
+    /// 입장 결과를 확인하는 조회. 실패하면 정해진 횟수 안에서 다시 (IPJoinGate.probeFailed)
+    private func probeLobby() async {
+        guard let store else { return }
+        let sent = Date()
+        do {
+            applyLobby(try await store.net.ipLobby(), sent: sent)
+        } catch {
+            follow(gate.probeFailed())
+        }
     }
 
     /// 입장 판단 결과를 따른다
@@ -145,8 +160,11 @@ final class IndianPokerTable {
             leaving = id
             leaveAttempts = 0
             kick()
-        case .probe:
-            Task { await refreshLobby() }
+        case .probe(let after):
+            Task {
+                if after > 0 { try? await Task.sleep(for: .seconds(after)) }
+                await probeLobby()
+            }
         }
     }
 
@@ -354,10 +372,11 @@ final class IndianPokerTable {
                 follow(step)
             }
         } catch {
-            // 서버가 거절했으면(LoungeError) 자리는 없다. 응답을 못 받았으면 서버 좌석을 한 번 조회해 정리
-            let step = gate.finish(table: nil, certain: error is LoungeError)
+            // 서버가 확실히 거절한 코드만 "자리 없음". 그 밖(JSON 본문이 있는 5xx 포함)은 결과를 모르니 좌석 조회
+            joinFinishedAt = Date()
+            let step = gate.finish(table: nil, certain: IPJoinGate.isRejection(error))
             if !gate.pending { message = error.localizedDescription }
-            if step == .probe { await refreshLobby() } else { follow(step) }
+            if case .probe(after: 0) = step { await probeLobby() } else { follow(step) }
         }
         await store.refreshMe()
     }
@@ -390,7 +409,7 @@ final class IndianPokerTable {
         while leaving != nil || gate.pending, Date() < end {
             if gate.joining, !probed, Date().timeIntervalSince(start) > 2 {
                 probed = true
-                Task { await refreshLobby() }
+                Task { await probeLobby() }
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
