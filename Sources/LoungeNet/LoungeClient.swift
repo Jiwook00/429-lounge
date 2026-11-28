@@ -51,6 +51,16 @@ public enum LoungeError: LocalizedError {
         case .server("invalid_spot"): "걸 수 없는 칸이에요"
         case .server("game_retired"): "홀짝은 문을 닫았어요 · 룰렛으로"
         case .server("invalid_pixel"): "칠할 수 없는 칸이에요"
+        case .server("already_at_table"): "다른 테이블에 앉아 있어요"
+        case .server("table_closed"): "닫힌 테이블이에요"
+        case .server("no_table"): "없는 테이블이에요"
+        case .server("invalid_bots"): "컴퓨터는 1~3명이에요"
+        case .server("cannot_check"): "누가 걸어서 체크할 수 없어요"
+        case .server("cannot_bet"): "이미 걸려 있어요 · 레이즈로"
+        case .server("cannot_raise"): "아직 아무도 안 걸었어요 · 베팅으로"
+        case .server("nothing_to_call"): "콜할 칩이 없어요"
+        case .server("raise_too_small"): "직전에 올린 만큼은 올려야 해요"
+        case .server("invalid_action"): "할 수 없는 행동이에요"
         case .server(let m): m
         }
     }
@@ -193,6 +203,64 @@ public final class LoungeClient: Sendable {
         changes(channel: "bj:\(room)", tables: ["bj_rounds", "bj_seats"], room: room)
     }
 
+    // MARK: - 인디언 포커 (ADR-0023)
+
+    /// 열린 테이블 목록과 내가 앉은 테이블. 아무도 안 보던 테이블도 이때 따라잡아 닫힌다
+    public func ipLobby() async throws -> IPLobby {
+        do {
+            return try await supabase.rpc("ip_lobby").execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
+    /// 테이블을 만들고 앉는다 (나 + 컴퓨터 1~3명). 첫 판이 바로 시작된다
+    public func ipCreate(bots: Int) async throws -> IPState {
+        do {
+            return try await supabase.rpc("ip_create", params: ["p_bots": bots]).execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
+    /// 열린 테이블에 앉는다. 다음 판부터 컴퓨터 자리를 차지한다
+    public func ipJoin(table: Int64) async throws -> IPState {
+        do {
+            return try await supabase.rpc("ip_join", params: ["p_table": table]).execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
+    /// 일어난다. 진행 중인 판이면 폴드 (낸 칩은 판돈에 남음)
+    public func ipLeave(table: Int64) async throws -> IPState {
+        do {
+            return try await supabase.rpc("ip_leave", params: ["p_table": table]).execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
+    /// 마감이 지난 일(시간 초과 폴드, 컴퓨터 행동, 다음 판)을 처리하고 테이블 전부를 받는다.
+    /// 앉아 있다는 표시도 겸한다: 30초 넘게 안 부르면 다음 판 시작 때 자리에서 빠진다
+    public func ipTick(table: Int64) async throws -> IPState {
+        do {
+            return try await supabase.rpc("ip_tick", params: ["p_table": table]).execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
+    /// 내 차례 행동. bet·raise의 amount는 지금 베팅 위로 더 올리는 칩 (잔액보다 크면 올인)
+    public func ipAction(table: Int64, _ action: IPSeat.Action, amount: Int64? = nil) async throws -> IPState {
+        struct Params: Encodable { let p_table: Int64; let p_action: String; let p_amount: Int64? }
+        do {
+            return try await supabase.rpc("ip_action", params: Params(p_table: table, p_action: action.rawValue, p_amount: amount))
+                .execute().value
+        } catch { throw LoungeError.wrap(error) }
+    }
+
+    /// 테이블이 바뀌었다는 신호 (테이블·자리·판). 받으면 ipTick으로 다시 읽는다
+    public func ipChanges(table: Int64) -> AsyncStream<Void> {
+        let tables = [("ip_tables", "id"), ("ip_members", "table_id"), ("ip_hands", "table_id"), ("ip_hand_seats", "table_id")]
+        return changes(channel: "ip:\(table)", tables: tables.map { ($0.0, $0.1, "\(table)") })
+    }
+
+    /// 로비 목록이 바뀌었다는 신호 (테이블이 열리고 닫힘, 사람이 앉고 일어남). 받으면 ipLobby로 다시 읽는다
+    public func ipLobbyChanges() -> AsyncStream<Void> {
+        changes(channel: "ip:lobby", tables: [("ip_tables", nil, nil), ("ip_members", nil, nil)])
+    }
+
     // MARK: - 미니 룰렛 (ADR-0015)
 
     /// 마감이 지난 판을 정산하고 지금 판 전부를 받는다
@@ -227,11 +295,22 @@ public final class LoungeClient: Sendable {
 
     /// 테이블들의 room_code 변경을 "바뀌었다" 신호 하나로. 재연결 뒤에도 한 번 보낸다 (놓친 변경이 있을 수 있어서)
     private func changes(channel name: String, tables: [String], room: String) -> AsyncStream<Void> {
+        changes(channel: name, tables: tables.map { ($0, "room_code", room) })
+    }
+
+    /// (테이블, 필터 열, 값) 변경을 "바뀌었다" 신호 하나로. 필터 열이 nil이면 테이블 전체
+    private func changes(channel name: String, tables: [(String, String?, String?)]) -> AsyncStream<Void> {
         let supabase = self.supabase
         return AsyncStream { continuation in
             let task = Task {
                 let channel = supabase.channel(name)
-                let streams = tables.map { channel.postgresChange(AnyAction.self, table: $0, filter: .eq("room_code", value: room)) }
+                let streams = tables.map { table, column, value in
+                    if let column, let value {
+                        channel.postgresChange(AnyAction.self, table: table, filter: .eq(column, value: value))
+                    } else {
+                        channel.postgresChange(AnyAction.self, table: table)
+                    }
+                }
                 let statuses = channel.statusChange
                 do {
                     try await channel.subscribeWithError()

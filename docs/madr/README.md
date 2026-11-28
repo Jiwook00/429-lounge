@@ -23,3 +23,4 @@
 | [0018](0018-429-drop-plinko.md)                  | 429 드롭: 격자 플링코 + 파친코 포켓, 서버가 경로를 정하고 환수율은 DP로         | accepted |
 | [0019](0019-429-drop-hot-board-vip-fever.md)     | 429 드롭 2판: 4·2·9 보드 레벨(HOT), VIP HOUR 포켓 확장, FEVER 공 40개           | accepted |
 | [0022](0022-retire-minority.md)                  | 소수결 은퇴: 앱에서 빼고 서버는 새 판만 막고 기록은 보존                        | accepted |
+| [0023](0023-indian-poker-server.md)              | 인디언 포커 서버: 열린 테이블, 클라이언트 tick으로 도는 11초 타이머와 컴퓨터    | accepted |

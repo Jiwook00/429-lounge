@@ -3,6 +3,8 @@
 // --blackjack: 룰렛 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
 // --plinko: 429 드롭에 공을 계속 떨어뜨린다 (무작위 레인·파워, 잔액 부족이면 쉬었다 다시)
 // --wall: 라운지 벽화에 2~5초마다 한 칸씩 칠한다 (버킷이 비면 429를 받고 기다림)
+// --poker [--bots N]: 인디언 포커. 자리 있는 테이블에 앉고, 없으면 컴퓨터 N명(기본 2)과 새 테이블.
+//                    1초마다 tick, 내 차례면 1~3초 고민하다 상대 카드만 보고 친다. 가끔 생각에 잠겨 시간 초과
 import Foundation
 import LoungeNet
 
@@ -61,6 +63,12 @@ do {
         presence.place = .lounge // 옛 앱이 모르는 위치 값이라 라운지로
         await link.update(presence)
         try await dropPlinko()
+    }
+
+    if CommandLine.arguments.contains("--poker") {
+        presence.place = .lounge // 옛 앱이 모르는 위치 값이라 라운지로
+        await link.update(presence)
+        try await playPoker(me: me)
     }
 
     if CommandLine.arguments.contains("--blackjack") {
@@ -147,6 +155,72 @@ func playBlackjack(me: Player) async throws -> Never {
             continue
         }
         try await Task.sleep(for: .milliseconds(500))
+    }
+}
+
+/// 인디언 포커: 앉을 테이블을 찾고, 판마다 상대 카드만 보고 친다. 자리에서 빠지면(잔액·잠수) 로비로 돌아간다
+func playPoker(me: Player) async throws -> Never {
+    let bots = Int(arg("--bots", default: "2")) ?? 2
+    var table: Int64?
+    var reported: Int64?
+    var acted: String?
+    while true {
+        guard let t = table else {
+            do {
+                let lobby = try await client.ipLobby()
+                if let mine = lobby.myTable {
+                    table = mine
+                } else if let open = lobby.tables.first(where: { !$0.full }) {
+                    table = try await client.ipJoin(table: open.id).table.id
+                    log("🪑 테이블 #\(open.id) 입장 (\(open.humans + 1)/\(open.capacity))")
+                } else {
+                    table = try await client.ipCreate(bots: bots).table.id
+                    log("🪑 테이블 #\(table!) 만듦 · 컴퓨터 \(bots)명")
+                }
+            } catch {
+                log("⚠️ \(error.localizedDescription)")
+                try await Task.sleep(for: .seconds(5))
+            }
+            continue
+        }
+
+        let s = try await client.ipTick(table: t)
+        if !s.me.member {
+            log("🚪 테이블 #\(t)에서 빠짐 (\(s.me.leftReason?.rawValue ?? s.table.status.rawValue))")
+            table = nil
+            try await Task.sleep(for: .seconds(3))
+            continue
+        }
+        if let h = s.hand, h.phase == .done, reported != h.id, let mine = s.mySeat {
+            reported = h.id
+            let cards = s.seats.map { "\($0.name)\($0.bot ? "🤖" : "") \($0.card.map(String.init) ?? "?")\($0.folded ? "✕" : "")" }
+            log("🂠 #\(h.handNo) 판돈 \(h.pot) · \(cards.joined(separator: ", ")) → 나 \(mine.net.map { $0 >= 0 ? "+\($0)" : "\($0)" } ?? "?") · 칩 \(mine.chips ?? 0)")
+        }
+        if let h = s.hand, let o = s.myOptions, acted != "\(h.id):\(h.turnStartedAt?.timeIntervalSince1970 ?? 0)" {
+            acted = "\(h.id):\(h.turnStartedAt?.timeIntervalSince1970 ?? 0)"
+            if Double.random(in: 0..<1) < 0.05 {
+                log("💤 생각에 잠김 (11초 시간 초과)")
+                continue
+            }
+            try await Task.sleep(for: .seconds(Double.random(in: 1...3)))
+            // 상대 최고 카드가 낮으면 강하게, 높으면 약하게
+            let top = s.seats.filter { $0.seat != s.mySeat?.seat && !$0.folded }.compactMap(\.card).max() ?? 5
+            let roll = Double.random(in: 0..<1)
+            let (action, amount): (IPSeat.Action, Int64?) =
+                if top <= 4, o.canRaise, roll < 0.6 { (o.opened ? .raise : .bet, max(o.minRaise, 20)) }
+                else if o.canCheck { (.check, nil) }
+                else if top <= 7 || roll < 0.2 { (.call, nil) }
+                else { (.fold, nil) }
+            do {
+                let after = try await client.ipAction(table: t, action, amount: amount)
+                let mine = after.mySeat
+                log("👉 \(action.rawValue)\(mine?.lastAmount.map { $0 > 0 ? " \($0)" : "" } ?? "")\(mine?.allIn == true ? " (올인)" : "") · 상대 최고 \(top) · 판돈 \(after.hand?.pot ?? 0)")
+            } catch {
+                log("⚠️ \(action.rawValue): \(error.localizedDescription)")
+            }
+            continue
+        }
+        try await Task.sleep(for: .seconds(1))
     }
 }
 
