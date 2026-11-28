@@ -57,6 +57,15 @@ struct RootView: View {
             go(.lounge)
         }
         .task { if store.me == nil { await store.connect() } }
+        #if LOUNGE_DEV
+        // 개발용: LOUNGE_ROOT_WINDOW 창에서 라운지 타일을 누른 것과 같은 경로로 인디언 포커에 들어간다
+        .task {
+            guard let tap = ProcessInfo.processInfo.environment["LOUNGE_TAP_POKER"].flatMap(Double.init) else { return }
+            try? await Task.sleep(for: .seconds(tap))
+            print("tap poker tile")
+            go(.poker(store.poker))
+        }
+        #endif
     }
 
     private var destination: String {
