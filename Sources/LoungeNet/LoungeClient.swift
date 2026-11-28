@@ -61,6 +61,8 @@ public enum LoungeError: LocalizedError {
         case .server("nothing_to_call"): "콜할 칩이 없어요"
         case .server("raise_too_small"): "직전에 올린 만큼은 올려야 해요"
         case .server("invalid_action"): "할 수 없는 행동이에요"
+        case .server("stale_turn"): "이미 지나간 차례예요"
+        case .server("not_started"): "카드를 나눠 주는 중이에요"
         case .server(let m): m
         }
     }
@@ -234,19 +236,21 @@ public final class LoungeClient: Sendable {
     }
 
     /// 마감이 지난 일(시간 초과 폴드, 컴퓨터 행동, 다음 판)을 처리하고 테이블 전부를 받는다.
-    /// 앉아 있다는 표시도 겸한다: 30초 넘게 안 부르면 다음 판 시작 때 자리에서 빠진다
+    /// 연속 2판 시간 초과로 폴드되면 그 판이 끝날 때 자리에서 빠진다(`me.leftReason == .away`)
     public func ipTick(table: Int64) async throws -> IPState {
         do {
             return try await supabase.rpc("ip_tick", params: ["p_table": table]).execute().value
         } catch { throw LoungeError.wrap(error) }
     }
 
-    /// 내 차례 행동. bet·raise의 amount는 지금 베팅 위로 더 올리는 칩 (잔액보다 크면 올인)
-    public func ipAction(table: Int64, _ action: IPSeat.Action, amount: Int64? = nil) async throws -> IPState {
-        struct Params: Encodable { let p_table: Int64; let p_action: String; let p_amount: Int64? }
+    /// 내 차례 행동. hand·turn은 보고 있는 상태의 `hand.id`·`hand.turnNo` (지난 차례로 늦게 도착하면 거절).
+    /// bet·raise의 amount는 지금 베팅 위로 더 올리는 칩 (잔액보다 크면 올인).
+    /// 행동이 안 되면 던지지 않고 `rejected`가 붙은 최신 상태를 돌려준다 (그 사이 정산된 시간 초과 등이 반영됨)
+    public func ipAction(table: Int64, hand: Int64, turn: Int, _ action: IPSeat.Action, amount: Int64? = nil) async throws -> IPState {
+        struct Params: Encodable { let p_table: Int64; let p_hand: Int64; let p_turn: Int; let p_action: String; let p_amount: Int64? }
+        let params = Params(p_table: table, p_hand: hand, p_turn: turn, p_action: action.rawValue, p_amount: amount)
         do {
-            return try await supabase.rpc("ip_action", params: Params(p_table: table, p_action: action.rawValue, p_amount: amount))
-                .execute().value
+            return try await supabase.rpc("ip_action", params: params).execute().value
         } catch { throw LoungeError.wrap(error) }
     }
 

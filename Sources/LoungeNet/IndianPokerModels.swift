@@ -6,6 +6,8 @@ import Foundation
 public enum IndianPoker {
     /// 매 판 자동으로 내는 칩 = 첫 베팅 최소
     public static let ante: Int64 = 10
+    /// 판 시작 뒤 카드를 나눠 주는 연출. 첫 차례는 이 뒤에 시작한다
+    public static let dealSeconds: TimeInterval = 2
     /// 사람 차례 시간 (서버 기준)
     public static let turnSeconds: TimeInterval = 11
     /// 결과를 보여 주는 시간. 끝나면 다음 판
@@ -25,25 +27,54 @@ public struct IPState: Decodable, Sendable, Equatable {
     public let hand: IPHand?
     /// 이번 판 자리. 내 자리의 `card`는 판이 끝나기 전엔 늘 nil
     public let seats: [IPSeat]
+    /// ip_action이 행동을 받지 않았을 때의 이유 (`stale_turn`, `not_your_turn`, `not_started`, `raise_too_small` 등).
+    /// 이때도 밀린 정산은 끝난 최신 상태다. 다른 RPC 결과에선 늘 nil
+    public let rejected: String?
 
-    public init(now: Date, table: IPTable, me: IPMe, members: [IPMember] = [], hand: IPHand? = nil, seats: [IPSeat] = []) {
+    enum CodingKeys: String, CodingKey {
+        case now, table, me, members, hand, seats, rejected
+    }
+
+    public init(now: Date, table: IPTable, me: IPMe, members: [IPMember] = [], hand: IPHand? = nil, seats: [IPSeat] = [],
+                rejected: String? = nil) {
         self.now = now
         self.table = table
         self.me = me
         self.members = members
         self.hand = hand
         self.seats = seats
+        self.rejected = rejected
     }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        now = try c.decode(Date.self, forKey: .now)
+        table = try c.decode(IPTable.self, forKey: .table)
+        me = try c.decode(IPMe.self, forKey: .me)
+        members = try c.decode([IPMember].self, forKey: .members)
+        hand = try c.decodeIfPresent(IPHand.self, forKey: .hand)
+        seats = try c.decode([IPSeat].self, forKey: .seats)
+        rejected = try c.decodeIfPresent(String.self, forKey: .rejected)
+    }
+
+    /// 행동이 거절됐으면 화면에 띄울 에러
+    public var rejectedError: LoungeError? { rejected.map(LoungeError.server) }
 
     /// 이번 판의 내 자리. 판 도중에 들어왔으면 다음 판까지 nil
     public var mySeat: IPSeat? { me.handSeat.flatMap { s in seats.first { $0.seat == s } } }
     /// 지금 차례인 자리
     public var turn: IPSeat? { hand?.turnSeat.flatMap { s in seats.first { $0.seat == s } } }
-    public var isMyTurn: Bool { hand?.phase == .betting && mySeat != nil && turn?.seat == mySeat?.seat }
+    /// `date`(서버 시각으로 보정한 지금)에 내 차례인지. 딜 연출 2초 동안(차례 시작 전)과 마감 뒤엔 false → 버튼 비활성
+    public func isMyTurn(at date: Date) -> Bool {
+        guard let hand, hand.phase == .betting, let mine = mySeat, turn?.seat == mine.seat else { return false }
+        if let start = hand.turnStartedAt, date < start { return false }
+        if let deadline = hand.turnDeadline, date >= deadline { return false }
+        return true
+    }
 
-    /// 내 차례에 할 수 있는 행동 (아니면 비어 있음). 서버 ip_apply와 같은 규칙
-    public var myOptions: IPOptions? {
-        guard isMyTurn, let hand, let mine = mySeat else { return nil }
+    /// `date`에 할 수 있는 행동 (내 차례가 아니면 nil). 서버 ip_apply와 같은 규칙
+    public func myOptions(at date: Date) -> IPOptions? {
+        guard isMyTurn(at: date), let hand, let mine = mySeat else { return nil }
         let toCall = hand.currentBet - mine.bet
         let stack = mine.chips ?? 0
         return IPOptions(toCall: toCall, minRaise: hand.minRaise, stack: stack, opened: hand.currentBet > 0)
@@ -99,7 +130,7 @@ public struct IPMe: Decodable, Sendable, Equatable {
     public enum LeftReason: String, Decodable, Sendable {
         /// 일어나기를 눌렀다
         case leave
-        /// 30초 넘게 tick이 없어서 다음 판 시작 때 빠졌다
+        /// 연속 2판 시간 초과로 자동 폴드돼서 그 판 끝에 빠졌다
         case away
         /// 다음 판 앤티(10칩)가 없어서 빠졌다
         case broke
@@ -148,6 +179,8 @@ public struct IPHand: Decodable, Sendable, Equatable {
     public let firstSeat: Int
     /// 지금 차례. nil = 끝
     public let turnSeat: Int?
+    /// 차례 번호 (차례가 바뀔 때마다 +1). ip_action에 그대로 보낸다
+    public let turnNo: Int
     public let turnStartedAt: Date?
     /// 사람은 시작 + 11초(지나면 자동 폴드), 컴퓨터는 1~5초 뒤 행동
     public let turnDeadline: Date?
@@ -164,12 +197,12 @@ public struct IPHand: Decodable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, phase, pot
-        case handNo = "hand_no", firstSeat = "first_seat", turnSeat = "turn_seat", turnStartedAt = "turn_started_at"
+        case handNo = "hand_no", firstSeat = "first_seat", turnSeat = "turn_seat", turnNo = "turn_no", turnStartedAt = "turn_started_at"
         case turnDeadline = "turn_deadline", currentBet = "current_bet", minRaise = "min_raise"
         case startedAt = "started_at", settledAt = "settled_at", nextAt = "next_at"
     }
 
-    public init(id: Int64, handNo: Int, phase: Phase, firstSeat: Int, turnSeat: Int? = nil, turnStartedAt: Date? = nil,
+    public init(id: Int64, handNo: Int, phase: Phase, firstSeat: Int, turnSeat: Int? = nil, turnNo: Int = 0, turnStartedAt: Date? = nil,
                 turnDeadline: Date? = nil, currentBet: Int64 = 0, minRaise: Int64 = IndianPoker.ante, pot: Int64 = 0,
                 startedAt: Date, settledAt: Date? = nil, nextAt: Date? = nil) {
         self.id = id
@@ -177,6 +210,7 @@ public struct IPHand: Decodable, Sendable, Equatable {
         self.phase = phase
         self.firstSeat = firstSeat
         self.turnSeat = turnSeat
+        self.turnNo = turnNo
         self.turnStartedAt = turnStartedAt
         self.turnDeadline = turnDeadline
         self.currentBet = currentBet

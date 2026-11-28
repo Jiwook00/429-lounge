@@ -1,6 +1,7 @@
 -- 인디언 포커 서버 규칙 확인 (ADR-0023). 로컬 DB 전용, 끝에 rollback이라 흔적이 남지 않는다.
 --   docker exec -i supabase_db_429-lounge psql -U postgres -v ON_ERROR_STOP=1 < supabase/tests/indian_poker.sql
 -- 트랜잭션 안에서는 now()가 멈춰 있으므로, 시간이 지난 일은 ip_advance(테이블, 미래 시각)나 마감을 당겨서 진행한다.
+-- RPC는 clock_timestamp()로 마감을 본다. ipt.next_hand는 새 판의 시각을 지금(clock)으로 당겨, 바로 행동할 수 있게 한다.
 -- 카드는 판이 시작된 뒤 ip_cards를 직접 바꿔 정한다. 마지막은 컴퓨터 판단끼리 수백 판 시뮬레이션.
 begin;
 
@@ -25,10 +26,14 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', u, 'role', 'authenticated')::text, true);
 end $$;
 
--- RPC를 그 회원으로 부르고 예외 메시지(또는 'ok')
+-- RPC를 그 회원으로 부르고 rejected 코드·예외 메시지(또는 'ok'). 판 ID·차례 번호는 지금 것
 create function ipt.act(u uuid, t bigint, a text, amt bigint default null) returns text language plpgsql as $$
-begin perform ipt.as_(u); perform public.ip_action(t, a, amt); return 'ok';
+declare h ip_hands := (select x from ip_hands x where x.table_id = t order by x.hand_no desc limit 1);
+begin perform ipt.as_(u); return coalesce(public.ip_action(t, h.id, h.turn_no, a, amt) ->> 'rejected', 'ok');
 exception when others then return sqlerrm; end $$;
+-- 판 ID·차례 번호를 직접 주는 호출 (지연·재시도 흉내)
+create function ipt.act_at(u uuid, t bigint, hand bigint, turn int, a text, amt bigint default null) returns jsonb language plpgsql as $$
+begin perform ipt.as_(u); return public.ip_action(t, hand, turn, a, amt); end $$;
 create function ipt.create_(u uuid, bots int) returns text language plpgsql as $$
 begin perform ipt.as_(u); return (public.ip_create(bots) -> 'table' ->> 'id');
 exception when others then return sqlerrm; end $$;
@@ -57,8 +62,16 @@ create function ipt.next_hand(t bigint) returns void language plpgsql as $$
 declare h ip_hands := ipt.hand(t);
 begin
   if h.phase <> 'done' then raise exception 'hand not done'; end if;
-  update ip_members set seen_at = h.next_at where table_id = t and left_at is null;
   perform ip_advance(t, h.next_at);
+  -- 첫 차례가 0.5초 전에 시작한 것으로 당긴다 (RPC는 실제 시각 기준)
+  h := ipt.hand(t);
+  if h.phase = 'betting' then
+    update ip_hands
+    set started_at = started_at - (turn_started_at - clock_timestamp()) - interval '0.5 seconds',
+        turn_deadline = turn_deadline - (turn_started_at - clock_timestamp()) - interval '0.5 seconds',
+        turn_started_at = clock_timestamp() - interval '0.5 seconds'
+    where id = h.id;
+  end if;
 end $$;
 -- 판을 끝낸다: 사람은 모두 폴드
 create function ipt.finish(t bigint) returns void language plpgsql as $$
@@ -93,7 +106,9 @@ begin
   perform ipt.chk('만들기: 4석', (select capacity from ip_tables where id = t) = 4, r);
   h := ipt.hand(t);
   perform ipt.chk('첫 판 바로 시작, 첫 행동 1번', h.hand_no = 1 and h.phase = 'betting' and h.first_seat = 1 and h.turn_seat = 1);
-  perform ipt.chk('사람 차례 11초 (+딜 2초)', h.turn_deadline - h.turn_started_at = interval '11 seconds' and h.turn_started_at = now() + interval '2 seconds');
+  perform ipt.chk('사람 차례 11초 (+딜 2초)', h.turn_deadline - h.turn_started_at = interval '11 seconds' and h.turn_started_at - h.started_at = interval '2 seconds');
+  r := ipt.act(a, t, 'check'); perform ipt.chk('딜 연출 2초 동안은 행동 거절(상태는 돌려줌)', r = 'not_started', r);
+  perform ipt.chk('거절돼도 차례 그대로', (ipt.hand(t)).turn_seat = 1 and (ipt.seat(t, 1)).last_action is null);
   perform ipt.chk('앤티 10 차감', ipt.chips(a) = 990, ipt.chips(a)::text);
   perform ipt.chk('나머지 자리는 컴퓨터', (select count(*) from ip_hand_seats where hand_id = h.id and player_id is null) = 3);
   perform ipt.chk('앤티 판돈 40', (select sum(put) from ip_hand_seats where hand_id = h.id) = 40);
@@ -284,7 +299,7 @@ begin
   r := ipt.act(b, t, 'bet', 20);
   perform ipt.chk('B 베팅 20', r = 'ok' and (ipt.seat(t, 2)).put = 30, r);
   h := ipt.hand(t);
-  perform ipt.chk('다음은 C, 다시 11초', h.turn_seat = 3 and h.turn_deadline = now() + interval '11 seconds');
+  perform ipt.chk('다음은 C, 다시 11초', h.turn_seat = 3 and h.turn_deadline - h.turn_started_at = interval '11 seconds' and h.turn_started_at >= now());
 
   -- C 시간 초과 → 자동 폴드, 낸 앤티는 판돈에 남음
   update ip_hands set turn_deadline = now() - interval '1 second' where id = h.id;
@@ -297,9 +312,11 @@ begin
   st := ipt.leave_(b, t);
   h := ipt.hand(t);
   perform ipt.chk('이탈 = 폴드', (ipt.seat(t, 2)).folded and (ipt.seat(t, 2)).last_action = 'leave');
-  perform ipt.chk('하나 남으면 바로 정산, 나간 B의 베팅까지 A가 50', h.phase = 'done' and (ipt.seat(t, 1)).payout = 50 and (ipt.seat(t, 2)).payout = 0, h.phase);
+  -- B의 베팅 20은 아무도 콜하지 않은 초과분이라 B에게 돌아가고, 앤티 30(B·C 몫 포함)은 A
+  perform ipt.chk('하나 남으면 바로 정산: A 30, 콜 안 된 B의 20은 환불', h.phase = 'done' and (ipt.seat(t, 1)).payout = 30 and (ipt.seat(t, 2)).payout = 20,
+    (ipt.seat(t, 1)).payout || '/' || (ipt.seat(t, 2)).payout);
   perform ipt.chk('B는 자리에서 빠짐', (st -> 'me' ->> 'member')::boolean = false and st -> 'me' ->> 'left_reason' = 'leave');
-  r := ipt.act(b, t, 'check'); perform ipt.chk('나간 뒤 행동 거절', r = 'not_your_turn', r);
+  r := ipt.act(b, t, 'check'); perform ipt.chk('나간 뒤 행동 거절', r in ('stale_turn', 'not_your_turn'), r);
 
   -- 다음 판: A, C(사람) + 2번 컴퓨터. 첫 행동 3번(C). C 차례에 C가 나가면 바로 다음 차례
   perform ipt.next_hand(t);
@@ -319,27 +336,117 @@ begin
   perform ipt.chk('닫힌 테이블은 로비에서 빠짐', x = 0);
 end $$;
 
--- 잠수와 계속 보는 사람
+-- 잠수: 이탈·끊김은 차례 타이머로만. 연속 2판 시간 초과면 그 판 끝에 빠진다 (판 시작 때 따로 검사하지 않음)
 do $$
-declare a uuid; t bigint; h ip_hands; x int; st jsonb;
+declare a uuid; b uuid; t bigint; h ip_hands; r text;
 begin
-  -- 비우고 떠난 테이블: 아무도 tick을 안 부르다가 1시간 뒤 로비에서 따라잡는다
+  -- 만들자마자 사라진 사람: 아무도 tick을 안 부르다가 1시간 뒤 따라잡는다
   a := ipt.mk('잠수A', 1000);
   t := ipt.create_(a, 3)::bigint;
-  perform ip_advance(t, now() + interval '1 hour');
+  perform ip_advance(t, (ipt.hand(t)).started_at + interval '1 hour');
   h := ipt.hand(t);
-  -- 1판 시간 초과(13초) → 2판(18초, 마지막으로 본 지 30초 안) 시간 초과 → 3판 시작(36초)에서 away
-  perform ipt.chk('따라잡기: 시간 초과 폴드 → 30초 지나 판 시작 때 away로 빠지고 닫힘',
+  perform ipt.chk('따라잡기: 2판 연속 시간 초과 → 2판 끝에 away로 빠지고 닫힘',
     (select status from ip_tables where id = t) = 'closed' and h.hand_no = 2 and (ipt.seat(t, 1)).last_action = 'timeout'
     and (select left_reason from ip_members where table_id = t and player_id = a) = 'away', h.hand_no::text);
-  perform ipt.chk('잠수한 사람은 앤티 두 번까지만 잃음', ipt.chips(a) = 980, ipt.chips(a)::text);
+  perform ipt.chk('잠수한 사람은 그 2판 앤티만 잃음', ipt.chips(a) = 980, ipt.chips(a)::text);
 
-  -- 틱을 계속 부르던 사람은 그대로 (seen_at이 갱신돼서)
-  a := ipt.mk('계속A', 1000);
+  -- 시간 초과 사이에 한 번이라도 직접 행동하면 처음부터 다시 센다
+  a := ipt.mk('초과A', 1000); b := ipt.mk('초과B', 1000);
   t := ipt.create_(a, 1)::bigint;
+  perform ipt.join_(b, t);
   perform ipt.finish(t);
+  perform ipt.next_hand(t);                         -- 2판: B부터
+  r := ipt.act(b, t, 'check');
+  perform ip_advance(t, (ipt.hand(t)).turn_deadline); -- A 시간 초과 1
+  perform ipt.chk('시간 초과 1번', (select timeouts from ip_members where table_id = t and player_id = a and left_at is null) = 1);
+  perform ipt.next_hand(t);                         -- 3판: A부터, A가 직접 체크 → 0
+  r := ipt.act(a, t, 'check'); r := ipt.act(b, t, 'check');
+  perform ipt.chk('직접 행동하면 0으로', (select timeouts from ip_members where table_id = t and player_id = a and left_at is null) = 0, r);
+  perform ipt.next_hand(t);                         -- 4판: B부터, A 시간 초과 1
+  r := ipt.act(b, t, 'check');
+  perform ip_advance(t, (ipt.hand(t)).turn_deadline);
+  perform ipt.chk('초기화 뒤 한 번은 그대로 앉아 있음', exists (select 1 from ip_members where table_id = t and player_id = a and left_at is null));
+  perform ipt.next_hand(t);                         -- 5판: A부터, 바로 시간 초과 2 → 판이 끝나며 빠짐
+  perform ip_advance(t, (ipt.hand(t)).turn_deadline);
+  h := ipt.hand(t);
+  perform ipt.chk('연속 2판 시간 초과 → 그 판 끝에 away', h.hand_no = 5 and h.phase = 'done'
+    and (select left_reason from ip_members where table_id = t and player_id = a order by id desc limit 1) = 'away');
+  perform ipt.chk('남은 B는 그대로, 다음 판은 컴퓨터가 A 자리', exists (select 1 from ip_members where table_id = t and player_id = b and left_at is null));
   perform ipt.next_hand(t);
-  perform ipt.chk('보고 있으면 다음 판도 앉아 있음', (ipt.hand(t)).hand_no = 2 and (ipt.seat(t, 1)).player_id = a);
+  perform ipt.chk('A 자리 컴퓨터로', (ipt.seat(t, 1)).player_id is null);
+end $$;
+
+
+-- ============ 리뷰 반영: 차례 밖 이탈 공개, 이탈자 초과분 환불, 마감 뒤 행동, 지난 차례 ============
+do $$
+declare a uuid; b uuid; c uuid; d uuid; t bigint; h ip_hands; r text; st jsonb; before bigint;
+begin
+  -- 리뷰2: 사람 셋, C는 앤티로 올인, B 차례, 카드 7/10/1. 차례 밖 A가 나가면 B(맞춘 행동 가능 좌석 하나) + 올인만 → 바로 공개
+  a := ipt.mk('리뷰2A', 1000); b := ipt.mk('리뷰2B', 1000); c := ipt.mk('리뷰2C', 1000);
+  t := ipt.create_(a, 2)::bigint;
+  perform ipt.join_(b, t); perform ipt.join_(c, t); perform ipt.finish(t);
+  update players set chips = 10 where id = c;
+  perform ipt.next_hand(t); perform ipt.cards(t, array[7, 10, 1]);
+  perform ipt.chk('리뷰2 준비: B 차례, C 앤티 올인', (ipt.hand(t)).turn_seat = 2 and (ipt.seat(t, 3)).all_in);
+  perform ipt.leave_(a, t);
+  h := ipt.hand(t);
+  perform ipt.chk('차례 밖 이탈도 같은 판정으로 바로 공개', h.phase = 'done', h.phase);
+  perform ipt.chk('B가 30칩 (C는 0)', (ipt.seat(t, 2)).payout = 30 and (ipt.seat(t, 3)).payout = 0,
+    (ipt.seat(t, 2)).payout || '/' || (ipt.seat(t, 3)).payout);
+
+  -- 리뷰3: B 90 베팅(앤티 포함 100), C 40 올인 콜(50), A 앤티 10. B·A가 나가면 C는 50 + B에게서 50 + A 10 = 110까지
+  a := ipt.mk('리뷰3A', 1000); b := ipt.mk('리뷰3B', 1000); c := ipt.mk('리뷰3C', 1000);
+  t := ipt.create_(a, 2)::bigint;
+  perform ipt.join_(b, t); perform ipt.join_(c, t); perform ipt.finish(t);
+  update players set chips = 50 where id = c;
+  before := ipt.chips(a) + ipt.chips(b) + ipt.chips(c);
+  perform ipt.next_hand(t); perform ipt.cards(t, array[7, 10, 9]);
+  r := ipt.act(b, t, 'bet', 90); r := r || '/' || ipt.act(c, t, 'call');
+  perform ipt.chk('리뷰3 준비', r = 'ok/ok' and (ipt.seat(t, 3)).all_in and (ipt.seat(t, 2)).put = 100 and (ipt.seat(t, 3)).put = 50, r);
+  perform ipt.leave_(b, t); perform ipt.leave_(a, t);
+  h := ipt.hand(t);
+  perform ipt.chk('올인 상한: C는 110까지', h.phase = 'done' and (ipt.seat(t, 3)).payout = 110, (ipt.seat(t, 3)).payout::text);
+  perform ipt.chk('아무도 못 받은 B의 초과 50은 B에게 환불', (ipt.seat(t, 2)).payout = 50 and (ipt.seat(t, 1)).payout = 0,
+    (ipt.seat(t, 2)).payout::text);
+  perform ipt.chk('리뷰3 칩 합계 보존', ipt.chips(a) + ipt.chips(b) + ipt.chips(c) = before);
+
+  -- 리뷰1: 넷이 서로 다른 금액으로 올인 (210/30/70/110 → 100/120/120/80)
+  a := ipt.mk('리뷰1A', 1000); b := ipt.mk('리뷰1B', 1000); c := ipt.mk('리뷰1C', 1000); d := ipt.mk('리뷰1D', 1000);
+  t := ipt.create_(a, 3)::bigint;
+  perform ipt.join_(b, t); perform ipt.join_(c, t); perform ipt.join_(d, t); perform ipt.finish(t);
+  update players set chips = case id when a then 210 when b then 30 when c then 70 else 110 end where id in (a, b, c, d);
+  perform ipt.next_hand(t); perform ipt.cards(t, array[7, 10, 9, 8]);
+  r := ipt.act(b, t, 'bet', 1000) || ipt.act(c, t, 'raise', 1000) || ipt.act(d, t, 'raise', 1000) || ipt.act(a, t, 'raise', 100);
+  h := ipt.hand(t);
+  perform ipt.chk('넷 다른 금액 올인: 지급 100/120/120/80',
+    h.phase = 'done' and (select array_agg(payout order by seat) from ip_hand_seats where hand_id = h.id) = array[100, 120, 120, 80]::bigint[]
+    and (select array_agg(put order by seat) from ip_hand_seats where hand_id = h.id) = array[210, 30, 70, 110]::bigint[],
+    (select array_agg(payout order by seat) from ip_hand_seats where hand_id = h.id)::text);
+
+  -- 리뷰4: 마감이 지난 행동 → 예외 대신 rejected + 자동 폴드·정산이 반영된 상태
+  a := ipt.mk('리뷰4A', 1000); b := ipt.mk('리뷰4B', 1000);
+  t := ipt.create_(a, 1)::bigint;
+  perform ipt.join_(b, t); perform ipt.finish(t); perform ipt.next_hand(t);
+  h := ipt.hand(t);
+  update ip_hands set turn_deadline = now() - interval '1 second' where id = h.id;
+  st := ipt.act_at(b, t, h.id, h.turn_no, 'check');
+  perform ipt.chk('마감 뒤 행동: 오류 대신 stale_turn과 상태', st ->> 'rejected' = 'stale_turn', st ->> 'rejected');
+  perform ipt.chk('그 호출이 시간 초과 폴드·정산을 함께 반영', st -> 'hand' ->> 'phase' = 'done' and (ipt.hand(t)).phase = 'done'
+    and (ipt.seat(t, 2)).last_action = 'timeout' and (ipt.seat(t, 1)).payout = 20);
+
+  -- 지난 차례·지난 판 ID로 온 행동은 다음 차례에 적용되지 않는다
+  perform ipt.next_hand(t);                          -- 3판: A부터
+  h := ipt.hand(t);
+  st := ipt.act_at(a, t, h.id, h.turn_no - 1, 'check');
+  perform ipt.chk('지난 차례 번호 거절', st ->> 'rejected' = 'stale_turn' and (ipt.seat(t, 1)).last_action is null);
+  st := ipt.act_at(a, t, h.id - 1, h.turn_no, 'check');
+  perform ipt.chk('지난 판 ID 거절', st ->> 'rejected' = 'stale_turn');
+  st := ipt.act_at(a, t, h.id, h.turn_no, 'check');
+  perform ipt.chk('맞는 판·차례면 받음, 차례 번호 +1', st ->> 'rejected' is null and (st -> 'hand' ->> 'turn_no')::int = h.turn_no + 1);
+  st := ipt.act_at(a, t, h.id, h.turn_no, 'check');  -- 같은 요청 재시도: 이제 B 차례
+  perform ipt.chk('재시도된 같은 요청은 B 차례에 적용 안 됨', st ->> 'rejected' = 'stale_turn' and (ipt.hand(t)).turn_seat = 2);
+  st := ipt.act_at(b, t, h.id, h.turn_no + 1, 'bet', 5);
+  perform ipt.chk('규칙 위반도 상태와 함께 rejected', st ->> 'rejected' = 'raise_too_small' and st -> 'hand' ->> 'phase' = 'betting');
 end $$;
 
 
@@ -430,9 +537,6 @@ begin
   select count(*) into bad from ip_hand_seats a
   join ip_hands hh on hh.id = a.hand_id
   where a.all_in and hh.table_id in (select distinct m.table_id from ip_members m where m.player_id = any(pl))
-    -- 이탈로 접은 사람이 더 많이 낸 판은 그 칩이 남은 사람에게 가므로 뺀다
-    and not exists (select 1 from ip_hand_seats f where f.hand_id = a.hand_id and f.folded
-                    and f.put > (select max(put) from ip_hand_seats l where l.hand_id = a.hand_id and not l.folded))
     and a.payout > (select sum(least(o.put, a.put)) from ip_hand_seats o where o.hand_id = a.hand_id);
   perform ipt.chk('시뮬: 올인은 낸 만큼만 땀', bad = 0, bad::text);
   select count(*) into bad from ip_hand_seats a join ip_hands hh on hh.id = a.hand_id

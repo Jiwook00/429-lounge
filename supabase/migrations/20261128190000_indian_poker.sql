@@ -7,6 +7,8 @@
 -- 좌석: 사람 + 컴퓨터 2~4석(테이블 만들 때 컴퓨터 1~3명). 사람이 들어오면 다음 판부터 컴퓨터 자리를 차지한다.
 --       사람이 모두 나가면 진행 중 판이 끝나는 대로 닫힌다. 첫 행동 자리는 판마다 한 칸씩 돈다.
 -- 시간: 사람 차례 11초(서버 기준), 넘기면 자동 폴드. 컴퓨터는 1~5초 뒤 행동. 결과 5초 뒤 다음 판.
+--       이탈·끊김은 차례 타이머로만 처리한다: 연속 2판 시간 초과로 폴드되면 그 판이 끝날 때 자리에서 뺀다.
+-- 기준 시각: RPC는 테이블 잠금을 잡은 뒤의 clock_timestamp()로 마감을 판단한다 (트랜잭션 시작 시각 now()가 아니라).
 -- 지연 정산(ADR-0003, ADR-0014와 같음): 상주 프로세스가 없다. 앉은 클라이언트가 ip_tick을 부르면 마감이 지난
 --   차례(시간 초과 폴드, 컴퓨터 행동, 다음 판 시작)를 순서대로 처리한다. 다음 마감은 직전 마감에서 이어 계산해서,
 --   아무도 tick을 안 부른 사이의 일도 다음 tick 때 같은 결과로 따라잡는다.
@@ -35,9 +37,9 @@ create table public.ip_members (
   player_id   uuid not null references public.players (id) on delete cascade,
   seat        smallint not null check (seat between 1 and 4),
   joined_at   timestamptz not null default now(),
-  seen_at     timestamptz not null default now(), -- 마지막 tick·행동. 판을 시작할 때 30초 넘게 없으면 자리를 뺀다
+  timeouts    int not null default 0,             -- 연속 시간 초과 폴드 수. 직접 행동하면 0, 2가 되면 그 판 끝에 뺀다
   left_at     timestamptz,
-  left_reason text check (left_reason in ('leave', 'away', 'broke'))
+  left_reason text check (left_reason in ('leave', 'away', 'broke')) -- away = 연속 2판 시간 초과
 );
 create unique index ip_members_seat_uq on public.ip_members (table_id, seat) where left_at is null;
 create unique index ip_members_player_uq on public.ip_members (player_id) where left_at is null; -- 한 번에 한 테이블
@@ -50,6 +52,7 @@ create table public.ip_hands (
   phase           text not null default 'betting' check (phase in ('betting', 'done')),
   first_seat      smallint not null,     -- 이번 판 첫 행동 자리 (판마다 한 칸씩)
   turn_seat       smallint,              -- null = 끝
+  turn_no         int not null default 0, -- 차례가 바뀔 때마다 +1. ip_action이 이 값으로 지연·재시도 행동을 걸러낸다
   turn_started_at timestamptz,
   turn_deadline   timestamptz,           -- 사람은 시작 + 11초, 컴퓨터는 1~5초 뒤 행동
   current_bet     bigint not null default 0, -- 이번 판 가장 높은 베팅 (앤티 제외)
@@ -111,8 +114,8 @@ revoke all on public.ip_cards from public, anon, authenticated;
 -- ============================================================
 
 -- 판 정산. 사이드팟: 접지 않은 사람들이 낸 금액 단계마다 팟을 나눠, 그 단계까지 낸 사람 중 높은 카드가 가져간다.
--- 접은 사람이 낸 칩은 판돈에 남는다. 이탈로 접은 사람이 접지 않은 누구보다 많이 냈으면(정상 진행에선 안 생김),
--- 그 넘는 칩은 마지막(가장 높은) 단계 팟에 들어간다.
+-- 접은 사람이 낸 칩은 판돈에 남는다. 단 이탈로 접은 사람이 접지 않은 누구보다 많이 냈으면(정상 진행에선 안 생김),
+-- 남은 누구도 콜하지 못한 그 초과분은 낸 사람에게 돌려준다 (올인 상한이 우선: 올인한 사람은 낸 만큼만 딴다).
 -- 동점이면 나누고, 나눠 떨어지지 않는 칩은 첫 행동 자리부터 한 칩씩.
 create function public.ip_settle(p_hand bigint, p_base timestamptz)
 returns void
@@ -133,11 +136,10 @@ begin
   select capacity into cap from ip_tables where id = h.table_id;
 
   select max(put) into lmax from ip_hand_seats where hand_id = p_hand and not folded;
-  update ip_hand_seats set payout = 0 where hand_id = p_hand;
+  update ip_hand_seats set payout = put - least(put, lmax) where hand_id = p_hand; -- 아무도 못 받은 초과분 환불
 
   for lv in select distinct put from ip_hand_seats where hand_id = p_hand and not folded order by put loop
-    select sum(case when lv = lmax then put else least(put, lv) end - least(put, prev)) into slice
-    from ip_hand_seats where hand_id = p_hand;
+    select sum(least(put, lv) - least(put, prev)) into slice from ip_hand_seats where hand_id = p_hand;
     select max(c.card) into best
     from ip_hand_seats s join ip_cards c on c.hand_id = s.hand_id and c.seat = s.seat
     where s.hand_id = p_hand and not s.folded and s.put >= lv;
@@ -156,15 +158,34 @@ begin
   where s.hand_id = p_hand and s.player_id = p.id and s.payout > 0;
 
   update ip_hands
-  set phase = 'done', turn_seat = null, turn_started_at = null, turn_deadline = null,
+  set phase = 'done', turn_seat = null, turn_started_at = null, turn_deadline = null, turn_no = turn_no + 1,
       settled_at = p_base, next_at = p_base + interval '5 seconds'
   where id = p_hand;
+
+  -- 연속 2판 시간 초과로 폴드된 사람은 이 판이 끝나며 자리에서 뺀다 (이탈·끊김은 차례 타이머로만 판단)
+  update ip_members set left_at = p_base, left_reason = 'away'
+  where table_id = h.table_id and left_at is null and timeouts >= 2;
 end $$;
 
--- 다음 차례를 정한다. 더 할 사람이 없으면 정산
---  - 접지 않은 자리가 하나뿐 / 접지 않은 사람이 없음(컴퓨터끼리 남음) → 바로 정산
---  - 행동할 수 있는 자리(접지 않음·올인 아님)가 없거나, 하나뿐인데 이미 가장 높은 베팅을 맞췄으면 → 정산
---  - 아니면 지금 차례 다음 자리부터 돌며, 아직 행동 안 했거나 베팅이 모자란 첫 자리
+-- 더 행동할 사람이 없어 바로 공개·정산해야 하는지 (ip_next_turn, 차례 밖 이탈이 같이 쓴다)
+--  - 접지 않은 자리가 하나뿐 / 접지 않은 사람이 없음(컴퓨터끼리 남음)
+--  - 행동할 수 있는 자리(접지 않음·올인 아님)가 없거나, 하나뿐인데 이미 가장 높은 베팅을 맞췄음
+create function public.ip_should_end(p_hand bigint)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select x.live <= 1 or x.live_humans = 0 or x.active = 0
+      or (x.active = 1 and x.active_bet >= x.maxbet)
+  from (
+    select count(*) filter (where not folded) as live,
+           count(*) filter (where not folded and player_id is not null) as live_humans,
+           count(*) filter (where not folded and not all_in) as active,
+           max(bet) filter (where not folded and not all_in) as active_bet,
+           max(bet) filter (where not folded) as maxbet
+    from ip_hand_seats where hand_id = p_hand) x
+$$;
+
+-- 다음 차례를 정한다. 더 할 사람이 없으면(ip_should_end) 정산.
+-- 아니면 지금 차례 다음 자리부터 돌며, 아직 행동 안 했거나 베팅이 모자란 첫 자리
 create function public.ip_next_turn(p_hand bigint, p_base timestamptz)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -172,25 +193,13 @@ declare
   h ip_hands;
   cap smallint;
   start smallint;
-  live int;
-  live_humans int;
-  active int;
-  maxbet bigint;
   nxt ip_hand_seats;
 begin
   select * into h from ip_hands where id = p_hand for update;
   if h.phase <> 'betting' then return; end if;
   select capacity into cap from ip_tables where id = h.table_id;
 
-  select count(*) filter (where not folded),
-         count(*) filter (where not folded and player_id is not null),
-         count(*) filter (where not folded and not all_in),
-         max(bet) filter (where not folded)
-    into live, live_humans, active, maxbet
-  from ip_hand_seats where hand_id = p_hand;
-
-  if live <= 1 or live_humans = 0 or active = 0
-     or (active = 1 and (select bet from ip_hand_seats where hand_id = p_hand and not folded and not all_in) >= maxbet) then
+  if ip_should_end(p_hand) then
     perform ip_settle(p_hand, p_base);
     return;
   end if;
@@ -207,7 +216,7 @@ begin
   end if;
 
   update ip_hands
-  set turn_seat = nxt.seat, turn_started_at = p_base,
+  set turn_seat = nxt.seat, turn_started_at = p_base, turn_no = turn_no + 1,
       turn_deadline = p_base + case when nxt.player_id is null
                                     then (1 + random() * 4) * interval '1 second'
                                     else interval '11 seconds' end
@@ -237,6 +246,12 @@ begin
     stack := 1000000000000; -- 컴퓨터는 칩이 무한
   else
     select chips into stack from players where id = s.player_id for update;
+  end if;
+
+  -- 연속 시간 초과 수: 시간 초과면 +1, 직접 행동하면 0
+  if s.player_id is not null then
+    update ip_members set timeouts = case when p_action = 'timeout' then timeouts + 1 else 0 end
+    where table_id = h.table_id and player_id = s.player_id and left_at is null;
   end if;
 
   if p_action in ('fold', 'timeout') then
@@ -345,7 +360,7 @@ begin
   end if;
 end $$;
 
--- 새 판. 30초 넘게 안 보인 사람·앤티가 없는 사람은 자리에서 뺀다. 사람이 아무도 없으면 테이블을 닫고 false
+-- 새 판. 앤티가 없는 사람은 자리에서 뺀다. 사람이 아무도 없으면 테이블을 닫고 false
 create function public.ip_start_hand(p_table bigint, p_base timestamptz)
 returns boolean
 language plpgsql security definer set search_path = public as $$
@@ -361,8 +376,6 @@ begin
   select * into t from ip_tables where id = p_table for update;
   if t.status <> 'open' then return false; end if;
 
-  update ip_members set left_at = p_base, left_reason = 'away'
-  where table_id = p_table and left_at is null and seen_at < p_base - interval '30 seconds';
   update ip_members mm set left_at = p_base, left_reason = 'broke'
   from players p
   where p.id = mm.player_id and mm.table_id = p_table and mm.left_at is null and p.chips < 10;
@@ -398,7 +411,7 @@ begin
     m := null;
   end loop;
 
-  -- 카드를 나눠 주는 연출 2초 뒤 첫 차례
+  -- 카드를 나눠 주는 연출 2초 뒤 첫 차례 (그 전엔 ip_action이 not_started로 거절)
   perform ip_next_turn(h.id, p_base + interval '2 seconds');
   return true;
 end $$;
@@ -462,7 +475,7 @@ begin
   end if;
 
   return jsonb_build_object(
-    'now', now(),
+    'now', clock_timestamp(),
     'table', jsonb_build_object('id', t.id, 'capacity', t.capacity, 'status', t.status, 'closed_at', t.closed_at),
     'me', jsonb_build_object(
       'member', member,
@@ -475,7 +488,7 @@ begin
       where x.table_id = p_table and x.left_at is null), '[]'::jsonb),
     'hand', case when h.id is null then null else jsonb_build_object(
       'id', h.id, 'hand_no', h.hand_no, 'phase', h.phase, 'first_seat', h.first_seat,
-      'turn_seat', h.turn_seat, 'turn_started_at', h.turn_started_at, 'turn_deadline', h.turn_deadline,
+      'turn_seat', h.turn_seat, 'turn_no', h.turn_no, 'turn_started_at', h.turn_started_at, 'turn_deadline', h.turn_deadline,
       'current_bet', h.current_bet, 'min_raise', h.min_raise,
       'pot', (select sum(put) from ip_hand_seats where hand_id = h.id),
       'started_at', h.started_at, 'settled_at', h.settled_at, 'next_at', h.next_at) end,
@@ -509,11 +522,11 @@ begin
   if me is null then raise exception 'not_authenticated'; end if;
   for tid in select id from ip_tables where status = 'open' order by id loop
     perform pg_advisory_xact_lock(hashtext('ip:' || tid));
-    perform ip_advance(tid, now());
+    perform ip_advance(tid, clock_timestamp());
   end loop;
 
   return jsonb_build_object(
-    'now', now(),
+    'now', clock_timestamp(),
     'my_table', (select table_id from ip_members where player_id = me and left_at is null),
     'tables', coalesce((
       select jsonb_agg(jsonb_build_object(
@@ -549,7 +562,7 @@ begin
   insert into ip_tables (capacity, bot_names, created_by) values (p_bots + 1, names[1:4], me) returning id into tid;
   perform pg_advisory_xact_lock(hashtext('ip:' || tid));
   insert into ip_members (table_id, player_id, seat) values (tid, me, 1);
-  perform ip_start_hand(tid, now());
+  perform ip_start_hand(tid, clock_timestamp());
   return ip_state(tid, me);
 exception
   when unique_violation then raise exception 'already_at_table';
@@ -566,13 +579,12 @@ declare
 begin
   if me is null then raise exception 'not_authenticated'; end if;
   perform pg_advisory_xact_lock(hashtext('ip:' || p_table));
-  perform ip_advance(p_table, now());
+  perform ip_advance(p_table, clock_timestamp());
   select * into t from ip_tables where id = p_table;
   if not found then raise exception 'no_table'; end if;
   if t.status <> 'open' then raise exception 'table_closed'; end if;
 
   if exists (select 1 from ip_members where table_id = p_table and player_id = me and left_at is null) then
-    update ip_members set seen_at = now() where table_id = p_table and player_id = me and left_at is null;
     return ip_state(p_table, me);
   end if;
   if exists (select 1 from ip_members where player_id = me and left_at is null) then raise exception 'already_at_table'; end if;
@@ -583,7 +595,7 @@ begin
   where not exists (select 1 from ip_members where table_id = p_table and seat = i and left_at is null);
   if free is null then raise exception 'table_full'; end if;
 
-  insert into ip_members (table_id, player_id, seat) values (p_table, me, free);
+  insert into ip_members (table_id, player_id, seat, joined_at) values (p_table, me, free, clock_timestamp());
   return ip_state(p_table, me);
 exception
   when unique_violation then raise exception 'already_at_table';
@@ -595,14 +607,16 @@ returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   me uuid := auth.uid();
+  t_now timestamptz;
   h ip_hands;
   s ip_hand_seats;
 begin
   if me is null then raise exception 'not_authenticated'; end if;
   perform pg_advisory_xact_lock(hashtext('ip:' || p_table));
-  perform ip_advance(p_table, now());
+  t_now := clock_timestamp();
+  perform ip_advance(p_table, t_now);
 
-  update ip_members set left_at = now(), left_reason = 'leave'
+  update ip_members set left_at = t_now, left_reason = 'leave'
   where table_id = p_table and player_id = me and left_at is null;
   if not found then return ip_state(p_table, me); end if;
 
@@ -613,10 +627,10 @@ begin
       update ip_hand_seats set folded = true, acted = true, last_action = 'leave', last_amount = 0
       where hand_id = h.id and seat = s.seat;
       if h.turn_seat = s.seat then
-        perform ip_next_turn(h.id, now());
-      elsif not exists (select 1 from ip_hand_seats where hand_id = h.id and not folded and player_id is not null)
-            or (select count(*) from ip_hand_seats where hand_id = h.id and not folded) <= 1 then
-        perform ip_settle(h.id, now());
+        perform ip_next_turn(h.id, t_now);
+      elsif ip_should_end(h.id) then
+        -- 차례 밖 이탈도 다음 차례와 같은 판정: 더 행동할 사람이 없으면 바로 공개
+        perform ip_settle(h.id, t_now);
       end if;
     end if;
   end if;
@@ -624,13 +638,12 @@ begin
   -- 사람이 아무도 없고 진행 중인 판도 없으면 바로 닫는다
   if not exists (select 1 from ip_members where table_id = p_table and left_at is null)
      and not exists (select 1 from ip_hands where table_id = p_table and phase = 'betting') then
-    update ip_tables set status = 'closed', closed_at = now() where id = p_table and status = 'open';
+    update ip_tables set status = 'closed', closed_at = t_now where id = p_table and status = 'open';
   end if;
   return ip_state(p_table, me);
 end $$;
 
--- 마감이 지난 일을 처리하고 지금 테이블 전부를 받는다. 앉은 사람의 "아직 있음" 표시도 겸한다
--- (따라잡기가 먼저라, 오래 비웠다 돌아온 사람은 밀린 판 시작 때 자리에서 빠져 있다)
+-- 마감이 지난 일을 처리하고 지금 테이블 전부를 받는다
 create function public.ip_tick(p_table bigint)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -639,33 +652,51 @@ declare
 begin
   if me is null then raise exception 'not_authenticated'; end if;
   perform pg_advisory_xact_lock(hashtext('ip:' || p_table));
-  perform ip_advance(p_table, now());
-  update ip_members set seen_at = now() where table_id = p_table and player_id = me and left_at is null;
+  perform ip_advance(p_table, clock_timestamp());
   return ip_state(p_table, me);
 end $$;
 
--- 내 차례 행동: check | bet | call | raise | fold. bet·raise의 p_amount는 지금 베팅 위로 올리는 칩
-create function public.ip_action(p_table bigint, p_action text, p_amount bigint default null)
+-- 내 차례 행동: check | bet | call | raise | fold. bet·raise의 p_amount는 지금 베팅 위로 올리는 칩.
+-- p_hand·p_turn은 행동하려는 판 ID와 차례 번호(ip_state의 hand.id, hand.turn_no). 다르면 지연·재시도된 요청이라 거절.
+-- 마감 판단은 잠금을 잡은 뒤의 clock_timestamp(). 먼저 밀린 일(시간 초과 폴드 등)을 정산하고,
+-- 행동이 안 되면 예외 대신 그 상태에 rejected 코드를 붙여 돌려준다 → 정산은 커밋되고 앱은 바로 새 상태를 그린다.
+--   rejected: stale_turn(지난 판·차례) / not_your_turn / not_started(딜 연출 2초 중) / ip_apply의 규칙 코드
+create function public.ip_action(p_table bigint, p_hand bigint, p_turn int, p_action text, p_amount bigint default null)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   me uuid := auth.uid();
+  t_now timestamptz;
   h ip_hands;
   my_seat smallint;
+  code text;
 begin
   if me is null then raise exception 'not_authenticated'; end if;
   if p_action is null or p_action not in ('check', 'bet', 'call', 'raise', 'fold') then raise exception 'invalid_action'; end if;
   perform pg_advisory_xact_lock(hashtext('ip:' || p_table));
-  perform ip_advance(p_table, now());
+  t_now := clock_timestamp();
+  perform ip_advance(p_table, t_now);
 
   select * into h from ip_hands where table_id = p_table order by hand_no desc limit 1;
-  if not found or h.phase <> 'betting' then raise exception 'not_your_turn'; end if;
-  select seat into my_seat from ip_hand_seats where hand_id = h.id and player_id = me;
-  if my_seat is null or h.turn_seat is distinct from my_seat then raise exception 'not_your_turn'; end if;
+  if h.id is not null then
+    select seat into my_seat from ip_hand_seats where hand_id = h.id and player_id = me;
+  end if;
 
-  perform ip_apply(h.id, my_seat, p_action, p_amount, now());
-  update ip_members set seen_at = now() where table_id = p_table and player_id = me and left_at is null;
-  return ip_state(p_table, me);
+  if h.id is null or h.id is distinct from p_hand or h.turn_no is distinct from p_turn or h.phase <> 'betting' then
+    code := 'stale_turn';
+  elsif my_seat is null or h.turn_seat is distinct from my_seat then
+    code := 'not_your_turn';
+  elsif t_now < h.turn_started_at then
+    code := 'not_started';
+  else
+    begin
+      perform ip_apply(h.id, my_seat, p_action, p_amount, t_now);
+    exception when raise_exception then
+      code := sqlerrm;
+    end;
+  end if;
+
+  return ip_state(p_table, me) || jsonb_build_object('rejected', code);
 end $$;
 
 -- ============================================================
@@ -718,12 +749,13 @@ revoke execute on function public.ip_create(int)                                
 revoke execute on function public.ip_join(bigint)                                       from public, anon;
 revoke execute on function public.ip_leave(bigint)                                      from public, anon;
 revoke execute on function public.ip_tick(bigint)                                       from public, anon;
-revoke execute on function public.ip_action(bigint, text, bigint)                       from public, anon;
+revoke execute on function public.ip_should_end(bigint)                                 from public, anon, authenticated;
+revoke execute on function public.ip_action(bigint, bigint, int, text, bigint)          from public, anon;
 grant  execute on function public.ip_lobby()                                            to authenticated;
 grant  execute on function public.ip_create(int)                                        to authenticated;
 grant  execute on function public.ip_join(bigint)                                       to authenticated;
 grant  execute on function public.ip_leave(bigint)                                      to authenticated;
 grant  execute on function public.ip_tick(bigint)                                       to authenticated;
-grant  execute on function public.ip_action(bigint, text, bigint)                       to authenticated;
+grant  execute on function public.ip_action(bigint, bigint, int, text, bigint)          to authenticated;
 
 alter publication supabase_realtime add table public.ip_tables, public.ip_members, public.ip_hands, public.ip_hand_seats;

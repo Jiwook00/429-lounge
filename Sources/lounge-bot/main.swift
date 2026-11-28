@@ -196,8 +196,8 @@ func playPoker(me: Player) async throws -> Never {
             let cards = s.seats.map { "\($0.name)\($0.bot ? "🤖" : "") \($0.card.map(String.init) ?? "?")\($0.folded ? "✕" : "")" }
             log("🂠 #\(h.handNo) 판돈 \(h.pot) · \(cards.joined(separator: ", ")) → 나 \(mine.net.map { $0 >= 0 ? "+\($0)" : "\($0)" } ?? "?") · 칩 \(mine.chips ?? 0)")
         }
-        if let h = s.hand, let o = s.myOptions, acted != "\(h.id):\(h.turnStartedAt?.timeIntervalSince1970 ?? 0)" {
-            acted = "\(h.id):\(h.turnStartedAt?.timeIntervalSince1970 ?? 0)"
+        if let h = s.hand, let o = s.myOptions(at: s.now), acted != "\(h.id):\(h.turnNo)" {
+            acted = "\(h.id):\(h.turnNo)"
             if Double.random(in: 0..<1) < 0.05 {
                 log("💤 생각에 잠김 (11초 시간 초과)")
                 continue
@@ -212,7 +212,11 @@ func playPoker(me: Player) async throws -> Never {
                 else if top <= 7 || roll < 0.2 { (.call, nil) }
                 else { (.fold, nil) }
             do {
-                let after = try await client.ipAction(table: t, action, amount: amount)
+                let after = try await client.ipAction(table: t, hand: h.id, turn: h.turnNo, action, amount: amount)
+                if let why = after.rejected {
+                    log("⚠️ \(action.rawValue) 거절: \(why)")
+                    continue
+                }
                 let mine = after.mySeat
                 log("👉 \(action.rawValue)\(mine?.lastAmount.map { $0 > 0 ? " \($0)" : "" } ?? "")\(mine?.allIn == true ? " (올인)" : "") · 상대 최고 \(top) · 판돈 \(after.hand?.pot ?? 0)")
             } catch {
