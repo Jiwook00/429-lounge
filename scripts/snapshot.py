@@ -24,6 +24,8 @@ TABLES = [
     "slot_spins", "plinko_drops", "bj_rounds", "bj_seats", "roulette_rounds", "roulette_bets",
     "minority_questions", "minority_rounds", "minority_picks", "oddeven_rounds", "oddeven_bets",
 ]
+# 운영 DB에 마이그레이션이 아직 안 올라갔을 수 있는 테이블: 없으면 건너뛴다
+OPTIONAL_TABLES = ["player_daily_seen"]
 
 
 def dump_db(workdir: Path, dest: Path):
@@ -277,7 +279,10 @@ SCHEMA_MD = """# 스냅샷 스키마 · 칩 규칙
 ## 테이블
 
 ### players
-`id` uuid(익명 계정) · `name` 닉네임(미지정 "손님 XXXXXX") · `chips` 현재 지갑 · `created_at` · `golden_chips` 보유 황금 칩 · `golden_until` 황금 칩 만료 · `last_daily` 마지막 오늘의 칩 날짜 · `named` 닉네임 지정 여부 · `last_seen_at` · `plinko_letters` 드롭 보드 글자 수(0~2){owner_column}
+`id` uuid(익명 계정) · `name` 닉네임(미지정 "손님 XXXXXX") · `chips` 현재 지갑 · `created_at` · `golden_chips` 보유 황금 칩 · `golden_until` 황금 칩 만료 · `last_daily` 마지막 오늘의 칩 날짜 · `named` 닉네임 지정 여부 · `last_seen_at` · `app_version` 마지막 접속 앱 버전 · `plinko_letters` 드롭 보드 글자 수(0~2){owner_column}
+
+### player_daily_seen (운영 DB에 있을 때만)
+`player_id` · `day` KST 날짜 · `first_seen_at` · `last_seen_at` · `app_version` 그날 마지막 버전 · `seen_count` touch_seen 횟수(약 2분 단위)
 
 ### token_claims
 회원·날짜별 토큰 환전. `day` 클라이언트 로컬 날짜 · `fresh_tokens` 그 날 보낸 fresh 토큰 · `chips` 지금까지 지급한 칩(토큰 1,000개 = 1칩) · `updated_at`
@@ -336,6 +341,7 @@ def main():
     if missing:
         sys.exit(f"덤프에 없는 테이블: {missing}")
 
+    optional = [t for t in OPTIONAL_TABLES if t in T]
     out = out_root / day
     out.mkdir(parents=True, exist_ok=True)
     pcols, prows = T["players"]
@@ -348,7 +354,7 @@ def main():
         owner_column = " · **`is_owner`**(추가) 지정한 운영자 닉네임과 일치하면 true"
     names = {r[ii]: r[ni] for r in prows}
 
-    for t in TABLES:
+    for t in TABLES + optional:
         cols, rows = T[t]
         write_csv(out / f"{t}.csv", cols, rows)
     (out / "SCHEMA.md").write_text(SCHEMA_MD.replace("{owner_column}", owner_column), encoding="utf-8")

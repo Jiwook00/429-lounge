@@ -133,9 +133,9 @@ public final class LoungeClient: Sendable {
             .order("last_seen_at", ascending: false, nullsFirst: false).limit(limit).execute().value
     }
 
-    /// 앱이 켜져 있다고 알린다 (마지막으로 본 시각). 서버가 1분 안의 중복은 무시한다
-    public func touchSeen() async throws {
-        try await supabase.rpc("touch_seen").execute()
+    /// 앱이 켜져 있다고 알린다 (마지막으로 본 시각, 앱 버전, 일별 접속). 서버가 1분 안의 중복은 무시한다 (ADR-0020)
+    public func touchSeen(appVersion: String? = nil) async throws {
+        try await supabase.rpc("touch_seen", params: ["p_app_version": appVersion]).execute()
     }
 
     /// 이번 주 큰손: 위 `top`명 + (그 밖이면) 내 줄 (ADR-0012)
