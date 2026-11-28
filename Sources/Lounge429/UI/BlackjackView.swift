@@ -1,3 +1,4 @@
+import LoungeCore
 import LoungeNet
 import SwiftUI
 
@@ -596,9 +597,10 @@ struct BlackjackView: View {
             }
             HStack(spacing: 6) {
                 ForEach(BlackjackTable.stakes, id: \.self) { s in
-                    let selected = table.stake == s
-                    let affordable = Int64(chips) >= s
-                    Button { table.stake = s } label: {
+                    // 처음 누른 칩은 그 값으로 고르고, 이어서 누르면 더한다 (상한 200칩)
+                    let selected = !table.betStake.touched && table.stake == s
+                    let affordable = table.betStake.canAdd(s, chips: Int64(chips))
+                    Button { table.betStake.tap(s) } label: {
                         Text("\(s)").font(Fonts.mono())
                             .foregroundStyle(selected ? Theme.bg : Theme.cream)
                             .frame(maxWidth: .infinity, minHeight: 24)
@@ -607,6 +609,17 @@ struct BlackjackView: View {
                     .buttonStyle(.plain)
                     .disabled(!affordable || table.busy)
                     .opacity(affordable ? 1 : 0.4)
+                }
+            }
+            if table.betStake.touched {
+                HStack {
+                    Text("칩을 눌러 더해요 · 최대 \(BetStake.maxAmount)").font(Fonts.small()).foregroundStyle(Theme.muted)
+                    Spacer()
+                    Button { table.betStake.reset() } label: {
+                        Text("다시").font(Fonts.small()).foregroundStyle(Theme.cream)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(table.busy)
                 }
             }
             HStack(spacing: 6) {
