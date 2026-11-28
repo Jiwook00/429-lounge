@@ -251,7 +251,7 @@ enum Snapshot {
             // 새 테이블 만들기: 최대 인원 4(기본) / 2 (시안 S11 · S12)
             table.preview(lobby: IPLobby(now: now, tables: []))
             table.creating = true
-            table.maxSeats = mode == "ip-create" ? 4 : 2
+            table.chooseSeats(mode == "ip-create" ? 4 : 2)
             return table
         default: break
         }
@@ -380,6 +380,8 @@ enum Snapshot {
         return table
     }
 
+    #if LOUNGE_DEV
+    // 개발용 빌드만(디버그, build-app.sh --dev): 실서버 테이블에 앉고 닉네임이 없으면 "지우"로 정하는 등 계정을 건드려서 배포 빌드엔 넣지 않는다
     /// 실서버 인디언 포커에 앉아 `seconds` 동안 상태를 찍고 마지막 화면을 저장한다.
     /// 앉은 테이블이 있으면 거기로, 없으면 자리 있는 테이블, 그것도 없으면 봇 2명과 새 테이블.
     /// LOUNGE_E2E_BET=1이면 내 차례에 체크·콜(가끔 레이즈) / fold면 늘 폴드 / idle이면 아무것도 안 함(시간 초과 확인)
@@ -394,7 +396,7 @@ enum Snapshot {
             let table = store.poker
             table.watching = true
             // LOUNGE_POKER_SEATS=2~4: 새 테이블을 만들 때 최대 인원 (기본 4)
-            if let n = ProcessInfo.processInfo.environment["LOUNGE_POKER_SEATS"].flatMap(Int.init) { table.maxSeats = n }
+            if let n = ProcessInfo.processInfo.environment["LOUNGE_POKER_SEATS"].flatMap(Int.init) { table.chooseSeats(n) }
             await table.refreshLobby()
             if !table.seated {
                 if let open = table.lobby?.tables.first(where: { !$0.full }) {
@@ -441,6 +443,7 @@ enum Snapshot {
         NSApplication.shared.setActivationPolicy(.prohibited)
         NSApplication.shared.run()
     }
+    #endif
 
     /// 미니 룰렛 가짜 판: 시안과 같은 판 (나 7에 50 · 빨강 50, 철수 홀 100, 영희 9 50 · 빨강 50)
     static func fakeRoulette(store: LoungeStore, me: Player, mode: String) -> RouletteTable {

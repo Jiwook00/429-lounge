@@ -248,12 +248,13 @@ struct IndianPokerView: View {
                     HStack(spacing: 6) {
                         ForEach(Array(IndianPoker.seatRange), id: \.self) { n in
                             let on = table.maxSeats == n
-                            Button { table.maxSeats = n } label: {
+                            Button { table.chooseSeats(n) } label: {
                                 Text("\(n)명").font(Fonts.bold()).foregroundStyle(on ? Theme.gold : Theme.cream)
                                     .frame(maxWidth: .infinity, minHeight: 44)
                                     .pixelBox(fill: on ? Theme.goldBg : Theme.panel, border: on ? Theme.gold : Theme.line)
                             }
                             .buttonStyle(.plain)
+                            .disabled(table.busy || table.joinPending)
                             .accessibilityLabel("최대 \(n)명")
                         }
                     }

@@ -16,6 +16,14 @@ public enum IndianPoker {
     public static let botRange = 1...3
     /// 테이블을 만들 때 고르는 최대 인원 (나 + 봇). 서버엔 봇 수 = 최대 인원 − 1로 보낸다
     public static let seatRange = 2...4
+
+    /// 아무 정수나 최대 인원 범위(2~4)로 (산술 전에 먼저 자른다 → Int.min·Int.max도 안전)
+    public static func clampSeats(_ seats: Int) -> Int {
+        min(max(seats, seatRange.lowerBound), seatRange.upperBound)
+    }
+
+    /// 서버 ip_create에 보낼 봇 수 = 최대 인원 − 나 (늘 1~3)
+    public static func bots(forSeats seats: Int) -> Int { clampSeats(seats) - 1 }
 }
 
 /// ip_tick / ip_join / ip_create / ip_action / ip_leave 결과: 테이블 하나 전부
@@ -447,6 +455,14 @@ public struct IPJoinGate: Sendable, Equatable {
         case leave(Int64)
         /// 입장 결과를 모르니 `after`초 뒤 ip_lobby로 서버 좌석을 조회
         case probe(after: TimeInterval)
+    }
+
+    /// 이 단계가 서버 좌석을 내 것으로 잡는지 (앉기든 바로 일어나기든). 그러면 만들기 화면 같은 로비 상태를 접는다
+    public static func seats(_ step: Step) -> Bool {
+        switch step {
+        case .sit, .leave: true
+        case .none, .probe: false
+        }
     }
 
     /// 서버가 입장을 확실히 거절한 코드 (ip_join·ip_create가 RAISE하는 것. 예외면 트랜잭션이 롤백돼 자리가 없다).

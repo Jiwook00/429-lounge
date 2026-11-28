@@ -21,7 +21,9 @@ enum Entry {
                 if table == "roulette-live" { Snapshot.renderRouletteLive(to: args[i + 1], seconds: 25) }
                 if table == "lobby-live" { Snapshot.renderLobbyLive(to: args[i + 1], seconds: 20) }
                 if table == "bj-live" { Snapshot.renderBlackjackLive(to: args[i + 1], seconds: 25) }
+                #if LOUNGE_DEV
                 if table == "ip-live" { Snapshot.renderPokerLive(to: args[i + 1], seconds: 40) }
+                #endif
                 if table == "wall-live" { Snapshot.renderWallLive(to: args[i + 1], seconds: 25) }
                 if table == "plinko-live" { Snapshot.renderPlinkoLive(to: args[i + 1], seconds: 25) }
                 if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 8) }

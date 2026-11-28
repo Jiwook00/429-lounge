@@ -57,8 +57,9 @@ final class IndianPokerTable {
     private var joinFinishedAt: Date?
     /// 메뉴바 깜빡임 (내 차례인데 포커 화면을 안 보고 있을 때)
     private(set) var flash = false
-    /// 새 테이블 최대 인원 (2~4, 기본 4). 빈 자리는 봇이 채우고 사람이 오면 다음 판부터 비킨다
-    var maxSeats = 4
+    /// 새 테이블 최대 인원 (2~4, 기본 4). 빈 자리는 봇이 채우고 사람이 오면 다음 판부터 비킨다.
+    /// 만드는 요청 중엔 바꿀 수 없다(`chooseSeats`) → 미리보기와 서버로 간 값이 늘 같다
+    private(set) var maxSeats = 4
     /// 로비에서 "새 테이블 만들기"를 눌러 만들기 화면을 보는 중
     var creating = false
     /// 레이즈(베팅) 패널을 펼쳤는지와 고른 금액 ("지금 베팅 위로 더 올리는 칩")
@@ -145,8 +146,16 @@ final class IndianPokerTable {
         }
     }
 
+    /// 최대 인원 고르기. 입장·만들기 요청 중엔 잠긴다
+    func chooseSeats(_ seats: Int) {
+        guard !busy, !joinPending else { return }
+        maxSeats = IndianPoker.clampSeats(seats)
+    }
+
     /// 입장 판단 결과를 따른다
     private func follow(_ step: IPJoinGate.Step) {
+        // 응답 유실 뒤 좌석 조회로 복구한 경우도 성공 응답처럼 만들기 화면을 접는다
+        if IPJoinGate.seats(step) { creating = false }
         switch step {
         case .none:
             break
@@ -346,8 +355,8 @@ final class IndianPokerTable {
     // MARK: - 행동
 
     func create() async {
-        // 서버는 봇 수를 받는다: 최대 인원 − 나
-        let bots = min(max(maxSeats - 1, IndianPoker.botRange.lowerBound), IndianPoker.botRange.upperBound)
+        // 서버는 봇 수를 받는다: 최대 인원 − 나 (범위를 먼저 자른 뒤 뺀다)
+        let bots = IndianPoker.bots(forSeats: maxSeats)
         await enter { try await $0.ipCreate(bots: bots) }
     }
 

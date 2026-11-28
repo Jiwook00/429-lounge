@@ -336,3 +336,30 @@ import Testing
         #expect(r1 == .leave(5))
     }
 }
+
+@Suite struct IndianPokerCreateTests {
+    @Test func seatsMapToBots() {
+        #expect(IndianPoker.bots(forSeats: 4) == 3)
+        #expect(IndianPoker.bots(forSeats: 3) == 2)
+        #expect(IndianPoker.bots(forSeats: 2) == 1)
+    }
+
+    @Test func extremeSeatValuesAreClampedBeforeArithmetic() {
+        // 검증 재현: LOUNGE_POKER_SEATS=Int.min이면 maxSeats - 1이 트랩났다
+        #expect(IndianPoker.bots(forSeats: Int.min) == 1)
+        #expect(IndianPoker.bots(forSeats: Int.max) == 3)
+        #expect(IndianPoker.clampSeats(0) == 2 && IndianPoker.clampSeats(9) == 4)
+    }
+
+    @Test func recoveredCreateClosesTheCreateScreen() {
+        // ip_create 응답이 유실되고 좌석 조회로 자리를 찾음 → 앉는 단계라 만들기 화면을 접는다
+        var g = IPJoinGate()
+        g.start()
+        let lost = g.finish(table: nil, certain: false)
+        #expect(!IPJoinGate.seats(lost))
+        let found = g.lobby(myTable: 360)
+        #expect(found == .sit(360) && IPJoinGate.seats(found))
+        #expect(IPJoinGate.seats(.leave(360)))
+        #expect(!IPJoinGate.seats(.none))
+    }
+}
