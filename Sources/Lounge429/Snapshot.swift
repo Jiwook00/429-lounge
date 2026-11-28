@@ -185,6 +185,11 @@ enum Snapshot {
         case "bj-betting":
             table.apply(BJState(now: now, round: round(.betting, closed: 7, dealer: []),
                                 seats: [seat(1, "영희", id: yhID, amount: 50, cards: [], state: .waiting)]))
+        case "bj-raise", "bj-raise-max":
+            // 칩을 반복해 눌러 판돈을 늘린 베팅창 (130 / 상한 200)
+            table.apply(BJState(now: now, round: round(.betting, closed: 7, dealer: []),
+                                seats: [seat(1, "영희", id: yhID, amount: 50, cards: [], state: .waiting)]))
+            if mode == "bj-raise" { [50, 50, 30].forEach { table.betStake.tap($0) } } else { [100, 100].forEach { table.betStake.tap($0) } }
         case "bj-full":
             let names = ["영희", "철수", "민수", "지호"]
             table.apply(BJState(now: now, round: round(.betting, closed: 5, dealer: []),
@@ -358,7 +363,6 @@ enum Snapshot {
             let table = BlackjackTable(store: store)
             table.enter()
             let play = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"] != nil
-            table.stake = 30
             var last = ""
             for _ in 0..<(seconds * 2) {
                 try? await Task.sleep(for: .milliseconds(500))
