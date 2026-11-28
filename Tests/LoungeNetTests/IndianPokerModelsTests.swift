@@ -85,3 +85,39 @@ import Testing
         #expect(s.rejectedError?.errorDescription == "이미 지나간 차례예요")
     }
 }
+
+@Suite struct IndianPokerDisplayTests {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    func state(_ seats: [IPSeat], phase: IPHand.Phase = .betting) -> IPState {
+        IPState(now: now, table: IPTable(id: 1, capacity: seats.count), me: IPMe(member: true, seat: 1, handSeat: 1),
+                hand: IPHand(id: 1, handNo: 1, phase: phase, firstSeat: 1, startedAt: now),
+                seats: seats)
+    }
+
+    func seat(_ n: Int, put: Int64, folded: Bool = false, allIn: Bool = false, card: Int? = nil) -> IPSeat {
+        IPSeat(seat: n, playerId: UUID(), name: "\(n)", put: put, folded: folded, allIn: allIn, card: card)
+    }
+
+    @Test func noSidePotWithoutShortAllIn() {
+        #expect(state([seat(1, put: 40), seat(2, put: 40)]).pots == nil)
+        // 올인했지만 다른 사람이 더 안 냈으면 한 줄
+        #expect(state([seat(1, put: 40, allIn: true), seat(2, put: 40)]).pots == nil)
+    }
+
+    @Test func splitsAtLowestAllIn() {
+        // 시안 S05: 철수 올인 40, 민지 120, 나 40(콜 전), 도윤 폴드 10
+        let s = state([seat(1, put: 40, allIn: true), seat(2, put: 120), seat(3, put: 40), seat(4, put: 10, folded: true)])
+        guard let p = s.pots else { Issue.record("no pots"); return }
+        #expect(p.main == 40 + 40 + 40 + 10 && p.side == 80)
+        #expect(p.mainSeats == [1, 2, 3] && p.sideSeats == [2, 3] && p.cappedSeats == [1])
+    }
+
+    @Test func winnersIgnoreFolded() {
+        let s = state([seat(1, put: 40, card: 8), seat(2, put: 40, card: 3), seat(3, put: 10, folded: true, card: 9)], phase: .done)
+        #expect(s.winners == [1])
+        let tie = state([seat(1, put: 20, card: 6), seat(2, put: 20, card: 6)], phase: .done)
+        #expect(tie.winners == [1, 2])
+        #expect(state([seat(1, put: 20, card: 6)]).winners.isEmpty)
+    }
+}

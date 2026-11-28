@@ -78,11 +78,15 @@ final class LoungeStore {
             if viewing && !oldValue {
                 Task { await countBlackjack() }
                 Task { await loadLastWeekRank() }
+                Task { await poker.refreshLobby() }
             }
+            poker.updateFlash()
         }
     }
     /// 블랙잭 테이블에 앉은 회원 수 (AI 제외, ADR-0014). 라운지 타일에 N/4로
     private(set) var blackjackSeated = 0
+    /// 인디언 포커 (ADR-0023). 앉아 있는 동안은 팝오버를 닫아도 tick을 이어 가서 여기서 들고 있는다
+    let poker = IndianPokerTable()
     /// 보고 있는 화면
     var place: Member.Place = .lounge { didSet { pushPresence() } }
     private var link: LoungeLink?
@@ -107,11 +111,14 @@ final class LoungeStore {
     }()
 
     init(live: Bool = true) {
+        poker.store = self
         guard live else { return }
         Task {
             await connect()
             await poll()
         }
+        // 개발용: LOUNGE_POKER_WINDOW=1이면 포커 화면을 일반 창에 (환경변수가 없으면 아무것도 안 함)
+        if PokerDevWindow.enabled { Task { PokerDevWindow.open(store: self) } }
         Task { await watchUpdates() }
     }
 
@@ -266,6 +273,8 @@ final class LoungeStore {
         joinLounge()
         await keepRoster()
         await claim()
+        // 앉아 있던 포커 테이블이 있으면 다시 tick (앱을 다시 켰을 때)
+        await poker.resume()
     }
 
     /// 로그에서 읽은 토큰/429를 서버에 보내서 칩으로 받는다 (서버가 차액만 지급하므로 자주 불러도 안전)

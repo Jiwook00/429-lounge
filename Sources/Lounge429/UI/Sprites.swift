@@ -70,6 +70,22 @@ enum Sprites {
         "...WWWWWW...",
     ], palette: base)
 
+    /// 인디언 포커 타일: 뒤에 핑크 줄무늬 뒷면, 앞에 크림 카드 + 네온 pip (12×12)
+    static let pokerCard = PixelSprite(rows: [
+        "YYYYYYY.....",
+        "YRDRDRY.....",
+        "YDRDYYYYYYY.",
+        "YRDRYWWWWWY.",
+        "YDRDYWRRWWY.",
+        "YRDRYWRRWWY.",
+        "YDRDYWWWWWY.",
+        "YRDRYWWRRWY.",
+        "YYYYYWWRRWY.",
+        "....YWWWWWY.",
+        "....YYYYYYY.",
+        "............",
+    ], palette: base.merging(["D": Theme.neonDeep]) { $1 })
+
     /// 라운지 벽화 타일: 벽돌 줄눈 사이에 칠한 칸들 (12×12)
     static let wall = PixelSprite(rows: [
         "dddddddddddd",

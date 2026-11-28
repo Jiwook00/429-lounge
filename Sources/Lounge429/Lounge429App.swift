@@ -21,6 +21,7 @@ enum Entry {
                 if table == "roulette-live" { Snapshot.renderRouletteLive(to: args[i + 1], seconds: 25) }
                 if table == "lobby-live" { Snapshot.renderLobbyLive(to: args[i + 1], seconds: 20) }
                 if table == "bj-live" { Snapshot.renderBlackjackLive(to: args[i + 1], seconds: 25) }
+                if table == "ip-live" { Snapshot.renderPokerLive(to: args[i + 1], seconds: 40) }
                 if table == "wall-live" { Snapshot.renderWallLive(to: args[i + 1], seconds: 25) }
                 if table == "plinko-live" { Snapshot.renderPlinkoLive(to: args[i + 1], seconds: 25) }
                 if table == "slot-live" { Snapshot.renderSlotLive(to: args[i + 1], spins: 8) }
@@ -42,8 +43,8 @@ struct Lounge429App: App {
                 { updater.checkForUpdates(nil) }
             })
         } label: {
-            // 다른 회원의 잭팟이면 VIP ↔ 평소로 깜빡인다
-            Image(nsImage: Sprites.menuBarIcon(vip: store.vip != store.jackpotFlash, busy: store.tableBusy))
+            // 다른 회원의 잭팟, 인디언 포커 내 차례(포커 화면을 안 보고 있을 때)면 VIP ↔ 평소로 깜빡인다
+            Image(nsImage: Sprites.menuBarIcon(vip: store.vip != (store.jackpotFlash || store.poker.flash), busy: store.tableBusy))
             Text(store.chips.formatted(.number))
         }
         .menuBarExtraStyle(.window)

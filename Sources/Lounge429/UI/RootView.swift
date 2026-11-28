@@ -8,6 +8,7 @@ struct RootView: View {
         case slot(SlotMachine)
         case plinko(PlinkoTable)
         case blackjack(BlackjackTable)
+        case poker(IndianPokerTable)
         case wall(PixelWall)
     }
 
@@ -65,6 +66,7 @@ struct RootView: View {
         case .plinko: "429 드롭"
         case .roulette: "룰렛"
         case .blackjack: "블랙잭"
+        case .poker: "인디언 포커"
         case .wall: "벽화"
         }
     }
@@ -76,7 +78,16 @@ struct RootView: View {
         case .plinko(let table): store.chips < 10 && store.golden() == 0 && table.inFlight == 0 && !table.feverActive
         case .roulette(let table): store.chips < 10 && store.golden() == 0 && table.myBets.isEmpty
         case .blackjack(let table): store.chips < 10 && store.golden() == 0 && (table.mySeat?.amount ?? 0) == 0
+        case .poker(let table): store.chips < 10 && !table.seated
         }
+    }
+
+    /// 라운지 타일 아랫줄: 앉아 있으면 그 테이블, 아니면 열린 테이블에 앉은 사람 수 (컴퓨터 제외)
+    private var pokerLine: String {
+        let poker = store.poker
+        if poker.seated { return "TABLE · 앉아 있음" }
+        let humans = poker.lobby?.tables.reduce(0) { $0 + $1.humans } ?? 0
+        return humans > 0 ? "TABLE · \(humans)명 앉음" : "TABLE · 비어 있음"
     }
 
     private func openTicket() {
@@ -114,6 +125,9 @@ struct RootView: View {
                     onPlinko: { go(.plinko(PlinkoTable(store: store))) },
                     blackjackSeated: store.blackjackSeated,
                     onBlackjack: { go(.blackjack(BlackjackTable(store: store))) },
+                    pokerLine: pokerLine,
+                    pokerHot: store.poker.seated || (store.poker.lobby?.tables.contains { $0.humans > 0 } ?? false),
+                    onPoker: { go(.poker(store.poker)) },
                     onBoard: { Task { await store.loadBoard() } },
                     wallLine: { store.pixelBucket?.line(at: $0) ?? "FREE" },
                     onWall: { go(.wall(PixelWall(store: store))) },
@@ -136,6 +150,17 @@ struct RootView: View {
                 }
                 .onAppear { table.enter() }
                 .onDisappear { table.leave() }
+            case .poker(let table):
+                // 팝오버를 닫아도 자리는 그대로 (tick은 store가 이어 간다). ‹ 라운지는 일어나기
+                IndianPokerView(table: table, chips: store.chips) {
+                    if table.seated { Task { await table.leave() } }
+                    go(.lounge)
+                }
+                .onAppear {
+                    table.onSound = { GameAudio.shared.play($0, at: .now) }
+                    table.watching = true
+                }
+                .onDisappear { table.watching = false }
             case .wall(let wall):
                 PixelWallView(wall: wall) { go(.lounge) }
                     .onAppear { wall.enter() }
@@ -164,7 +189,7 @@ struct RootView: View {
     private func go(_ next: Screen) {
         switch next {
         case .slot, .plinko: GameAudio.shared.enter(.floor)
-        case .blackjack: GameAudio.shared.enter(.felt)
+        case .blackjack, .poker: GameAudio.shared.enter(.felt)
         case .roulette: GameAudio.shared.enter(.marbles)
         case .lounge, .wall: GameAudio.shared.enter(.lounge)
         }
@@ -180,6 +205,8 @@ struct RootView: View {
         case .plinko: store.place = .lounge
         // 블랙잭도 같은 이유로 라운지. 인원은 Presence가 아니라 서버 좌석에서 센다 (ADR-0014)
         case .blackjack: store.place = .lounge
+        // 인디언 포커도 옛 앱이 모르는 위치라 라운지로. 인원은 서버 로비(ip_lobby)에서 센다 (ADR-0023)
+        case .poker: store.place = .lounge
         // 벽화도 Presence엔 라운지로 (옛 앱 호환)
         case .wall: store.place = .lounge
         }

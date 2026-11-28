@@ -167,6 +167,12 @@ public struct IPMember: Decodable, Sendable, Equatable {
         case seat, name
         case playerId = "player_id"
     }
+
+    public init(seat: Int, playerId: UUID, name: String) {
+        self.seat = seat
+        self.playerId = playerId
+        self.name = name
+    }
 }
 
 public struct IPHand: Decodable, Sendable, Equatable {
@@ -298,6 +304,14 @@ public struct IPLobby: Decodable, Sendable, Equatable {
             case id, capacity, humans, names
             case handNo = "hand_no"
         }
+
+        public init(id: Int64, capacity: Int, humans: Int, names: [String], handNo: Int? = nil) {
+            self.id = id
+            self.capacity = capacity
+            self.humans = humans
+            self.names = names
+            self.handNo = handNo
+        }
     }
 
     public let now: Date
@@ -309,5 +323,52 @@ public struct IPLobby: Decodable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case now, tables
         case myTable = "my_table"
+    }
+
+    public init(now: Date, myTable: Int64? = nil, tables: [Table]) {
+        self.now = now
+        self.myTable = myTable
+        self.tables = tables
+    }
+}
+
+// MARK: - 화면용 계산 (판단은 서버, 여기선 보여 주기만)
+
+/// 올인이 있을 때 판돈을 메인 팟 / 사이드 팟 두 줄로 나눠 보여 준다.
+/// 서버 정산(ip_settle)과 같은 단계 나눔이지만 화면은 두 줄까지만: 가장 낮은 올인 금액까지가 메인, 나머지가 사이드
+public struct IPPots: Sendable, Equatable {
+    public let main: Int64
+    public let side: Int64
+    /// 메인 팟을 가져갈 수 있는 자리 (접지 않은 자리)
+    public let mainSeats: [Int]
+    /// 사이드 팟을 다툴 수 있는 자리 (접지 않았고 메인 상한에 걸린 올인이 아닌 자리. 아직 콜 전인 사람 포함)
+    public let sideSeats: [Int]
+    /// 상한에 걸린 올인 자리 (사이드 팟은 못 가져감)
+    public let cappedSeats: [Int]
+}
+
+extension IPState {
+    /// 이번 판 앤티 합 (자리마다 10)
+    public var anteTotal: Int64 { Int64(seats.count) * IndianPoker.ante }
+
+    /// 접지 않은 올인 자리보다 더 낸 칩이 있으면 메인/사이드로 나눈다. 없으면 nil (판돈 한 줄)
+    public var pots: IPPots? {
+        let live = seats.filter { !$0.folded }
+        guard let cap = live.filter(\.allIn).map(\.put).min(),
+              seats.contains(where: { $0.put > cap }) else { return nil }
+        let main = seats.reduce(Int64(0)) { $0 + min($1.put, cap) }
+        let total = seats.reduce(Int64(0)) { $0 + $1.put }
+        return IPPots(main: main, side: total - main,
+                      mainSeats: live.map(\.seat),
+                      sideSeats: live.filter { !($0.allIn && $0.put <= cap) }.map(\.seat),
+                      cappedSeats: live.filter { $0.allIn && $0.put <= cap }.map(\.seat))
+    }
+
+    /// 끝난 판에서 이긴 자리: 접지 않은 자리 중 가장 높은 카드 (동점이면 여럿)
+    public var winners: [Int] {
+        guard hand?.phase == .done else { return [] }
+        let live = seats.filter { !$0.folded }
+        guard let top = live.compactMap(\.card).max() else { return [] }
+        return live.filter { $0.card == top }.map(\.seat)
     }
 }
