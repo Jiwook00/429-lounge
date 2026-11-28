@@ -115,11 +115,12 @@ enum Snapshot {
                                            chips: store.chips, golden: table == "roulette-golden" ? 3 : store.golden(),
                                            showHelp: table == "roulette-help"))
         } else if let table, table.hasPrefix("plinko") {
-            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -hot | -fever | -fever-end | -vip
+            // plinko-idle | -charging | -flying | -win | -big | -max | -pocket | -letters | -hot | -fever | -fever-end | -vip | -help | -stage | -auto
             let vip = locked || table == "plinko-vip"
             let plinko = fakePlinko(store: store, me: me, mode: table)
             plinko.vip = vip
-            content = AnyView(PlinkoView(table: plinko, chips: store.chips, golden: vip ? 3 : store.golden(), vip: vip))
+            content = AnyView(PlinkoView(table: plinko, chips: store.chips, golden: vip ? 3 : store.golden(), vip: vip,
+                                         showHelp: table == "plinko-help"))
         } else if let table, table.hasPrefix("slot") {
             content = AnyView(SlotView(machine: fakeSlot(store: store, me: me, mode: table), chips: store.chips,
                                        golden: store.golden(), vip: locked))
@@ -657,6 +658,16 @@ enum Snapshot {
             drop(0, forceCatch: true, fever: true) { $0.pocket }
             for _ in 0..<600 where table.fever?.endAt == nil { table.advance(1) }
             table.advance(8)
+        case "plinko-auto":
+            // AUTO: 레인은 유지, 파워는 매번 랜덤 (켜면 시안). 수동 PERFECT(plinko-charging)와 비교용
+            table.previewLetters(1)
+            table.auto = true
+        case "plinko-stage":
+            // 글자 하나가 켜진 채 쉬는 보드: 다음 조건 `포켓 → 2`
+            table.previewLetters(1)
+        case "plinko-help":
+            // 설명 카드 (뒤는 글자 둘이 켜진 보드)
+            table.previewLetters(2)
         case "plinko-vip":
             // VIP HOUR: 포켓 입구가 늘 열려 있다
             table.previewLetters(1)

@@ -10,9 +10,12 @@ struct PlinkoView: View {
     /// VIP HOUR (429 리셋 전): 포켓 입구가 넓다
     var vip: Bool = false
     var onBack: () -> Void = {}
+    /// 스냅샷용: 설명 카드를 연 채로 그린다
+    var showHelp = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pressing = false
+    @State private var help = false
 
     /// 점멸 위상 (동작 줄이기면 늘 켠 상태)
     private func phase(_ t: Int, _ half: Int) -> Bool { table.reduced || t % (half * 2) < half }
@@ -37,6 +40,13 @@ struct PlinkoView: View {
         .frame(width: LoungeView.width)
         .background(flashBg ? Theme.panel : Theme.bg)
         .foregroundStyle(Theme.cream)
+        .overlay(alignment: .top) {
+            if help || showHelp {
+                PlinkoHelp { help = false }
+                    .padding(.top, 44)
+                    .padding(.horizontal, 14)
+            }
+        }
         .onChange(of: reduceMotion, initial: true) { _, value in table.reduced = value }
         .onChange(of: vip, initial: true) { _, value in table.vip = value }
     }
@@ -50,6 +60,13 @@ struct PlinkoView: View {
             }
             .buttonStyle(.plain)
             GameSoundButton()
+            Button { help.toggle() } label: {
+                Text("?").font(Fonts.bold()).foregroundStyle(help ? Theme.bg : Theme.gold)
+                    .frame(width: 20, height: 20)
+                    .pixelBox(fill: help ? Theme.gold : Theme.goldBg, border: Theme.gold)
+            }
+            .buttonStyle(.plain)
+            .help("429 드롭 방법")
             Spacer()
             Text("429 드롭").font(Fonts.bold()).foregroundStyle(Theme.neon).glow(Theme.neon)
             Spacer()
@@ -291,10 +308,14 @@ struct PlinkoView: View {
     }
 
     /// 4·2·9 글자 = 보드 레벨. FEVER가 아닌 포켓마다 하나 켜지며 핀이 늘고, 셋 다 켜지면 HOT(다음 포켓까지).
-    /// HOT 중엔 세 칸이 네온·골드로 번갈아 깜빡이고 옆에 `HOT`
+    /// HOT 중엔 세 칸이 네온·골드로 번갈아 깜빡인다. 옆 글씨는 지금 단계의 다음 조건(`포켓 → 2`),
+    /// 방금 켜진 직후엔 무엇이 달라졌는지(`2 켜짐 · 분열 핀↑`)를 잠깐 보여 준다
     private func letterRow(t: Int) -> some View {
         let ready = table.hot
         let readyTone = phase(t, 3) ? Theme.neon : Theme.gold
+        let gained = table.letterFlash.flatMap { t <= $0.until ? $0.index + 1 : nil }
+        let caption = gained.map { PlinkoTable.letterChars[$0 - 1] + " 켜짐 · " + PlinkoTable.stageGain(level: $0) }
+            ?? (ready ? "HOT · " : "") + PlinkoTable.stageHint(level: table.letters)
         return HStack(spacing: 4) {
             HStack(spacing: 2) {
                 ForEach(0..<PlinkoTable.letterChars.count, id: \.self) { i in
@@ -304,14 +325,17 @@ struct PlinkoView: View {
                               tone: ready && !flashing ? readyTone : Theme.gold)
                 }
             }
-            if ready {
-                Text("HOT").font(Fonts.small()).foregroundStyle(readyTone).glow(readyTone, radius: 2)
-            }
+            Text(caption)
+                .font(Fonts.small())
+                .foregroundStyle(ready ? readyTone : gained != nil ? Theme.gold : Theme.muted)
+                .glow(ready || gained != nil ? (ready ? readyTone : Theme.gold) : .clear, radius: 2)
+                .lineLimit(1)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ready ? "4·2·9 HOT · 다음 포켓까지" : "4·2·9 글자 \(table.letters)개")
-        .position(x: 6 + (ready ? 37 : 23), y: 10)
+        .accessibilityLabel(ready ? "4·2·9 HOT · 다음 포켓까지, 포켓에서 끝" : "4·2·9 글자 \(table.letters)개, \(PlinkoTable.stageHint(level: table.letters))")
+        .frame(width: boardW - 12, alignment: .leading)
+        .position(x: boardW / 2, y: 10)
     }
 
     /// 4·2·9 글자 한 칸 (14×14). 켜지면 tone(기본 골드), filled면 그 색으로 채워 반짝
@@ -333,7 +357,9 @@ struct PlinkoView: View {
             titleTone = phase(t, 2) ? Theme.neon : Theme.gold
         }
         if r.doneAt != nil {
-            title = r.fever ? "FEVER!" : r.hotEnd ? "HOT 끝 · 20% 환급" : "글자 하나 · 20% 환급"
+            title = r.fever ? "FEVER!" : r.hotEnd ? "HOT 끝 · 20% 환급"
+                : r.letter >= PlinkoTable.letterChars.count ? "9 켜짐 · HOT!"
+                : "\(PlinkoTable.letterChars[max(0, r.letter - 1)]) 켜짐 · 20% 환급"
             titleTone = r.fever ? Theme.neon : Theme.muted
         }
         return VStack(spacing: 4) {
