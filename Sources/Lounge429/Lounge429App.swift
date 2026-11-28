@@ -75,7 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// 종료 전에 인디언 포커 자리에서 일어난다. 서버가 이탈을 확인할 때까지 최대 5초 기다리고,
     /// 그래도 안 되면(오프라인) 그냥 종료한다 → 서버 규칙대로 차례 11초가 지나면 폴드, 연속 2판이면 자리에서 빠진다
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let poker = IndianPokerTable.current, poker.seated else { return .terminateNow }
+        // 입장 요청이 처리 중이어도 (서버가 커밋했을 수 있어서) 그 결과를 받아 일어난다
+        guard let poker = IndianPokerTable.current, poker.seated || poker.joinPending else { return .terminateNow }
         Task { @MainActor in
             _ = await poker.leaveAndWait(timeout: 5)
             NSApp.reply(toApplicationShouldTerminate: true)

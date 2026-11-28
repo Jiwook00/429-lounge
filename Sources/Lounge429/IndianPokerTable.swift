@@ -47,6 +47,12 @@ final class IndianPokerTable {
     private(set) var leaveAttempts = 0
     /// 마지막으로 이탈을 끝낸 테이블과 그 시각. 그 전에 보낸 로비 응답의 `my_table`은 무시한다
     private var leftTable: (id: Int64, at: Date)?
+    /// 입장 요청과 일어나기·종료가 겹칠 때 (입장이 커밋됐는데 응답이 늦는 동안 취소)
+    private var gate = IPJoinGate()
+    /// 입장 요청이 진행 중이거나, 입장 중에 취소해서 결과(이탈)를 기다리는 중
+    var joinPending: Bool { gate.joining || gate.pending }
+    /// 입장 중에 일어나기·종료를 눌러 결과를 기다리는 중 (라운지 타일 "나가는 중")
+    var cancellingJoin: Bool { gate.pending }
     /// 메뉴바 깜빡임 (내 차례인데 포커 화면을 안 보고 있을 때)
     private(set) var flash = false
     /// 새 테이블 컴퓨터 수
@@ -113,13 +119,35 @@ final class IndianPokerTable {
     }
 
     /// 로비 응답의 `my_table`로 앉은 테이블을 되찾는다 (앱을 다시 켰을 때). 일어나는 중이거나,
-    /// 이탈을 끝내기 전에 보낸 요청의 응답이면 그 자리를 되살리지 않는다
+    /// 이탈을 끝내기 전에 보낸 요청의 응답이면 그 자리를 되살리지 않는다.
+    /// 입장 중에 취소했으면 그 자리는 되찾지 않고 바로 이탈한다
     private func applyLobby(_ l: IPLobby, sent: Date) {
         lobby = l
-        guard tableID == nil, leaving == nil, let mine = l.myTable else { return }
-        if let left = leftTable, left.id == mine, sent <= left.at { return }
-        tableID = mine
-        kick()
+        if let left = leftTable, left.id == l.myTable, sent <= left.at { return }
+        guard tableID == nil || gate.pending, leaving == nil || gate.pending else { return }
+        follow(gate.lobby(myTable: l.myTable))
+    }
+
+    /// 입장 판단 결과를 따른다
+    private func follow(_ step: IPJoinGate.Step) {
+        switch step {
+        case .none:
+            break
+        case .sit(let id):
+            guard tableID == nil, leaving == nil else { return }
+            tableID = id
+            kick()
+        case .leave(let id):
+            // 커밋된 입장을 취소: 그 자리를 받아 바로 일어나기 (화면은 앉은 상태를 그리지 않는다)
+            guard leaving != id else { return }
+            tableID = id
+            state = nil
+            leaving = id
+            leaveAttempts = 0
+            kick()
+        case .probe:
+            Task { await refreshLobby() }
+        }
     }
 
     /// 루프가 없으면 시작하고, 자고 있으면 깨운다
@@ -306,21 +334,30 @@ final class IndianPokerTable {
     }
 
     private func enter(_ call: @escaping @MainActor (LoungeClient) async throws -> IPState) async {
-        guard let store, !busy, leaving == nil else { return }
+        guard let store, !busy, leaving == nil, tableID == nil, !joinPending else { return }
         busy = true
         defer { busy = false }
+        gate.start()
         do {
             let s = try await call(store.net)
-            leftNotice = nil
-            message = nil
-            tableID = s.table.id
-            state = nil
-            leftTable = nil
-            apply(s)
-            kick()
+            let step = gate.finish(table: s.me.member ? s.table.id : nil, certain: true)
+            if case .sit = step {
+                leftNotice = nil
+                message = nil
+                tableID = s.table.id
+                state = nil
+                leftTable = nil
+                apply(s)
+                kick()
+            } else {
+                // 응답을 기다리는 동안 일어나기·종료를 눌렀다 → 앉은 화면 없이 바로 이탈
+                follow(step)
+            }
         } catch {
-            message = error.localizedDescription
-            await refreshLobby()
+            // 서버가 거절했으면(LoungeError) 자리는 없다. 응답을 못 받았으면 서버 좌석을 한 번 조회해 정리
+            let step = gate.finish(table: nil, certain: error is LoungeError)
+            if !gate.pending { message = error.localizedDescription }
+            if step == .probe { await refreshLobby() } else { follow(step) }
         }
         await store.refreshMe()
     }
@@ -328,6 +365,11 @@ final class IndianPokerTable {
     /// 일어나기 시작. 진행 중인 판이면 폴드 (낸 칩은 판돈에 남음).
     /// 서버가 이탈을 확인해야 끝난다: 실패하면 루프가 백오프로 다시 보내고, 그동안 화면은 "나가는 중"
     func leave() {
+        // 입장 응답을 기다리는 중이면: 응답(또는 좌석 조회)을 받은 뒤 그 자리를 이탈한다
+        if tableID == nil {
+            if gate.cancel() { updateFlash() }
+            return
+        }
         guard let id = tableID, leaving == nil else { return }
         leaving = id
         leaveAttempts = 0
@@ -337,13 +379,22 @@ final class IndianPokerTable {
         kick()
     }
 
-    /// 일어나고 서버가 확인할 때까지 기다린다 (앱 종료·개발 도구). 시간 안에 못 끝내면 false
+    /// 일어나고 서버가 확인할 때까지 기다린다 (앱 종료·개발 도구). 시간 안에 못 끝내면 false.
+    /// 입장 응답을 기다리는 중이면 그 응답을 기다리고, 2초가 지나도 안 오면 ip_lobby로 서버 좌석을 한 번 조회한다
     @discardableResult
     func leaveAndWait(timeout: TimeInterval) async -> Bool {
+        let start = Date()
         leave()
-        let end = Date().addingTimeInterval(timeout)
-        while leaving != nil, Date() < end { try? await Task.sleep(for: .milliseconds(100)) }
-        return leaving == nil
+        let end = start.addingTimeInterval(timeout)
+        var probed = false
+        while leaving != nil || gate.pending, Date() < end {
+            if gate.joining, !probed, Date().timeIntervalSince(start) > 2 {
+                probed = true
+                Task { await refreshLobby() }
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return leaving == nil && !gate.pending
     }
 
     /// 이탈 한 번 시도. 성공하면 자리를 비우고 0, 실패하면 다음 시도까지 기다릴 초

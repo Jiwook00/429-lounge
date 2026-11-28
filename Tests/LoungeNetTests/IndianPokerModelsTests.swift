@@ -158,6 +158,15 @@ import Testing
         #expect(!(p(9, .betting, 3) < p(9, .betting, 3)))
     }
 
+    @Test func sameTurnOrdersByServerTime() {
+        func s(_ at: TimeInterval) -> IPProgress {
+            IPState(now: Date(timeIntervalSince1970: at), table: IPTable(id: 1, capacity: 2), me: IPMe(member: true),
+                    hand: IPHand(id: 3, handNo: 1, phase: .betting, firstSeat: 1, turnNo: 2, startedAt: now)).progress
+        }
+        #expect(s(10) < s(10.5))
+        #expect(!(s(10.5) < s(10)))
+    }
+
     @Test func skewTrustsTheFastestRoundTrip() {
         var c = ClockSkew()
         let t0 = Date(timeIntervalSince1970: 0)
@@ -180,5 +189,79 @@ import Testing
         let tie = state([seat(1, put: 20, card: 6), seat(2, put: 20, card: 6)], phase: .done)
         #expect(tie.winners == [1, 2])
         #expect(state([seat(1, put: 20, card: 6)]).winners.isEmpty)
+    }
+}
+
+@Suite struct IPJoinGateTests {
+    @Test func plainJoinSits() {
+        var g = IPJoinGate()
+        g.start()
+        let r1 = g.finish(table: 7, certain: true)
+        #expect(r1 == .sit(7))
+        #expect(!g.pending)
+    }
+
+    @Test func cancelWhileJoiningLeavesOnceWhenTheCommittedJoinArrives() {
+        // 검증 재현: 서버는 입장을 커밋, 응답이 3초 늦는 동안 종료·‹ 라운지
+        var g = IPJoinGate()
+        g.start()
+        let cancelled = g.cancel()
+        #expect(cancelled && g.pending)
+        let step = g.finish(table: 343, certain: true)
+        #expect(step == .leave(343))
+        #expect(!g.pending)
+    }
+
+    @Test func lobbySeesTheSeatFirstThenJoinArrivesWithoutDoubleLeave() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        // 종료 대기 중 조회가 먼저 자리를 찾음 → 이탈 한 번
+        let r2 = g.lobby(myTable: 343)
+        #expect(r2 == .leave(343))
+        #expect(g.pending)
+        // 늦은 입장 응답은 이미 낸 이탈과 같은 자리 → 다시 안 냄
+        let r3 = g.finish(table: 343, certain: true)
+        #expect(r3 == .none)
+        #expect(!g.pending)
+    }
+
+    @Test func uncertainJoinProbesOnceThenSettles() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r4 = g.finish(table: nil, certain: false)
+        #expect(r4 == .probe)
+        #expect(g.pending)
+        let r5 = g.lobby(myTable: 343)
+        #expect(r5 == .leave(343))
+        #expect(!g.pending)
+        // 조회에 자리가 없으면 끝 (무한 재시도 없음)
+        var h = IPJoinGate()
+        h.start()
+        _ = h.cancel()
+        let r6 = h.finish(table: nil, certain: false)
+        #expect(r6 == .probe)
+        let r7 = h.lobby(myTable: nil)
+        #expect(r7 == .none && !h.pending)
+    }
+
+    @Test func uncertainJoinWithoutCancelAdoptsTheSeat() {
+        var g = IPJoinGate()
+        g.start()
+        let r8 = g.finish(table: nil, certain: false)
+        #expect(r8 == .probe)
+        let r9 = g.lobby(myTable: 9)
+        #expect(r9 == .sit(9))
+    }
+
+    @Test func rejectedJoinEndsTheCancel() {
+        var g = IPJoinGate()
+        g.start()
+        _ = g.cancel()
+        let r10 = g.finish(table: nil, certain: true)
+        #expect(r10 == .none && !g.pending)
+        let again = g.cancel()
+        #expect(!again) // 입장 중이 아니면 취소할 것도 없다
     }
 }

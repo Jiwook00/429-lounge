@@ -405,9 +405,10 @@ extension IPState {
         return out
     }
 
-    /// 단조 증가하는 진행 위치. 늦게 도착한 오래된 응답(이전 판·이전 차례·끝나기 전)을 버리는 데 쓴다
+    /// 단조 증가하는 진행 위치. 늦게 도착한 오래된 응답(이전 판·이전 차례·끝나기 전)을 버리는 데 쓴다.
+    /// 판·단계·차례가 같으면 서버 시각(`now`)으로 → 같은 차례 안의 다른 변경(입장·칩)도 역순으로 적용되지 않는다
     public var progress: IPProgress {
-        IPProgress(hand: hand?.id ?? 0, phase: hand?.phase == .done ? 1 : 0, turn: hand?.turnNo ?? 0)
+        IPProgress(hand: hand?.id ?? 0, phase: hand?.phase == .done ? 1 : 0, turn: hand?.turnNo ?? 0, at: now)
     }
 }
 
@@ -419,14 +420,87 @@ public struct IPAward: Sendable, Equatable {
     public let refund: Bool
 }
 
-/// (판 ID, 단계, 차례 번호) 순서. 같은 테이블에서 이 값이 더 작은 상태는 이미 지나간 상태다
+/// (판 ID, 단계, 차례 번호, 서버 시각) 순서. 같은 테이블에서 이 값이 더 작은 상태는 이미 지나간 상태다
 public struct IPProgress: Sendable, Comparable {
     public let hand: Int64
     public let phase: Int
     public let turn: Int
+    /// 서버가 상태를 만든 시각 (같은 차례 안의 순서)
+    public let at: Date
 
     public static func < (a: IPProgress, b: IPProgress) -> Bool {
-        (a.hand, a.phase, a.turn) < (b.hand, b.phase, b.turn)
+        (a.hand, a.phase, a.turn, a.at.timeIntervalSince1970) < (b.hand, b.phase, b.turn, b.at.timeIntervalSince1970)
+    }
+}
+
+/// 입장 요청(ip_create·ip_join)과 일어나기·종료가 겹칠 때의 판단.
+/// 서버가 입장을 커밋했는데 응답이 늦는 동안 일어나면, 응답(또는 응답이 불확실할 때 `ip_lobby`의 `my_table` 조회)을
+/// 기다렸다가 그 자리를 이탈한다. 이탈은 자리마다 한 번만 내고(`issued`), 조회도 응답이 불확실할 때 한 번만 한다
+public struct IPJoinGate: Sendable, Equatable {
+    public enum Step: Sendable, Equatable {
+        case none
+        /// 그 테이블에 앉은 걸로 (평소 입장, 앱을 다시 켰을 때 되찾기)
+        case sit(Int64)
+        /// 그 테이블에서 일어나기 시작
+        case leave(Int64)
+        /// 입장 결과를 모르니 ip_lobby로 서버 좌석을 한 번 조회
+        case probe
+    }
+
+    /// 입장 요청을 보냈고 응답을 아직 못 받음
+    public private(set) var joining = false
+    /// 입장 중에 일어나기·종료를 눌렀음 (결과가 나올 때까지 유지)
+    public private(set) var cancelled = false
+    /// 이번 입장에서 이미 이탈을 낸 테이블 (같은 자리에 두 번 내지 않게)
+    public private(set) var issued: Int64?
+
+    public init() {}
+
+    /// 결과를 기다리는 취소가 있는지 (나가는 중 표시, 종료 대기)
+    public var pending: Bool { cancelled }
+
+    public mutating func start() {
+        joining = true
+        cancelled = false
+        issued = nil
+    }
+
+    /// 입장 중이면 취소로 표시한다(응답이 오면 이탈). 입장 중이 아니면 false
+    public mutating func cancel() -> Bool {
+        guard joining else { return false }
+        cancelled = true
+        return true
+    }
+
+    /// 입장 응답. `table`은 앉은 테이블(거절이면 nil), `certain == false`는 응답을 못 받음(네트워크 오류·시간 초과)
+    public mutating func finish(table: Int64?, certain: Bool) -> Step {
+        joining = false
+        if let table {
+            defer { cancelled = false }
+            if !cancelled { return .sit(table) }
+            return issue(table)
+        }
+        if !certain { return .probe }
+        cancelled = false
+        return .none
+    }
+
+    /// 로비 조회 결과 (`my_table`)
+    public mutating func lobby(myTable: Int64?) -> Step {
+        guard let table = myTable else {
+            // 입장 응답까지 끝났는데 서버에 자리가 없으면 취소할 것도 없다
+            if !joining { cancelled = false }
+            return .none
+        }
+        guard cancelled else { return .sit(table) }
+        if !joining { cancelled = false }
+        return issue(table)
+    }
+
+    private mutating func issue(_ table: Int64) -> Step {
+        guard issued != table else { return .none }
+        issued = table
+        return .leave(table)
     }
 }
 

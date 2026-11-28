@@ -85,7 +85,7 @@ struct RootView: View {
     /// 라운지 타일 아랫줄: 앉아 있으면 그 테이블, 아니면 열린 테이블에 앉은 사람 수 (컴퓨터 제외)
     private var pokerLine: String {
         let poker = store.poker
-        if poker.leaving != nil { return "TABLE · 나가는 중" }
+        if poker.leaving != nil || poker.cancellingJoin { return "TABLE · 나가는 중" }
         if poker.seated { return "TABLE · 앉아 있음" }
         let humans = poker.lobby?.tables.reduce(0) { $0 + $1.humans } ?? 0
         return humans > 0 ? "TABLE · \(humans)명 앉음" : "TABLE · 비어 있음"
@@ -154,7 +154,7 @@ struct RootView: View {
             case .poker(let table):
                 // 팝오버를 닫아도 자리는 그대로 (tick은 store가 이어 간다). ‹ 라운지는 일어나기
                 IndianPokerView(table: table, chips: store.chips) {
-                    if table.seated { table.leave() }
+                    table.leave() // 앉아 있거나 입장 요청 중이면 일어난다
                     go(.lounge)
                 }
                 .onAppear {

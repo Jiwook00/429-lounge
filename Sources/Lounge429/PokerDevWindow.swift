@@ -35,6 +35,19 @@ enum PokerDevWindow {
     private static func autoplay(store: LoungeStore, table: IndianPokerTable) async {
         while store.me == nil { try? await Task.sleep(for: .milliseconds(300)) }
         await table.refreshLobby()
+        // LOUNGE_POKER_CANCEL_JOIN=초: 입장 요청을 보내고 그 초 뒤 ‹ 라운지와 같은 leave()를 부른다 (입장 응답 지연과 경합 재현)
+        if let cancel = ProcessInfo.processInfo.environment["LOUNGE_POKER_CANCEL_JOIN"].flatMap(Double.init), !table.seated {
+            let open = table.lobby?.tables.first(where: { !$0.full })
+            let join = Task { if let open { await table.join(open.id) } else { await table.create() } }
+            try? await Task.sleep(for: .seconds(cancel))
+            print("cancel while joining · pending \(table.joinPending)")
+            table.leave()
+            await join.value
+            let t0 = Date()
+            while table.seated || table.joinPending, Date().timeIntervalSince(t0) < 30 { try? await Task.sleep(for: .milliseconds(100)) }
+            print("after cancel · seated \(table.seated) · pending \(table.joinPending) · attempts \(table.leaveAttempts)")
+            return
+        }
         if !table.seated {
             if let open = table.lobby?.tables.first(where: { !$0.full }) { await table.join(open.id) } else { await table.create() }
         }
@@ -76,7 +89,7 @@ private struct PokerDevHost: View {
 
     var body: some View {
         IndianPokerView(table: table, chips: store.chips) {
-            if table.seated { table.leave() }
+            table.leave()
         }
     }
 }
