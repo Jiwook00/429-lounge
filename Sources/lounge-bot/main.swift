@@ -3,7 +3,7 @@
 // --blackjack: 룰렛 대신 블랙잭 테이블에 앉는다 (판마다 걸고, 간단한 기본 전략으로 친다)
 // --plinko: 429 드롭에 공을 계속 떨어뜨린다 (무작위 레인·파워, 잔액 부족이면 쉬었다 다시)
 // --wall: 라운지 벽화에 2~5초마다 한 칸씩 칠한다 (버킷이 비면 429를 받고 기다림)
-// --poker [--bots N]: 인디언 포커. 자리 있는 테이블에 앉고, 없으면 컴퓨터 N명(기본 2)과 새 테이블.
+// --poker [--bots N]: 인디언 포커. 자리 있는 테이블에 앉고, 없으면 봇 N명(기본 2)과 새 테이블.
 //                    1초마다 tick, 내 차례면 1~3초 고민하다 상대 카드만 보고 친다. 가끔 생각에 잠겨 시간 초과
 import Foundation
 import LoungeNet
@@ -175,7 +175,7 @@ func playPoker(me: Player) async throws -> Never {
                     log("🪑 테이블 #\(open.id) 입장 (\(open.humans + 1)/\(open.capacity))")
                 } else {
                     table = try await client.ipCreate(bots: bots).table.id
-                    log("🪑 테이블 #\(table!) 만듦 · 컴퓨터 \(bots)명")
+                    log("🪑 테이블 #\(table!) 만듦 · 봇 \(bots)명")
                 }
             } catch {
                 log("⚠️ \(error.localizedDescription)")

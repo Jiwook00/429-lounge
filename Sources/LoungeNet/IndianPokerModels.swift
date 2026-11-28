@@ -12,8 +12,10 @@ public enum IndianPoker {
     public static let turnSeconds: TimeInterval = 11
     /// 결과를 보여 주는 시간. 끝나면 다음 판
     public static let revealSeconds: TimeInterval = 5
-    /// 테이블을 만들 때 고르는 컴퓨터 수
+    /// 테이블을 만들 때 고르는 봇 수 (서버 ip_create의 p_bots)
     public static let botRange = 1...3
+    /// 테이블을 만들 때 고르는 최대 인원 (나 + 봇). 서버엔 봇 수 = 최대 인원 − 1로 보낸다
+    public static let seatRange = 2...4
 }
 
 /// ip_tick / ip_join / ip_create / ip_action / ip_leave 결과: 테이블 하나 전부
@@ -108,7 +110,7 @@ public struct IPTable: Decodable, Sendable, Equatable {
     public enum Status: String, Decodable, Sendable { case open, closed }
 
     public let id: Int64
-    /// 사람 + 컴퓨터 자리 수 (2~4)
+    /// 사람 + 봇 자리 수 (2~4)
     public let capacity: Int
     public let status: Status
     public let closedAt: Date?
@@ -188,7 +190,7 @@ public struct IPHand: Decodable, Sendable, Equatable {
     /// 차례 번호 (차례가 바뀔 때마다 +1). ip_action에 그대로 보낸다
     public let turnNo: Int
     public let turnStartedAt: Date?
-    /// 사람은 시작 + 11초(지나면 자동 폴드), 컴퓨터는 1~5초 뒤 행동
+    /// 사람은 시작 + 11초(지나면 자동 폴드), 봇은 1~5초 뒤 행동
     public let turnDeadline: Date?
     /// 이번 판 가장 높은 베팅 (앤티 제외). 0이면 아직 아무도 안 걸었다
     public let currentBet: Int64
@@ -239,10 +241,10 @@ public struct IPSeat: Decodable, Sendable, Equatable, Identifiable {
 
     /// 1~capacity
     public let seat: Int
-    /// nil = 컴퓨터
+    /// nil = 봇
     public let playerId: UUID?
     public let name: String
-    /// 사람의 지갑 칩. 컴퓨터는 nil (무한)
+    /// 사람의 지갑 칩. 봇은 nil (무한)
     public let chips: Int64?
     /// 이번 판에 낸 칩 전부 (앤티 포함)
     public let put: Int64
@@ -287,12 +289,12 @@ public struct IPSeat: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// ip_lobby 결과: 열린 테이블 목록 (사람만 센다, 컴퓨터는 숨김)
+/// ip_lobby 결과: 열린 테이블 목록 (사람만 센다, 봇은 숨김)
 public struct IPLobby: Decodable, Sendable, Equatable {
     public struct Table: Decodable, Sendable, Equatable, Identifiable {
         public let id: Int64
         public let capacity: Int
-        /// 앉은 사람 수 (컴퓨터 제외). "2/4"의 2
+        /// 앉은 사람 수 (봇 제외). "2/4"의 2
         public let humans: Int
         /// 앉은 사람 이름 (자리 순)
         public let names: [String]

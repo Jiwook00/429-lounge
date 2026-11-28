@@ -82,7 +82,7 @@ struct RootView: View {
         }
     }
 
-    /// 라운지 타일 아랫줄: 앉아 있으면 그 테이블, 아니면 열린 테이블에 앉은 사람 수 (컴퓨터 제외)
+    /// 라운지 타일 아랫줄: 앉아 있으면 그 테이블, 아니면 열린 테이블에 앉은 사람 수 (봇 제외)
     private var pokerLine: String {
         let poker = store.poker
         if poker.leaving != nil || poker.cancellingJoin { return "TABLE · 나가는 중" }

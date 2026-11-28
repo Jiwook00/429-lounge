@@ -74,7 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/Jiwook00/429-lounge/main/scripts/in
 
 카드 한 장씩, 내 카드만 나는 못 본다. 상대 이마의 카드를 보고 판마다 앤티 10칩 뒤 한 바퀴 순차 베팅(체크 · 베팅 · 콜 · 레이즈 · 폴드), 높은 숫자(1~10)가 이긴다.
 
-- 로비에서 열린 테이블에 직접 앉거나 컴퓨터 1~3명과 새 테이블을 만든다. 인원은 사람만 센다(사람 2 + 컴퓨터 2 = 2/4). 사람이 앉으면 다음 판부터 컴퓨터 자리를 차지한다
+- 로비에서 열린 테이블에 직접 앉거나, 최대 인원(2·3·4명, 기본 4)을 골라 새 테이블을 만든다. 빈 자리는 봇이 채워 혼자여도 바로 시작하고, 사람이 앉으면 다음 판부터 봇이 자리를 비킨다. 로비 인원은 사람만 센다(최대 4인 방에 사람 1명이면 1/4)
 - 차례마다 11초(서버 시계). 넘기면 자동 폴드, 연속 두 판이면 자리에서 빠진다. 레이즈는 직전에 올린 폭 이상, 칩이 모자라면 올인(메인 팟 / 사이드 팟)
 - 결과는 5초 동안 전원 카드 공개 후 다음 판이 자동으로. `‹ 라운지`는 일어나기(진행 중인 판은 폴드)
 - 팝오버를 닫아도 자리는 그대로이고, 내 차례가 오면 메뉴바 슬롯머신이 깜빡인다
@@ -148,7 +148,7 @@ gh release create "$TAG" build/429-Lounge.zip build/appcast.xml --draft --verify
 ```sh
 swift build && swift test
 swift run lounge-scan                                  # 토큰 로그 파싱 결과
-.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|ip-lobby|ip-lobby-broke|ip-lobby-empty|ip-lobby-left|ip-wait|ip-deal|ip-myturn|ip-raise|ip-allin|ip-result|ip-check|ip-3p|ip-timeout|ip-side|ip-last|ip-leaving|ip-live|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
+.build/debug/Lounge429 --snapshot out.png [--locked] [--table readme|ip-lobby|ip-lobby-broke|ip-lobby-empty|ip-lobby-left|ip-wait|ip-deal|ip-myturn|ip-raise|ip-allin|ip-result|ip-check|ip-3p|ip-timeout|ip-side|ip-last|ip-leaving|ip-create|ip-create-2|ip-wait-join|ip-live|roulette-idle|roulette-betting|roulette-golden|roulette-alone|roulette-spin|roulette-cut-near|roulette-cut-edge|roulette-cut-land|roulette-closed|roulette-win|roulette-void|roulette-help|roulette-live|slot-idle|slot-spinning|slot-glitch|slot-win|slot-big|slot-jackpot|slot-lose|slot-live|nickname|nickname-taken|lobby-busy|lobby-quiet|lobby-ticker|lobby-alone|lobby-board|lobby-board-me|lobby-board-empty|lobby-flip|lobby-live|wall-idle|wall-painted|wall-same|wall-limited|wall-empty|wall-live|update|update-required]
 supabase db reset                                      # 마이그레이션 전체 재적용 (데이터 삭제)
 ```
 

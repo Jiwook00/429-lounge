@@ -4,7 +4,7 @@ import LoungeCore
 import LoungeNet
 import Observation
 
-/// 인디언 포커 (ADR-0023). 서버에 상주 프로세스가 없어 앉은 앱이 `ip_tick`을 불러 시간 초과·컴퓨터 행동·다음 판을 진행한다.
+/// 인디언 포커 (ADR-0023). 서버에 상주 프로세스가 없어 앉은 앱이 `ip_tick`을 불러 시간 초과·봇 행동·다음 판을 진행한다.
 /// 그래서 이 객체는 화면이 아니라 `LoungeStore`가 들고 있고, 앉아 있는 동안은 팝오버를 닫아도 tick을 계속한다
 /// (내 차례면 메뉴바 아이콘이 깜빡인다). 로비 목록은 포커 화면을 보고 있을 때만 읽는다.
 @MainActor @Observable
@@ -57,8 +57,10 @@ final class IndianPokerTable {
     private var joinFinishedAt: Date?
     /// 메뉴바 깜빡임 (내 차례인데 포커 화면을 안 보고 있을 때)
     private(set) var flash = false
-    /// 새 테이블 컴퓨터 수
-    var bots = 2
+    /// 새 테이블 최대 인원 (2~4, 기본 4). 빈 자리는 봇이 채우고 사람이 오면 다음 판부터 비킨다
+    var maxSeats = 4
+    /// 로비에서 "새 테이블 만들기"를 눌러 만들기 화면을 보는 중
+    var creating = false
     /// 레이즈(베팅) 패널을 펼쳤는지와 고른 금액 ("지금 베팅 위로 더 올리는 칩")
     var raising = false
     var raiseAmount: Int64 = 0
@@ -344,7 +346,9 @@ final class IndianPokerTable {
     // MARK: - 행동
 
     func create() async {
-        await enter { try await $0.ipCreate(bots: self.bots) }
+        // 서버는 봇 수를 받는다: 최대 인원 − 나
+        let bots = min(max(maxSeats - 1, IndianPoker.botRange.lowerBound), IndianPoker.botRange.upperBound)
+        await enter { try await $0.ipCreate(bots: bots) }
     }
 
     func join(_ table: Int64) async {
@@ -362,6 +366,7 @@ final class IndianPokerTable {
             if case .sit = step {
                 leftNotice = nil
                 message = nil
+                creating = false
                 tableID = s.table.id
                 state = nil
                 leftTable = nil

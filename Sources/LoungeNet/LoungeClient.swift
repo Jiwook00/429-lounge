@@ -54,7 +54,7 @@ public enum LoungeError: LocalizedError {
         case .server("already_at_table"): "다른 테이블에 앉아 있어요"
         case .server("table_closed"): "닫힌 테이블이에요"
         case .server("no_table"): "없는 테이블이에요"
-        case .server("invalid_bots"): "컴퓨터는 1~3명이에요"
+        case .server("invalid_bots"): "봇은 1~3명이에요"
         case .server("cannot_check"): "누가 걸어서 체크할 수 없어요"
         case .server("cannot_bet"): "이미 걸려 있어요 · 레이즈로"
         case .server("cannot_raise"): "아직 아무도 안 걸었어요 · 베팅으로"
@@ -214,14 +214,14 @@ public final class LoungeClient: Sendable {
         } catch { throw LoungeError.wrap(error) }
     }
 
-    /// 테이블을 만들고 앉는다 (나 + 컴퓨터 1~3명). 첫 판이 바로 시작된다
+    /// 테이블을 만들고 앉는다 (나 + 봇 1~3명). 첫 판이 바로 시작된다
     public func ipCreate(bots: Int) async throws -> IPState {
         do {
             return try await supabase.rpc("ip_create", params: ["p_bots": bots]).execute().value
         } catch { throw LoungeError.wrap(error) }
     }
 
-    /// 열린 테이블에 앉는다. 다음 판부터 컴퓨터 자리를 차지한다
+    /// 열린 테이블에 앉는다. 다음 판부터 봇 자리를 차지한다
     public func ipJoin(table: Int64) async throws -> IPState {
         do {
             return try await supabase.rpc("ip_join", params: ["p_table": table]).execute().value
@@ -235,7 +235,7 @@ public final class LoungeClient: Sendable {
         } catch { throw LoungeError.wrap(error) }
     }
 
-    /// 마감이 지난 일(시간 초과 폴드, 컴퓨터 행동, 다음 판)을 처리하고 테이블 전부를 받는다.
+    /// 마감이 지난 일(시간 초과 폴드, 봇 행동, 다음 판)을 처리하고 테이블 전부를 받는다.
     /// 연속 2판 시간 초과로 폴드되면 그 판이 끝날 때 자리에서 빠진다(`me.leftReason == .away`)
     public func ipTick(table: Int64) async throws -> IPState {
         do {
