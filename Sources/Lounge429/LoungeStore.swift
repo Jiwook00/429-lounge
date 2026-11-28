@@ -321,7 +321,7 @@ final class LoungeStore {
     private func keepRoster(at now: Date = .now) async {
         guard me != nil else { return }
         if seenAt.map({ now.timeIntervalSince($0) >= 120 }) ?? true {
-            if (try? await net.touchSeen()) != nil { seenAt = now }
+            if (try? await net.touchSeen(appVersion: AppInfo.version)) != nil { seenAt = now }
         }
         let known = Set(roster.map(\.id))
         let newcomer = members.contains { !known.contains($0.id) && $0.id != me?.id }
