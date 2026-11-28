@@ -159,6 +159,17 @@ public struct Member: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// 룰렛 테이블에 앉은 인원. 화면 위 바의 `TABLE · N명`과 라운지 타일의 `N명 앉음`이 같은 기준이 되게 한다.
+/// 보는 중 + 룰렛 자리인 회원, 이번 판에 건 회원, 나(이 화면을 보고 있으니)의 합집합.
+public enum TableSeats {
+    public static func count(members: [Member], me: UUID?, bettors: some Sequence<UUID>) -> Int {
+        var seated = Set(members.filter { $0.viewing && $0.place == .roulette }.map(\.id))
+        seated.formUnion(bettors)
+        if let me { seated.insert(me) }
+        return seated.count
+    }
+}
+
 /// 회원 명부의 한 명 (닉네임을 정한 회원). 접속 중이 아니면 "오프라인 · 3시간 전"으로 보여준다 (ADR-0011)
 public struct Regular: Codable, Sendable, Identifiable, Hashable {
     public let id: UUID

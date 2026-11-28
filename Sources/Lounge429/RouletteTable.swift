@@ -211,6 +211,11 @@ final class RouletteTable {
         .sorted { a, b in a.me != b.me ? a.me : a.staked != b.staked ? a.staked > b.staked : a.name < b.name }
     }
 
+    /// 테이블에 앉은 인원 (건 사람만이 아니라 앉아서 보는 사람과 나 포함)
+    func seated(_ bettors: [UUID]) -> Int {
+        TableSeats.count(members: store.crowd().others, me: myID, bettors: bettors)
+    }
+
     var myStaked: Int64 { myBets.reduce(0) { $0 + $1.staked } }
     var myPayout: Int64? {
         let mine = myBets
