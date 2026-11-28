@@ -44,6 +44,25 @@ final class PlinkoTable {
     static let feverLabels = ["24", "7.5", "3", "2.1", "1.2", ".75", ".45", ".75", "1.2", "2.1", "3", "7.5", "24"]
     /// 4·2·9 = 보드 레벨 (ADR-0019). FEVER가 아닌 포켓마다 한 글자 켜지며 핀이 늘고, 셋 다 켜지면 HOT(다음 포켓까지)
     static let letterChars = ["4", "2", "9"]
+
+    /// 지금 단계(켜진 글자 수)에서 다음에 무엇이 일어나는지 한 줄. 4·2·9 줄 옆에 늘 보인다
+    static func stageHint(level: Int) -> String {
+        switch level {
+        case 0: "포켓 → 4"
+        case 1: "포켓 → 2"
+        case 2: "포켓 → 9"
+        default: "포켓 끝"
+        }
+    }
+
+    /// 글자가 켜질 때 새로 생기는 것을 알리는 짧은 문구 (레인 화살표 앞에서 끝나야 해서 짧게)
+    static func stageGain(level: Int) -> String {
+        switch level {
+        case 1: "골드"
+        case 2: "분열"
+        default: "HOT"
+        }
+    }
     /// 레벨마다 새로 생기는 핀 (서버 `plinko_gold`·`plinko_split`과 같다). 앞 레벨 핀에 더해진다
     static let goldByLevel: [Set<PinPos>] = [
         [PinPos(r: 8, j: -4), PinPos(r: 8, j: 4)],
@@ -149,6 +168,8 @@ final class PlinkoTable {
         var doneAt: Int?
         /// HOT 보드가 이 포켓으로 끝났다 (FEVER가 아니고 글자가 0으로)
         var hotEnd = false
+        /// 이 포켓 뒤 글자 수 (1~3). 릴 제목에 "4 켜짐"처럼 어느 글자가 켜졌는지 쓴다
+        var letter = 0
     }
     struct FeverRun {
         var total: Int64 = 0
@@ -656,7 +677,7 @@ final class PlinkoTable {
         reel = Reel(start: t, result: pocket.reels,
                     stops: [t + 8, t + 14, t + (reach ? 34 : 22)],
                     fever: pocket.fever, reach: reach, drop: id, doneAt: nil,
-                    hotEnd: !pocket.fever && rec.response.letters == 0)
+                    hotEnd: !pocket.fever && rec.response.letters == 0, letter: rec.response.letters)
         log?("reel \(pocket.reels.joined(separator: " ")) \(pocket.fever ? "FEVER" : "환급 \(pocket.refund)")\(reach ? " 리치" : "")")
     }
 
