@@ -363,6 +363,11 @@ enum Snapshot {
             let table = BlackjackTable(store: store)
             table.enter()
             let play = ProcessInfo.processInfo.environment["LOUNGE_E2E_BET"] != nil
+            // LOUNGE_E2E_STAKE=200: 100칩을 두 번 눌러 상한까지 (서버 `bj_bet` 상한 확인)
+            if ProcessInfo.processInfo.environment["LOUNGE_E2E_STAKE"] == "200" {
+                table.betStake.tap(100)
+                table.betStake.tap(100)
+            }
             var last = ""
             for _ in 0..<(seconds * 2) {
                 try? await Task.sleep(for: .milliseconds(500))
