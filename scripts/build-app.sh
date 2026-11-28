@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.15.1"
+VERSION="0.16.0"
 SERVER="local"; DIST=0; OPEN=0
 for arg in "$@"; do
     case "$arg" in

@@ -12,6 +12,12 @@ enum WhatsNew {
 
     /// 새 버전을 낼 때 여기에 한 줄 더한다 (회원에게 알릴 게 없으면 안 더해도 된다). 카피 톤은 DESIGN.md §11
     static let notes: [ReleaseNote] = [
+        ReleaseNote(version: "0.16.0",
+                    lines: [
+                        "블랙잭: 칩을 이어 눌러 판돈을 늘릴 수 있어요 (최대 200칩)",
+                        "소수결은 이용이 적어 문을 닫았어요",
+                    ],
+                    game: nil),
         ReleaseNote(version: "0.15.0",
                     lines: [
                         "429 드롭: 포켓마다 4·2·9가 켜지며 골드·분열 핀이 늘어요",
