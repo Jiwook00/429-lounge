@@ -32,7 +32,7 @@ date: 2026-11-23
 - KST 월요일마다 새 벽. 지난 벽은 `pixel_board.week`로 남겨 둔다 (보기 화면은 나중에)
 - 칩·지갑·`game_results`와 무관. 이번 주 큰손에 안 들어간다
 - 칠하기는 `pixel_paint` RPC로만(이름 정한 회원), 읽기는 `pixel_board` RPC. 테이블 변경은 Realtime 신호로만 쓰고 받으면 다시 읽는다
-- Presence 위치는 라운지 (옛 앱 호환, 블랙잭·소수결과 같은 이유)
+- Presence 위치는 라운지 (옛 앱 호환, 블랙잭·소수결(은퇴)과 같은 이유)
 
 ### 결과
 

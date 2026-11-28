@@ -35,8 +35,6 @@ public enum LoungeError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .server("betting_closed"): "베팅이 마감됐어요"
-        case .server("minority_closed"): "이번 판은 마감됐어요"
-        case .server("already_picked"): "이번 판엔 이미 골랐어요"
         case .server("not_named"): "이름부터 정해 주세요"
         case .server("already_bet"): "이번 판엔 이미 걸었어요"
         case .server("insufficient_chips"): "칩이 부족해요"
@@ -147,20 +145,6 @@ public final class LoungeClient: Sendable {
     public func lastWeekRank() async throws -> Int? {
         let rows: [LastWeekRank] = try await supabase.rpc("last_week_rank").execute().value
         return rows.first?.rank
-    }
-
-    /// 소수결: 지난 판 정산 + 지금 판 열기 + 상태 (ADR-0013)
-    public func minorityTick() async throws -> MinorityState {
-        try await supabase.rpc("minority_tick").execute().value
-    }
-
-    /// 소수결: 열린 판의 참가비를 걸고 고르기 (0 / 1)
-    public func minorityPick(_ choice: Int) async throws -> MinorityState {
-        do {
-            return try await supabase.rpc("minority_pick", params: ["p_choice": choice]).execute().value
-        } catch {
-            throw LoungeError.wrap(error)
-        }
     }
 
     // MARK: - 블랙잭 (ADR-0014)
